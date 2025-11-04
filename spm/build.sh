@@ -6,6 +6,12 @@ CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-Release}
 ANDROID_DIR="$ROOT_DIR/android"
 SOURCE_DIR="$ROOT_DIR/cactus"
 
+OUTPUT_DIR="$1"
+echo "$OUTPUT_DIR"
+if [[ -z "$OUTPUT_DIR" ]]; then
+  OUTPUT_DIR=$SCRIPT_DIR
+fi
+
 cp "$SOURCE_DIR/ffi/cactus_ffi.h" "$SCRIPT_DIR/cactus.h"
 
 if ! command -v cmake &> /dev/null; then
@@ -22,24 +28,24 @@ fi
 n_cpu=$(sysctl -n hw.logicalcpu 2>/dev/null || echo 4)
 
 function build_android_artifactbundle() {
-    rm -drf "$SCRIPT_DIR/CXXCactus.artifactbundle"
-    echo "Building Cactus artifactbundle for Android platforms..."
+    rm -drf "$OUTPUT_DIR/CXXCactus.artifactbundle"
+    echo "🤖 Building Cactus artifactbundle for Android platforms..."
     $ANDROID_DIR/build.sh
 
-    mkdir "$SCRIPT_DIR/CXXCactus.artifactbundle"
-    mkdir -p "$SCRIPT_DIR/CXXCactus.artifactbundle/dist/android"
-    cp -r "$ANDROID_DIR/libcactus.a" "$SCRIPT_DIR/CXXCactus.artifactbundle/dist/android/libcactus.a"
-    mkdir -p "$SCRIPT_DIR/CXXCactus.artifactbundle/include"
-    cp -r "$SCRIPT_DIR/cactus.h" "$SCRIPT_DIR/CXXCactus.artifactbundle/include/cactus.h"
+    mkdir "$OUTPUT_DIR/CXXCactus.artifactbundle"
+    mkdir -p "$OUTPUT_DIR/CXXCactus.artifactbundle/dist/android"
+    cp -r "$ANDROID_DIR/libcactus.a" "$OUTPUT_DIR/CXXCactus.artifactbundle/dist/android/libcactus.a"
+    mkdir -p "$OUTPUT_DIR/CXXCactus.artifactbundle/include"
+    cp -r "$SCRIPT_DIR/cactus.h" "$OUTPUT_DIR/CXXCactus.artifactbundle/include/cactus.h"
 
-    cat > "$SCRIPT_DIR/CXXCactus.artifactbundle/include/module.modulemap" << 'EOF'
+    cat > "$OUTPUT_DIR/CXXCactus.artifactbundle/include/module.modulemap" << 'EOF'
 module CXXCactus {
     header "cactus.h"
     export *
 }
 EOF
 
-    cat > "$SCRIPT_DIR/CXXCactus.artifactbundle/info.json" << 'EOF'
+    cat > "$OUTPUT_DIR/CXXCactus.artifactbundle/info.json" << 'EOF'
 {
   "schemaVersion": "1.0",
   "artifacts": {
@@ -60,6 +66,8 @@ EOF
   }
 }
 EOF
+
+    echo "✅ Finished creating Android artifactbundle"
 }
 
 function build_apple_xcframework() {
@@ -68,7 +76,7 @@ function build_apple_xcframework() {
     echo "Using $n_cpu CPU cores"
 
     APPLE_OUT="$SCRIPT_DIR/build"
-    XCFRAMEWORK_PATH="$SCRIPT_DIR/CXXCactusDarwin.xcframework"
+    XCFRAMEWORK_PATH="$OUTPUT_DIR/CXXCactusDarwin.xcframework"
 
     rm -rf "$APPLE_OUT" "$XCFRAMEWORK_PATH"
     mkdir -p "$APPLE_OUT"
@@ -101,42 +109,36 @@ function build_apple_xcframework() {
     }
 
     function find_framework() {
-        local OUT="$APPLE_OUT/$1"
-        local FRAMEWORK=$(find "$OUT" -type d -name "CXXCactusDarwin.framework" | head -n 1)
-        if [ ! -d "$FRAMEWORK" ]; then
-            echo "❌ Failed: $1 build did not produce framework"
-            exit 1
-        fi
-        echo $FRAMEWORK
+        echo "$APPLE_OUT/$1/Release$2/CXXCactusDarwin.framework"
     }
 
     echo "🛠️ Building iOS"
     build_apple_target "ios" "iOS" "iphoneos" 13.0
-    IOS=$(find_framework "ios")
+    IOS=$(find_framework "ios" "-iphoneos")
 
     echo "🛠️ Building iOS Simulator"
     build_apple_target "ios_sim" "iOS" "iphonesimulator" 13.0
-    IOS_SIM=$(find_framework "ios_sim")
+    IOS_SIM=$(find_framework "ios_sim" "-iphonesimulator")
 
     echo "🛠️ Building macOS"
     build_apple_target "macos" "Darwin" "macosx" 11.0
-    MAC=$(find_framework "macos")
+    MAC=$(find_framework "macos" "")
 
     echo "🛠️ Building tvOS"
     build_apple_target "tvos" "tvOS" "appletvos" 13.0
-    TVOS=$(find_framework "tvos")
+    TVOS=$(find_framework "tvos" "-appletvos")
 
     echo "🛠️ Building tvOS Simulator"
     build_apple_target "tvos_sim" "tvOS" "appletvsimulator" 13.0
-    TVOS_SIM=$(find_framework "tvos_sim")
+    TVOS_SIM=$(find_framework "tvos_sim" "-appletvsimulator")
 
     echo "🛠️ Building watchOS"
     build_apple_target "watchos" "watchOS" "watchos" 6.0
-    WATCHOS=$(find_framework "watchos")
+    WATCHOS=$(find_framework "watchos" "-watchos")
 
     echo "🛠️ Building watchOS Simulator"
     build_apple_target "watchos_sim" "watchOS" "watchsimulator" 6.0
-    WATCHOS_SIM=$(find_framework "watchos_sim")
+    WATCHOS_SIM=$(find_framework "watchos_sim" "-watchsimulator")
 
 
     # VISIONOS=$(build_apple_target "visionos" "visionOS" "xros" 1.0)
@@ -157,9 +159,16 @@ function build_apple_xcframework() {
         -framework "$IOS_SIM" \
         -framework "$MAC" \
         -framework "$TVOS" \
+        -framework "$TVOS_SIM" \
         -framework "$WATCHOS" \
         -framework "$WATCHOS_SIM" \
         -output "$XCFRAMEWORK_PATH"
+
+    # macOS Symlinks
+    MAC_DIR="$XCFRAMEWORK_PATH/macos-arm64/CXXCactusDarwin.framework"
+    rm -rf "$MAC_DIR/Headers" "$MAC_DIR/Modules"
+    ln -s Versions/A/Headers "$MAC_DIR/Headers"
+    ln -s Versions/A/Modules "$MAC_DIR/Modules"
 
     echo "✅ Apple XCFramework built:"
     echo "   $XCFRAMEWORK_PATH"
