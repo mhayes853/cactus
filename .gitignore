@@ -17,3 +17,6 @@ apple/*.xcframework
 apple/libcactus.a
 *.a
 venv
+
+*.artifactbundle
+*.xcframework

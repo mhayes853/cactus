@@ -1,0 +1,111 @@
+cmake_minimum_required(VERSION 3.10)
+project(Cactus LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+
+set(SOURCE_DIR ${CMAKE_SOURCE_DIR}/../cactus)
+
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+    message(STATUS "CMAKE_BUILD_TYPE was not set, defaulting to Release.")
+endif()
+
+file(GLOB ENGINE_SOURCES "${SOURCE_DIR}/engine/*.cpp")
+file(GLOB GRAPH_SOURCES "${SOURCE_DIR}/graph/*.cpp")
+file(GLOB KERNEL_SOURCES "${SOURCE_DIR}/kernel/*.cpp")
+file(GLOB FFI_SOURCES "${SOURCE_DIR}/ffi/*.cpp")
+file(GLOB MODEL_SOURCES "${SOURCE_DIR}/models/*.cpp")
+
+set(HEADER_FILES
+    ${SOURCE_DIR}/cactus.h
+    ${SOURCE_DIR}/engine/engine.h
+    ${SOURCE_DIR}/graph/graph.h
+    ${SOURCE_DIR}/kernel/kernel.h
+    ${SOURCE_DIR}/kernel/kernel_utils.h
+    ${SOURCE_DIR}/ffi/cactus_ffi.h
+    ${SOURCE_DIR}/models/model.h
+)
+
+set(COMMON_SOURCES
+    ${KERNEL_SOURCES}
+    ${GRAPH_SOURCES}
+    ${ENGINE_SOURCES}
+    ${FFI_SOURCES}
+    ${MODEL_SOURCES}
+)
+
+if(NOT COMMON_SOURCES)
+    message(FATAL_ERROR "No source files found! Check SOURCE_DIR: ${SOURCE_DIR}")
+endif()
+
+if(BUILD_SHARED_LIBS)
+    add_library(CXXCactusDarwin SHARED ${COMMON_SOURCES})
+
+    if(
+        CMAKE_SYSTEM_NAME STREQUAL "iOS"
+        OR CMAKE_SYSTEM_NAME STREQUAL "tvOS"
+        OR CMAKE_SYSTEM_NAME STREQUAL "watchOS"
+        OR CMAKE_SYSTEM_NAME STREQUAL "xrOS"
+        OR CMAKE_SYSTEM_NAME STREQUAL "Darwin"
+    )
+        set_target_properties(CXXCactusDarwin PROPERTIES
+            FRAMEWORK TRUE
+            FRAMEWORK_VERSION A
+            MACOSX_FRAMEWORK_IDENTIFIER com.cactuscompute.cactus
+            VERSION 1.0.0
+            SOVERSION 1.0.0
+            PUBLIC_HEADER "${SOURCE_DIR}/ffi/cactus_ffi.h"
+            MACOSX_FRAMEWORK_INFO_PLIST "${CMAKE_SOURCE_DIR}/Info.plist"
+        )
+    endif()
+endif()
+
+target_include_directories(CXXCactusDarwin PUBLIC
+    ${SOURCE_DIR}
+    ${SOURCE_DIR}/engine
+    ${SOURCE_DIR}/graph
+    ${SOURCE_DIR}/kernel
+    ${SOURCE_DIR}/ffi
+)
+
+target_compile_definitions(CXXCactusDarwin PRIVATE
+    PLATFORM_CPU_ONLY=1
+)
+
+target_compile_options(CXXCactusDarwin PRIVATE
+    -pthread
+    -Wall
+    -Wextra
+    -pedantic
+    -Wno-c++20-designator
+    -Wno-missing-field-initializers
+    -fomit-frame-pointer
+    -funroll-loops
+    -ftree-vectorize
+)
+
+if (${CMAKE_BUILD_TYPE} STREQUAL "Debug")
+    target_compile_options(CXXCactusDarwin PRIVATE -DCACTUS_IOS_ENABLE_LOGGING)
+endif ()
+
+target_compile_options(CXXCactusDarwin PRIVATE -O3 -DNDEBUG)
+target_compile_options(CXXCactusDarwin PRIVATE -fvisibility=hidden -fvisibility-inlines-hidden)
+target_compile_options(CXXCactusDarwin PRIVATE -ffunction-sections -fdata-sections)
+
+target_compile_options(CXXCactusDarwin PRIVATE
+    -march=armv8.2-a+fp16+simd+dotprod
+)
+
+target_compile_definitions(CXXCactusDarwin PRIVATE
+    __ARM_NEON=1
+    __ARM_FEATURE_FP16_VECTOR_ARITHMETIC=1
+    __ARM_FEATURE_DOTPROD=1
+)
+
+target_link_options(CXXCactusDarwin PRIVATE -Wl,-dead_strip)
+target_link_options(CXXCactusDarwin PRIVATE -flto)
+
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
