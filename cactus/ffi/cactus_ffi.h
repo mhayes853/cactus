@@ -48,8 +48,10 @@ CACTUS_FFI_EXPORT void cactus_stop(cactus_model_t model);
 
 CACTUS_FFI_EXPORT void cactus_destroy(cactus_model_t model);
 
+CACTUS_FFI_EXPORT const char* cactus_get_last_error();
+
 #ifdef __cplusplus
 }
 #endif
 
-#endif 
+#endif
