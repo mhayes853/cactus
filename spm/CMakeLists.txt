@@ -42,6 +42,10 @@ endif()
 if(BUILD_SHARED_LIBS)
     add_library(CXXCactusDarwin SHARED ${COMMON_SOURCES})
 
+    set_target_properties(CXXCactusDarwin PROPERTIES
+        OUTPUT_NAME "CXXCactusDarwin"
+    )
+
     if(
         CMAKE_SYSTEM_NAME STREQUAL "iOS"
         OR CMAKE_SYSTEM_NAME STREQUAL "tvOS"
@@ -55,8 +59,23 @@ if(BUILD_SHARED_LIBS)
             MACOSX_FRAMEWORK_IDENTIFIER com.cactuscompute.cactus
             VERSION 1.0.0
             SOVERSION 1.0.0
-            PUBLIC_HEADER "${SOURCE_DIR}/ffi/cactus_ffi.h"
-            MACOSX_FRAMEWORK_INFO_PLIST "${CMAKE_SOURCE_DIR}/Info.plist"
+            PUBLIC_HEADER "${CMAKE_SOURCE_DIR}/cactus.h"
+        )
+
+        add_custom_command(TARGET CXXCactusDarwin POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:CXXCactusDarwin>/Modules"
+            COMMAND ${CMAKE_COMMAND} -E copy
+                "${CMAKE_SOURCE_DIR}/module.modulemap.in"
+                "$<TARGET_FILE_DIR:CXXCactusDarwin>/Modules/module.modulemap"
+        )
+
+        add_custom_command(TARGET CXXCactusDarwin POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:CXXCactusDarwin>/Headers"
+            COMMAND ${CMAKE_COMMAND} -E copy
+                "${CMAKE_SOURCE_DIR}/cactus.h"
+                "$<TARGET_FILE_DIR:CXXCactusDarwin>/Headers/CXXCactusDarwin.h"
         )
     endif()
 endif()
