@@ -39,46 +39,33 @@ if(NOT COMMON_SOURCES)
     message(FATAL_ERROR "No source files found! Check SOURCE_DIR: ${SOURCE_DIR}")
 endif()
 
-if(BUILD_SHARED_LIBS)
-    add_library(CXXCactusDarwin SHARED ${COMMON_SOURCES})
+add_library(CXXCactusDarwin SHARED ${COMMON_SOURCES})
 
-    set_target_properties(CXXCactusDarwin PROPERTIES
-        OUTPUT_NAME "CXXCactusDarwin"
-    )
+set_target_properties(CXXCactusDarwin PROPERTIES
+    FRAMEWORK TRUE
+    FRAMEWORK_VERSION A
+    MACOSX_FRAMEWORK_IDENTIFIER com.cactuscompute.cactus
+    VERSION 1.0.0
+    SOVERSION 1.0.0
+    OUTPUT_NAME "CXXCactusDarwin"
+    PUBLIC_HEADER "${CMAKE_SOURCE_DIR}/cactus.h"
+)
 
-    if(
-        CMAKE_SYSTEM_NAME STREQUAL "iOS"
-        OR CMAKE_SYSTEM_NAME STREQUAL "tvOS"
-        OR CMAKE_SYSTEM_NAME STREQUAL "watchOS"
-        OR CMAKE_SYSTEM_NAME STREQUAL "xrOS"
-        OR CMAKE_SYSTEM_NAME STREQUAL "Darwin"
-    )
-        set_target_properties(CXXCactusDarwin PROPERTIES
-            FRAMEWORK TRUE
-            FRAMEWORK_VERSION A
-            MACOSX_FRAMEWORK_IDENTIFIER com.cactuscompute.cactus
-            VERSION 1.0.0
-            SOVERSION 1.0.0
-            PUBLIC_HEADER "${CMAKE_SOURCE_DIR}/cactus.h"
-        )
+add_custom_command(TARGET CXXCactusDarwin POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_FILE_DIR:CXXCactusDarwin>/Modules"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_SOURCE_DIR}/module.modulemap.in"
+        "$<TARGET_FILE_DIR:CXXCactusDarwin>/Modules/module.modulemap"
+)
 
-        add_custom_command(TARGET CXXCactusDarwin POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E make_directory
-                "$<TARGET_FILE_DIR:CXXCactusDarwin>/Modules"
-            COMMAND ${CMAKE_COMMAND} -E copy
-                "${CMAKE_SOURCE_DIR}/module.modulemap.in"
-                "$<TARGET_FILE_DIR:CXXCactusDarwin>/Modules/module.modulemap"
-        )
-
-        add_custom_command(TARGET CXXCactusDarwin POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E make_directory
-                "$<TARGET_FILE_DIR:CXXCactusDarwin>/Headers"
-            COMMAND ${CMAKE_COMMAND} -E copy
-                "${CMAKE_SOURCE_DIR}/cactus.h"
-                "$<TARGET_FILE_DIR:CXXCactusDarwin>/Headers/CXXCactusDarwin.h"
-        )
-    endif()
-endif()
+add_custom_command(TARGET CXXCactusDarwin POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_FILE_DIR:CXXCactusDarwin>/Headers"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_SOURCE_DIR}/cactus.h"
+        "$<TARGET_FILE_DIR:CXXCactusDarwin>/Headers/CXXCactusDarwin.h"
+)
 
 target_include_directories(CXXCactusDarwin PUBLIC
     ${SOURCE_DIR}
@@ -90,6 +77,9 @@ target_include_directories(CXXCactusDarwin PUBLIC
 
 target_compile_definitions(CXXCactusDarwin PRIVATE
     PLATFORM_CPU_ONLY=1
+    __ARM_NEON=1
+    __ARM_FEATURE_FP16_VECTOR_ARITHMETIC=1
+    __ARM_FEATURE_DOTPROD=1
 )
 
 target_compile_options(CXXCactusDarwin PRIVATE
@@ -102,29 +92,17 @@ target_compile_options(CXXCactusDarwin PRIVATE
     -fomit-frame-pointer
     -funroll-loops
     -ftree-vectorize
+    -O3 -DNDEBUG
+    -fvisibility=hidden -fvisibility-inlines-hidden
+    -ffunction-sections -fdata-sections
+    -march=armv8.2-a+fp16+simd+dotprod
 )
 
 if (${CMAKE_BUILD_TYPE} STREQUAL "Debug")
     target_compile_options(CXXCactusDarwin PRIVATE -DCACTUS_IOS_ENABLE_LOGGING)
 endif ()
 
-target_compile_options(CXXCactusDarwin PRIVATE -O3 -DNDEBUG)
-target_compile_options(CXXCactusDarwin PRIVATE -fvisibility=hidden -fvisibility-inlines-hidden)
-target_compile_options(CXXCactusDarwin PRIVATE -ffunction-sections -fdata-sections)
-
-target_compile_options(CXXCactusDarwin PRIVATE
-    -march=armv8.2-a+fp16+simd+dotprod
+target_link_options(CXXCactusDarwin PRIVATE
+    -Wl,-dead_strip
+    -flto
 )
-
-target_compile_definitions(CXXCactusDarwin PRIVATE
-    __ARM_NEON=1
-    __ARM_FEATURE_FP16_VECTOR_ARITHMETIC=1
-    __ARM_FEATURE_DOTPROD=1
-)
-
-target_link_options(CXXCactusDarwin PRIVATE -Wl,-dead_strip)
-target_link_options(CXXCactusDarwin PRIVATE -flto)
-
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)

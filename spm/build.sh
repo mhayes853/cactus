@@ -89,21 +89,19 @@ function build_apple_xcframework() {
         local OUT="$APPLE_OUT/$PLATFORM"
         local VERSION=$4
 
-        local SDK_PATH
-        SDK_PATH=$(xcrun --sdk "$SDK" --show-sdk-path)
+        local SDK_PATH=$(xcrun --sdk "$SDK" --show-sdk-path)
 
         echo "▶️  Building $PLATFORM ($SYS, $ARCH, $SDK)"
 
         cmake -S "$SCRIPT_DIR" \
-            -B "$OUT" \
-            -GXcode \
-            -DCMAKE_SYSTEM_NAME="$SYS" \
-            -DCMAKE_OSX_ARCHITECTURES="$ARCH" \
-            -DCMAKE_OSX_SYSROOT="$SDK_PATH" \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=$VERSION \
-            -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
-            -DCMAKE_IOS_INSTALL_COMBINED=YES
+           -B "$OUT" \
+           -GXcode \
+           -DCMAKE_SYSTEM_NAME="$SYS" \
+           -DCMAKE_OSX_ARCHITECTURES="$ARCH" \
+           -DCMAKE_OSX_SYSROOT="$SDK_PATH" \
+           -DCMAKE_OSX_DEPLOYMENT_TARGET=$VERSION \
+           -DBUILD_SHARED_LIBS=ON \
+           -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE"
 
         cmake --build "$OUT" --config "$CMAKE_BUILD_TYPE" -j "$n_cpu"
     }
@@ -140,9 +138,13 @@ function build_apple_xcframework() {
     build_apple_target "watchos_sim" "watchOS" "watchsimulator" 6.0
     WATCHOS_SIM=$(find_framework "watchos_sim" "-watchsimulator")
 
+    echo "🛠️ Building visionOS"
+    build_apple_target "visionos" "visionOS" "xros" 1.0
+    VISIONOS=$(find_framework "visionos" "-xros")
 
-    # VISIONOS=$(build_apple_target "visionos" "visionOS" "xros" 1.0)
-    # VISIONOS_SIM=$(build_apple_target "visionos_sim" "visionOS" "xrsimulator" 1.0)
+    echo "🛠️ Building visionOS Simulator"
+    build_apple_target "visionos_sim" "visionOS" "xrsimulator" 1.0
+    VISIONOS_SIM=$(find_framework "visionos_sim" "-xrsimulator")
 
     echo "IOS: $IOS"
     echo "IOS_SIM: $IOS_SIM"
@@ -151,6 +153,8 @@ function build_apple_xcframework() {
     echo "TVOS_SIM: $TVOS_SIM"
     echo "WATCHOS: $WATCHOS"
     echo "WATCHOS_SIM: $WATCHOS_SIM"
+    echo "VISIONOS: $VISIONOS"
+    echo "VISIONOS_SIM: $VISIONOS_SIM"
 
     echo "📦 Creating XCFramework..."
 
@@ -162,6 +166,8 @@ function build_apple_xcframework() {
         -framework "$TVOS_SIM" \
         -framework "$WATCHOS" \
         -framework "$WATCHOS_SIM" \
+        -framework "$VISIONOS" \
+        -framework "$VISIONOS_SIM" \
         -output "$XCFRAMEWORK_PATH"
 
     # macOS Symlinks
