@@ -105,9 +105,6 @@ inline std::vector<cactus::engine::ChatMessage> parse_messages_json(const std::s
                         
                         std::string img_path = json.substr(img_start, img_end - img_start);
                         
-                        std::filesystem::path p(img_path);
-                        img_path = std::filesystem::absolute(p).string();
-                        
                         msg.images.push_back(img_path);
                         out_image_paths.push_back(img_path);
                         img_pos = img_end;
