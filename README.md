@@ -99,6 +99,7 @@ graph.hard_reset();
 | Mac M4 Pro | 582tps/77tps (76MB RAM) | 0.2s/76tps (87MB RAM) | 0.1s/119tps (73MB RAM) |
 | iPad/Mac M4 | 379tps/46tps (30MB RAM) | 0.2s/46tps (53MB RAM) | 0.2s/100tp (122MB RAM) |
 | iPad/Mac M2 | 315tps/42tps (181MB RAM) | 0.3s/42tps (426MB RAM) | 0.3s/86tps (160MB RAM) |
+| Mac M1 Pro | 189tps/41tps (638MB RAM) | 1.0s/45tps (957MB RAM) | 1.9s/79tps (320MB RAM) |
 | iPhone 17 Pro | 300tps/33tps (108MB RAM)| 0.3s/33tps (156MB RAM) | 0.3s/114tps (177MB RAM)|
 | Galaxy S25 Ultra | 226tps/36tps (1.2GB RAM) | 2.6s/33tps (2GB RAM) | 2.3s/90tps (363MB RAM) |
 | Pixel 10 Pro | - | - | - |
@@ -108,6 +109,7 @@ graph.hard_reset();
 |--------|--------|--------|----------|
 | iPad/Mac M2 | 998tps/101tps (334MB RAM) | 0.2s/109tps (146MB RAM) | 0.3s/395tps (201MB RAM) |
 | iPad/Mac M1 | - | - | - |
+| Mac M1 Pro | 700tps/89tps (449MB RAM) | 0.3s/100tps (294MB RAM) | 0.7s/300tps (270MB RAM) |
 | iPhone 13 Mini | - | - | - |
 | Galaxy A56 | - | - | - |
 | Pixel 6a | 218tps/44tps (395MB RAM)| 2.5s/36tps (631MB RAM) | 1.5s/189tps (111MB RAM)|
