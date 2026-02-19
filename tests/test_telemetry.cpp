@@ -3,6 +3,7 @@
 #include "../cactus/kernel/kernel_utils.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <cstdio>
 #include <dirent.h>
 #include <fstream>
@@ -27,6 +28,12 @@ int count_events(const std::string& file_path) {
     }
     return count;
 }
+
+enum class CloudTelemetryTestResult {
+    Passed,
+    Failed,
+    Skipped,
+};
 
 bool test_record_many_then_flush() {
     const std::string cache_dir = make_temp_dir("cactus_record_many_flush");
@@ -130,11 +137,42 @@ bool test_record_and_flush_race_no_deadlock() {
     return all_completed && event_count == expected_event_count;
 }
 
+CloudTelemetryTestResult test_cloud_upload_record_then_flush() {
+    const char* telemetry_key = std::getenv("CACTUS_TEST_TELEMETRY_KEY");
+    if (!telemetry_key || telemetry_key[0] == '\0') {
+        return CloudTelemetryTestResult::Skipped;
+    }
+
+    const std::string cache_dir = make_temp_dir("cactus_cloud_telemetry");
+    const std::string completion_log = cache_dir + "/completion.log";
+
+    cactus::telemetry::setTelemetryEnvironment("cpp", cache_dir.c_str());
+    cactus::telemetry::setCloudDisabled(false);
+    cactus::telemetry::init("8D241CBA-D092-4779-B5E0-68E573B17512", "cloud-upload", telemetry_key);
+
+    cactus::telemetry::recordCompletion("cloud-model", true, 7.0, 19.0, 15.0, 9, "cloud-ok");
+    cactus::telemetry::flush();
+
+    const int cached_count = count_events(completion_log);
+
+    cactus::telemetry::shutdown();
+    std::remove(completion_log.c_str());
+    rmdir(cache_dir.c_str());
+
+    return cached_count == 0 ? CloudTelemetryTestResult::Passed : CloudTelemetryTestResult::Failed;
+}
+
 int main() {
     TestUtils::TestRunner runner("Telemetry Tests");
     runner.run_test("Record many then Flush", test_record_many_then_flush());
     runner.run_test("Shutdown then Reinit", test_shutdown_then_reinit_then_record());
     runner.run_test("Record and Flush Race", test_record_and_flush_race_no_deadlock());
+    CloudTelemetryTestResult cloud_result = test_cloud_upload_record_then_flush();
+    if (cloud_result == CloudTelemetryTestResult::Skipped) {
+        runner.log_skip("Cloud record + Flush", "CACTUS_TEST_TELEMETRY_KEY not set");
+    } else {
+        runner.run_test("Cloud record + Flush", cloud_result == CloudTelemetryTestResult::Passed);
+    }
     runner.print_summary();
     return runner.all_passed() ? 0 : 1;
 }

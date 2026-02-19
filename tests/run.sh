@@ -17,6 +17,7 @@ ANDROID_MODE=false
 IOS_MODE=false
 NO_REBUILD=false
 ONLY_EXEC=""
+TELEMETRY_KEY=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -48,6 +49,10 @@ while [[ $# -gt 0 ]]; do
             ONLY_EXEC="$2"
             shift 2
             ;;
+        --telemetry-key)
+            TELEMETRY_KEY="$2"
+            shift 2
+            ;;
         --precision)
             PRECISION="$2"
             shift 2
@@ -64,6 +69,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --ios                     Run tests on iOS device or simulator"
             echo "  --no-rebuild              Skip building cactus library and tests"
             echo "  --only <test_name>        Only run the specified test (engine, graph, index, kernel, kv_cache, performance, etc)"
+            echo "  --telemetry-key <key>     Cloud telemetry key for telemetry upload test"
             echo "  --help, -h                Show this help message"
             exit 0
             ;;
@@ -84,6 +90,10 @@ if [ ! -z "$PRECISION" ]; then
     PRECISION_FLAG="--precision $PRECISION"
 else
     PRECISION_FLAG=""
+fi
+
+if [ ! -z "$TELEMETRY_KEY" ]; then
+    echo "Using telemetry key: [set]"
 fi
 
 echo ""
@@ -155,6 +165,11 @@ export CACTUS_TEST_TRANSCRIBE_MODEL="$PROJECT_ROOT/weights/$TRANSCRIBE_MODEL_DIR
 export CACTUS_TEST_VAD_MODEL="$PROJECT_ROOT/weights/$VAD_MODEL_DIR"
 export CACTUS_TEST_ASSETS="$PROJECT_ROOT/tests/assets"
 export CACTUS_INDEX_PATH="$PROJECT_ROOT/tests/assets"
+if [ ! -z "$TELEMETRY_KEY" ]; then
+    export CACTUS_TEST_TELEMETRY_KEY="$TELEMETRY_KEY"
+    export CACTUS_CLOUD_KEY="$TELEMETRY_KEY"
+    unset CACTUS_NO_CLOUD_TELE
+fi
 
 echo "Using model path: $CACTUS_TEST_MODEL"
 echo "Using transcribe model path: $CACTUS_TEST_TRANSCRIBE_MODEL"
