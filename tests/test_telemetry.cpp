@@ -1,9 +1,12 @@
 #include "test_utils.h"
 #include "../cactus/telemetry/telemetry.h"
+#include "../cactus/kernel/kernel_utils.h"
 
+#include <chrono>
 #include <cstdio>
 #include <dirent.h>
 #include <fstream>
+#include <future>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -73,10 +76,65 @@ bool test_shutdown_then_reinit_then_record() {
     return lines_before_shutdown > 0 && lines_after_reinit > lines_before_shutdown;
 }
 
+bool test_record_and_flush_race_no_deadlock() {
+    const std::string cache_dir = make_temp_dir("cactus_telemetry_race");
+
+    cactus::telemetry::setTelemetryEnvironment("cpp-test", cache_dir.c_str());
+    cactus::telemetry::setCloudDisabled(true);
+    cactus::telemetry::init("telemetry-test-project", "race-test", nullptr);
+
+    constexpr int producer_tasks = 8;
+    constexpr int records_per_task = 200;
+    constexpr int flusher_tasks = 4;
+    constexpr int flushes_per_task = 40;
+    constexpr int expected_event_count = producer_tasks * records_per_task;
+
+    auto& pool = CactusThreading::get_thread_pool();
+    std::vector<std::future<void>> futures;
+    futures.reserve(producer_tasks + flusher_tasks);
+
+    for (int i = 0; i < producer_tasks; ++i) {
+        futures.push_back(pool.enqueue([]() {
+            for (int j = 0; j < records_per_task; ++j) {
+                cactus::telemetry::recordCompletion("race-model", true, 1.0, 1.0, 2.0, 1, "race");
+            }
+        }));
+    }
+
+    for (int i = 0; i < flusher_tasks; ++i) {
+        futures.push_back(pool.enqueue([]() {
+            for (int j = 0; j < flushes_per_task; ++j) {
+                cactus::telemetry::flush();
+            }
+        }));
+    }
+
+    bool all_completed = true;
+    for (auto& future : futures) {
+        if (future.wait_for(std::chrono::seconds(10)) != std::future_status::ready) {
+            all_completed = false;
+            break;
+        }
+        future.get();
+    }
+
+    cactus::telemetry::flush();
+
+    const std::string completion_log = cache_dir + "/completion.log";
+    const int event_count = count_events(completion_log);
+
+    cactus::telemetry::shutdown();
+    std::remove(completion_log.c_str());
+    rmdir(cache_dir.c_str());
+
+    return all_completed && event_count == expected_event_count;
+}
+
 int main() {
     TestUtils::TestRunner runner("Telemetry Tests");
     runner.run_test("Record many then Flush", test_record_many_then_flush());
     runner.run_test("Shutdown then Reinit", test_shutdown_then_reinit_then_record());
+    runner.run_test("Record and Flush Race", test_record_and_flush_race_no_deadlock());
     runner.print_summary();
     return runner.all_passed() ? 0 : 1;
 }
