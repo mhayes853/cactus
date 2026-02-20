@@ -1143,16 +1143,8 @@ def cmd_test(args):
         cmd.append("--ios")
     if args.only:
         cmd.extend(["--only", args.only])
-    if getattr(args, 'telemetry_key', None):
-        cmd.extend(["--telemetry-key", args.telemetry_key])
-
     env = os.environ.copy()
-    telemetry_key = getattr(args, 'telemetry_key', None)
-    if telemetry_key:
-        env["CACTUS_TEST_TELEMETRY_KEY"] = telemetry_key
-        env["CACTUS_CLOUD_KEY"] = telemetry_key
-        env.pop("CACTUS_NO_CLOUD_TELE", None)
-    elif getattr(args, 'enable_telemetry', False):
+    if getattr(args, 'enable_telemetry', False):
         env.pop("CACTUS_NO_CLOUD_TELE", None)
     else:
         env["CACTUS_NO_CLOUD_TELE"] = "1"
@@ -1473,7 +1465,6 @@ def create_parser():
     --reconvert                        force model weights reconversion from source
     --no-rebuild                       skip building library and tests
     --only <test_name>                 run specific test (engine, graph, index, kernel, kv_cache, performance, etc)
-    --telemetry-key <key>              enable cloud telemetry upload test using this key
     --ios                              run on connected iPhone
     --android                          run on connected Android
 
@@ -1601,8 +1592,6 @@ def create_parser():
     test_parser.add_argument('--ios', action='store_true',
                              help='Run tests on iOS')
     test_parser.add_argument('--only', help='Only run the specified test (engine, graph, index, kernel, kv_cache, performance, etc)')
-    test_parser.add_argument('--telemetry-key',
-                             help='Cloud telemetry key used by telemetry upload integration test')
     test_parser.add_argument('--enable-telemetry', action='store_true',
                              help='Enable cloud telemetry (disabled by default in tests)')
     test_parser.add_argument('--reconvert', action='store_true',
