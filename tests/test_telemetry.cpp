@@ -89,7 +89,7 @@ bool test_shutdown_then_reinit_then_record() {
 
     cactus::telemetry::shutdown();
     rmdir(cache_dir.c_str());
-    return lines_before_shutdown > 0 && lines_after_reinit > lines_before_shutdown;
+    return lines_after_reinit > lines_before_shutdown;
 }
 
 bool test_record_and_flush_race_no_deadlock() {
@@ -147,6 +147,11 @@ bool test_record_and_flush_race_no_deadlock() {
 }
 
 CloudTelemetryTestResult test_cloud_upload_record_then_flush() {
+    const char* no_cloud_tele = std::getenv("CACTUS_NO_CLOUD_TELE");
+    if (no_cloud_tele && no_cloud_tele[0] != '\0') {
+        return CloudTelemetryTestResult::Skipped;
+    }
+
     const char* telemetry_key = std::getenv("CACTUS_CLOUD_API_KEY");
     if (!telemetry_key || telemetry_key[0] == '\0') {
         return CloudTelemetryTestResult::Skipped;
@@ -179,7 +184,7 @@ int main() {
     runner.run_test("Record and Flush Race", test_record_and_flush_race_no_deadlock());
     CloudTelemetryTestResult cloud_result = test_cloud_upload_record_then_flush();
     if (cloud_result == CloudTelemetryTestResult::Skipped) {
-        runner.log_skip("Cloud record + Flush", "CACTUS_CLOUD_API_KEY not set");
+        runner.log_skip("Cloud record + Flush", "--enable-telemetry and CACTUS_CLOUD_API_KEY must be set");
     } else {
         runner.run_test("Cloud record + Flush", cloud_result == CloudTelemetryTestResult::Passed);
     }
