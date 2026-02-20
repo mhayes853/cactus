@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <uuid/uuid.h>
 
 std::string make_temp_dir(const char* prefix) {
     char pattern[256] = {0};
@@ -27,6 +28,14 @@ int count_events(const std::string& file_path) {
         ++count;
     }
     return count;
+}
+
+std::string random_project_id() {
+    uuid_t uuid;
+    uuid_generate_random(uuid);
+    char uuid_str[37];
+    uuid_unparse_lower(uuid, uuid_str);
+    return std::string(uuid_str);
 }
 
 enum class CloudTelemetryTestResult {
@@ -145,10 +154,11 @@ CloudTelemetryTestResult test_cloud_upload_record_then_flush() {
 
     const std::string cache_dir = make_temp_dir("cactus_cloud_telemetry");
     const std::string completion_log = cache_dir + "/completion.log";
+    const std::string project_id = random_project_id();
 
     cactus::telemetry::setTelemetryEnvironment("cpp", cache_dir.c_str());
     cactus::telemetry::setCloudDisabled(false);
-    cactus::telemetry::init("8D241CBA-D092-4779-B5E0-68E573B17512", "cloud-upload", telemetry_key);
+    cactus::telemetry::init(project_id.c_str(), "cloud-upload", telemetry_key);
 
     cactus::telemetry::recordCompletion("cloud-model", true, 7.0, 19.0, 15.0, 9, "cloud-ok");
     cactus::telemetry::flush();
