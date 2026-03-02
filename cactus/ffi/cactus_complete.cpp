@@ -127,7 +127,7 @@ struct EntropyState {
     }
 };
 
-std::string compute_image_signature(const std::string& image_path) {
+CactusModelHandle::ProcessedImage compute_image_signature(const std::string& image_path) {
     std::filesystem::path normalized_path(image_path);
     std::error_code ec;
 
@@ -136,14 +136,8 @@ std::string compute_image_signature(const std::string& image_path) {
         normalized_path = absolute_path;
     }
 
-    ec.clear();
-    auto canonical_path = std::filesystem::weakly_canonical(normalized_path, ec);
-    if (!ec) {
-        normalized_path = canonical_path;
-    }
-
-    std::ostringstream signature;
-    signature << normalized_path.string();
+    CactusModelHandle::ProcessedImage image;
+    image.path = normalized_path.string();
 
     ec.clear();
     auto status = std::filesystem::status(normalized_path, ec);
@@ -153,20 +147,20 @@ std::string compute_image_signature(const std::string& image_path) {
         auto file_size = std::filesystem::file_size(normalized_path, size_ec);
         auto mtime = std::filesystem::last_write_time(normalized_path, time_ec);
         if (!size_ec && !time_ec) {
-            auto ticks = static_cast<long long>(mtime.time_since_epoch().count());
-            signature << ":" << file_size << ":" << ticks;
+            image.file_size = static_cast<size_t>(file_size);
+            image.timestamp = static_cast<long long>(mtime.time_since_epoch().count());
         }
     }
 
-    return signature.str();
+    return image;
 }
 
-std::vector<std::vector<std::string>> collect_message_image_signatures(const std::vector<ChatMessage>& messages) {
-    std::vector<std::vector<std::string>> message_signatures;
+std::vector<std::vector<CactusModelHandle::ProcessedImage>> images_from_message(const std::vector<ChatMessage>& messages) {
+    std::vector<std::vector<CactusModelHandle::ProcessedImage>> message_signatures;
     message_signatures.reserve(messages.size());
 
     for (const auto& message : messages) {
-        std::vector<std::string> image_signatures;
+        std::vector<CactusModelHandle::ProcessedImage> image_signatures;
         image_signatures.reserve(message.images.size());
         for (const auto& image_path : message.images) {
             image_signatures.push_back(compute_image_signature(image_path));
@@ -177,7 +171,7 @@ std::vector<std::vector<std::string>> collect_message_image_signatures(const std
     return message_signatures;
 }
 
-bool has_image_context(const std::vector<std::vector<std::string>>& message_image_signatures) {
+bool has_image_context(const std::vector<std::vector<CactusModelHandle::ProcessedImage>>& message_image_signatures) {
     for (const auto& message_images : message_image_signatures) {
         if (!message_images.empty()) {
             return true;
@@ -189,7 +183,7 @@ bool has_image_context(const std::vector<std::vector<std::string>>& message_imag
 bool prompt_context_matches(
     const CactusModelHandle* handle,
     const std::vector<uint32_t>& current_prompt_tokens,
-    const std::vector<std::vector<std::string>>& current_message_image_signatures,
+    const std::vector<std::vector<CactusModelHandle::ProcessedImage>>& current_prompt_images,
     bool has_images
 ) {
     if (handle->processed_tokens.empty()) {
@@ -205,10 +199,10 @@ bool prompt_context_matches(
     }
 
     if (has_images) {
-        return current_message_image_signatures == handle->message_image_signatures;
+        return current_prompt_images == handle->processed_images;
     }
 
-    return !has_image_context(handle->message_image_signatures);
+    return !has_image_context(handle->processed_images);
 }
 
 uint32_t generate_first_token(
@@ -354,19 +348,19 @@ int cactus_complete(
         }
 
         std::vector<uint32_t> current_prompt_tokens = tokenizer->encode(full_prompt);
-        auto current_message_image_signatures = collect_message_image_signatures(messages);
+        auto current_prompt_images = images_from_message(messages);
 
         CACTUS_LOG_DEBUG("complete", "Prompt tokens: " << current_prompt_tokens.size() << ", max_tokens: " << max_tokens);
 
         std::vector<uint32_t> tokens_to_process;
 
-        bool has_images = has_image_context(current_message_image_signatures);
-        bool is_prefix = prompt_context_matches(handle, current_prompt_tokens, current_message_image_signatures, has_images);
+        bool has_images = has_image_context(current_prompt_images);
+        bool is_prefix = prompt_context_matches(handle, current_prompt_tokens, current_prompt_images, has_images);
 
         if (handle->processed_tokens.empty() || !is_prefix) {
             handle->model->reset_cache();
             handle->processed_tokens.clear();
-            handle->message_image_signatures.clear();
+            handle->processed_images.clear();
             tokens_to_process = current_prompt_tokens;
         } else {
             tokens_to_process.assign(current_prompt_tokens.begin() + handle->processed_tokens.size(), current_prompt_tokens.end());
@@ -384,7 +378,7 @@ int cactus_complete(
                                                     temperature, top_p, top_k, &first_token_entropy);
 
         handle->processed_tokens = current_prompt_tokens;
-        handle->message_image_signatures = current_message_image_signatures;
+        handle->processed_images = current_prompt_images;
 
         auto token_end = std::chrono::high_resolution_clock::now();
         time_to_first_token = std::chrono::duration_cast<std::chrono::microseconds>(token_end - start_time).count() / 1000.0;
@@ -693,10 +687,10 @@ int cactus_prefill(
         }
 
         std::vector<uint32_t> current_prompt_tokens = tokenizer->encode(full_prompt);
-        auto current_message_image_signatures = collect_message_image_signatures(messages);
-        bool has_images = has_image_context(current_message_image_signatures);
+        auto current_prompt_images = images_from_message(messages);
+        bool has_images = has_image_context(current_prompt_images);
 
-        bool is_prefix = prompt_context_matches(handle, current_prompt_tokens, current_message_image_signatures, has_images);
+        bool is_prefix = prompt_context_matches(handle, current_prompt_tokens, current_prompt_images, has_images);
         bool is_exact_match = is_prefix && current_prompt_tokens.size() == handle->processed_tokens.size();
 
         if (is_exact_match) {
@@ -719,7 +713,7 @@ int cactus_prefill(
         if (!is_prefix) {
             handle->model->reset_cache();
             handle->processed_tokens.clear();
-            handle->message_image_signatures.clear();
+            handle->processed_images.clear();
             tokens_to_prefill_input = current_prompt_tokens;
         } else {
             tokens_to_prefill_input.assign(
@@ -745,7 +739,7 @@ int cactus_prefill(
         if (!handle->processed_tokens.empty()) {
             handle->processed_tokens.pop_back();
         }
-        handle->message_image_signatures = current_message_image_signatures;
+        handle->processed_images = current_prompt_images;
 
         auto end_time = std::chrono::high_resolution_clock::now();
         double elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() / 1000.0;
