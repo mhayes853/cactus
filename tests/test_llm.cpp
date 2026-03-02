@@ -352,6 +352,70 @@ bool test_prefill_prefix_extension_reuse() {
     return prefill_success && second_call_prefilled && warm_reused_prefix;
 }
 
+bool test_prefill_invalidated_on_message_change() {
+    std::cout << "\n╔══════════════════════════════════════════╗\n"
+              << "║" << std::setw(42) << std::left << " PREFILL INVALIDATION (LLM) TEST" << "║\n"
+              << "╚══════════════════════════════════════════╝\n";
+
+    cactus_model_t model = cactus_init(g_model_path, nullptr, false);
+    if (!model) {
+        std::cerr << "[✗] Failed to initialize model\n";
+        return false;
+    }
+
+    const char* prefill_messages = R"([
+        {"role": "system", "content": "You are a helpful assistant. Be concise."},
+        {"role": "user", "content": "Summarize the phrase 'brainrot' in one sentence."}
+    ])";
+
+    const char* complete_messages = R"([
+        {"role": "system", "content": "You are a helpful assistant. Be concise."},
+        {"role": "user", "content": "Give one sentence about the power of the 'brainrot'."}
+    ])";
+
+    const char* options = R"({
+        "max_tokens": 128,
+        "stop_sequences": ["<|im_end|>", "<end_of_turn>"],
+        "confidence_threshold": -1.0,
+        "telemetry_enabled": false
+    })";
+
+    char prefill_response[2048] = {0};
+    int prefill_result = cactus_prefill(model, prefill_messages, prefill_response, sizeof(prefill_response), nullptr, nullptr);
+    Metrics prefill_metrics;
+    prefill_metrics.parse(prefill_response);
+
+    char complete_response_warm[4096] = {0};
+    int complete_result_warm = cactus_complete(model, complete_messages, complete_response_warm, sizeof(complete_response_warm),
+                                               options, nullptr, nullptr, nullptr);
+    Metrics warm_metrics;
+    warm_metrics.parse(complete_response_warm);
+
+    cactus_reset(model);
+
+    char complete_response_cold[4096] = {0};
+    int complete_result_cold = cactus_complete(model, complete_messages, complete_response_cold, sizeof(complete_response_cold),
+                                               options, nullptr, nullptr, nullptr);
+    Metrics cold_metrics;
+    cold_metrics.parse(complete_response_cold);
+
+    std::cout << "\n\n[Results]\n";
+    std::cout << "├─ Prefill success: " << ((prefill_result > 0 && prefill_metrics.success) ? "YES" : "NO") << "\n"
+              << "├─ Complete(warm mismatched) prefill_tokens: " << warm_metrics.prefill_tokens << "\n"
+              << "├─ Complete(cold) prefill_tokens: " << cold_metrics.prefill_tokens << "\n";
+
+    bool all_success = prefill_result > 0 && prefill_metrics.success
+        && complete_result_warm > 0 && warm_metrics.success
+        && complete_result_cold > 0 && cold_metrics.success;
+    bool invalidated = warm_metrics.prefill_tokens == cold_metrics.prefill_tokens;
+
+    std::cout << "├─ Calls successful: " << (all_success ? "YES" : "NO") << "\n"
+              << "└─ Mismatch invalidated cache: " << (invalidated ? "YES" : "NO") << std::endl;
+
+    cactus_destroy(model);
+    return all_success && invalidated;
+}
+
 bool test_tool_call() {
     const char* messages = R"([
         {"role": "system", "content": "You are a helpful assistant that can use tools."},
@@ -538,6 +602,7 @@ int main() {
     runner.run_test("prefill", test_prefill());
     runner.run_test("prefill_idempotent_reuse", test_prefill_idempotent_reuse());
     runner.run_test("prefill_prefix_extension_reuse", test_prefill_prefix_extension_reuse());
+    runner.run_test("prefill_invalidated_on_message_change", test_prefill_invalidated_on_message_change());
     runner.run_test("tool_calls", test_tool_call());
     runner.run_test("tool_multiple_tool_call_invocations", test_multiple_tool_call_invocations());
     runner.run_test("tool_calls_with_three_tools", test_tool_call_with_three_tools());
