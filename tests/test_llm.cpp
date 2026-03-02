@@ -137,7 +137,7 @@ bool test_prefill() {
     const char* complete_options = R"({
         "max_tokens": 256,
         "stop_sequences": ["<|im_end|>", "<end_of_turn>"],
-        "confidence_threshold": -1.0,
+        "confidence_threshold": 0.0,
         "telemetry_enabled": false
     })";
 
@@ -376,7 +376,7 @@ bool test_prefill_invalidated_on_message_change() {
     const char* options = R"({
         "max_tokens": 128,
         "stop_sequences": ["<|im_end|>", "<end_of_turn>"],
-        "confidence_threshold": -1.0,
+        "confidence_threshold": 0.0,
         "telemetry_enabled": false
     })";
 
