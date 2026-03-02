@@ -14,6 +14,100 @@ static const char* g_options = R"({
     "telemetry_enabled": false
     })";
 
+bool test_prefill_with_images() {
+    std::cout << "\n╔══════════════════════════════════════════╗\n"
+              << "║" << std::setw(42) << std::left << "      PREFILL WITH IMAGES TEST" << "║\n"
+              << "╚══════════════════════════════════════════╝\n";
+
+    std::string model_path_str(g_model_path ? g_model_path : "");
+    std::string vision_file = model_path_str + "/vision_patch_embedding.weights";
+    std::ifstream vf(vision_file);
+    if (!vf.good()) {
+        std::cout << "⊘ SKIP │ Vision weights not found\n";
+        return true;
+    }
+    vf.close();
+
+    if (!g_assets_path) {
+        std::cout << "⊘ SKIP │ CACTUS_TEST_ASSETS not set\n";
+        return true;
+    }
+
+    std::string img_path = std::string(g_assets_path) + "/test_monkey.png";
+    std::ifstream imgf(img_path);
+    if (!imgf.good()) {
+        std::cout << "⊘ SKIP │ test_monkey.png not found\n";
+        return true;
+    }
+    imgf.close();
+
+    cactus_model_t model = cactus_init(g_model_path, nullptr, false);
+    if (!model) {
+        std::cerr << "[✗] Failed to initialize model\n";
+        return false;
+    }
+
+    std::string messages = "[{\"role\": \"user\", \"content\": \"Describe this image in one sentence.\", \"images\": [\""
+        + img_path + "\"]}]";
+
+    const char* complete_options = R"({
+        "max_tokens": 128,
+        "stop_sequences": ["<|im_end|>", "<end_of_turn>"],
+        "confidence_threshold": -1.0,
+        "telemetry_enabled": false
+    })";
+
+    char prefill_response[2048] = {0};
+    Timer prefill_timer;
+    int prefill_result = cactus_prefill(model, messages.c_str(), prefill_response, sizeof(prefill_response), nullptr, nullptr);
+    double prefill_elapsed_ms = prefill_timer.elapsed_ms();
+    Metrics prefill_metrics;
+    prefill_metrics.parse(prefill_response);
+
+    char complete_response1[4096] = {0};
+    Timer complete_timer1;
+    int complete_result1 = cactus_complete(model, messages.c_str(), complete_response1, sizeof(complete_response1),
+                                           complete_options, nullptr, nullptr, nullptr);
+    double complete_elapsed_ms1 = complete_timer1.elapsed_ms();
+    Metrics complete_metrics1;
+    complete_metrics1.parse(complete_response1);
+
+    cactus_reset(model);
+
+    char complete_response2[4096] = {0};
+    Timer complete_timer2;
+    int complete_result2 = cactus_complete(model, messages.c_str(), complete_response2, sizeof(complete_response2),
+                                           complete_options, nullptr, nullptr, nullptr);
+    double complete_elapsed_ms2 = complete_timer2.elapsed_ms();
+    Metrics complete_metrics2;
+    complete_metrics2.parse(complete_response2);
+
+    std::cout << "\n\n[Results]\n";
+    std::cout << "├─ Prefill status: " << (prefill_result > 0 ? "OK" : "FAILED") << "\n"
+              << "├─ Prefill benchmark: elapsed_ms=" << std::fixed << std::setprecision(2) << prefill_elapsed_ms
+              << ", prefill_tokens=" << std::setprecision(0) << prefill_metrics.prefill_tokens
+              << ", prefill_tps=" << std::setprecision(2) << prefill_metrics.prefill_tps
+              << ", total_time_ms=" << std::setprecision(2) << prefill_metrics.total_ms << "\n";
+    std::cout << "├─ Complete#1 metrics:\n";
+    complete_metrics1.print_json();
+    std::cout << "├─ Complete#2 metrics:\n";
+    complete_metrics2.print_json();
+    std::cout << "├─ Complete elapsed ms: #1=" << complete_elapsed_ms1
+              << ", #2=" << complete_elapsed_ms2 << "\n";
+
+    bool prefill_success = prefill_result > 0 && prefill_metrics.success;
+    bool complete_success = complete_result1 > 0 && complete_result2 > 0
+        && complete_metrics1.success && complete_metrics2.success;
+    bool prefill_reduced = complete_metrics1.prefill_tokens < complete_metrics2.prefill_tokens;
+
+    std::cout << "├─ Prefill call success: " << (prefill_success ? "YES" : "NO") << "\n"
+              << "├─ Complete calls success: " << (complete_success ? "YES" : "NO") << "\n"
+              << "└─ Prefill tokens #1 <= #2: " << (prefill_reduced ? "YES" : "NO") << std::endl;
+
+    cactus_destroy(model);
+    return prefill_success && complete_success && prefill_reduced;
+}
+
 bool test_vlm_multiturn() {
     std::string model_path_str(g_model_path ? g_model_path : "");
 
@@ -104,6 +198,7 @@ bool test_vlm_multiturn() {
 
 int main() {
     TestUtils::TestRunner runner("VLM Tests");
+    runner.run_test("prefill_with_images", test_prefill_with_images());
     runner.run_test("vlm_multiturn", test_vlm_multiturn());
     runner.print_summary();
     return runner.all_passed() ? 0 : 1;

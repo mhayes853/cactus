@@ -103,6 +103,255 @@ bool test_streaming() {
     return success1 && success2;
 }
 
+bool test_prefill() {
+    std::cout << "\n╔══════════════════════════════════════════╗\n"
+              << "║" << std::setw(42) << std::left << "          PREFILL API TEST" << "║\n"
+              << "╚══════════════════════════════════════════╝\n";
+
+    cactus_model_t model = cactus_init(g_model_path, nullptr, false);
+    if (!model) {
+        std::cerr << "[✗] Failed to initialize model\n";
+        return false;
+    }
+
+    const char* messages = R"([
+        {"role": "system", "content": "You are a helpful assistant. Be concise."},
+        {"role": "user", "content": "Write one short sentence about brainrot."}
+    ])";
+
+    const char* tools = R"([{
+        "type": "function",
+        "function": {
+            "name": "summarize_topic",
+            "description": "Summarize a topic in one short sentence",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string", "description": "Topic to summarize"}
+                },
+                "required": ["topic"]
+            }
+        }
+    }])";
+
+    const char* complete_options = R"({
+        "max_tokens": 256,
+        "stop_sequences": ["<|im_end|>", "<end_of_turn>"],
+        "confidence_threshold": -1.0,
+        "telemetry_enabled": false
+    })";
+
+    char prefill_response[2048] = {0};
+    Timer prefill_timer;
+    int prefill_result = cactus_prefill(model, messages, prefill_response, sizeof(prefill_response), nullptr, tools);
+    double prefill_elapsed_ms = prefill_timer.elapsed_ms();
+
+    Metrics prefill_metrics;
+    prefill_metrics.parse(prefill_response);
+
+    char complete_response1[4096] = {0};
+    Timer complete_timer1;
+    int complete_result1 = cactus_complete(model, messages, complete_response1, sizeof(complete_response1),
+                                           complete_options, tools, nullptr, nullptr);
+    double complete_elapsed_ms1 = complete_timer1.elapsed_ms();
+
+    Metrics complete_metrics1;
+    complete_metrics1.parse(complete_response1);
+
+    cactus_reset(model);
+
+    char complete_response2[4096] = {0};
+    Timer complete_timer2;
+    int complete_result2 = cactus_complete(model, messages, complete_response2, sizeof(complete_response2),
+                                           complete_options, tools, nullptr, nullptr);
+    double complete_elapsed_ms2 = complete_timer2.elapsed_ms();
+
+    Metrics complete_metrics2;
+    complete_metrics2.parse(complete_response2);
+
+    std::cout << "\n\n[Results]\n";
+    std::cout << "├─ Prefill status: " << (prefill_result > 0 ? "OK" : "FAILED") << "\n"
+              << "├─ Prefill benchmark: elapsed_ms=" << std::fixed << std::setprecision(2) << prefill_elapsed_ms
+              << ", prefill_tokens=" << std::setprecision(0) << prefill_metrics.prefill_tokens
+              << ", prefill_tps=" << std::setprecision(2) << prefill_metrics.prefill_tps
+              << ", total_time_ms=" << std::setprecision(2) << prefill_metrics.total_ms << "\n";
+
+    std::cout << "├─ Complete#1 metrics:\n";
+    complete_metrics1.print_json();
+    std::cout << "├─ Complete#2 metrics:\n";
+    complete_metrics2.print_json();
+    std::cout << "├─ Complete elapsed ms: #1=" << complete_elapsed_ms1
+              << ", #2=" << complete_elapsed_ms2 << "\n";
+
+    bool prefill_success = prefill_result > 0 && prefill_metrics.success;
+    bool complete_success = complete_result1 > 0 && complete_result2 > 0
+        && complete_metrics1.success && complete_metrics2.success;
+    bool prefill_reduced = complete_metrics1.prefill_tokens < complete_metrics2.prefill_tokens;
+
+    std::cout << "├─ Prefill call success: " << (prefill_success ? "YES" : "NO") << "\n"
+              << "├─ Complete calls success: " << (complete_success ? "YES" : "NO") << "\n"
+              << "└─ Prefill tokens #1 <= #2: " << (prefill_reduced ? "YES" : "NO") << std::endl;
+
+    cactus_destroy(model);
+    return prefill_success && complete_success && prefill_reduced;
+}
+
+bool test_prefill_idempotent_reuse() {
+    std::cout << "\n╔══════════════════════════════════════════╗\n"
+              << "║" << std::setw(42) << std::left << "     PREFILL IDEMPOTENT REUSE TEST" << "║\n"
+              << "╚══════════════════════════════════════════╝\n";
+
+    cactus_model_t model = cactus_init(g_model_path, nullptr, false);
+    if (!model) {
+        std::cerr << "[✗] Failed to initialize model\n";
+        return false;
+    }
+
+    const char* messages = R"([
+        {"role": "system", "content": "You are a helpful assistant. Be concise."},
+        {"role": "user", "content": "Write one short sentence about brainrot."}
+    ])";
+
+    const char* tools = R"([{
+        "type": "function",
+        "function": {
+            "name": "summarize_topic",
+            "description": "Summarize a topic in one short sentence",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string", "description": "Topic to summarize"}
+                },
+                "required": ["topic"]
+            }
+        }
+    }])";
+
+    char prefill_response1[2048] = {0};
+    Timer prefill_timer1;
+    int prefill_result1 = cactus_prefill(model, messages, prefill_response1, sizeof(prefill_response1), nullptr, tools);
+    double prefill_elapsed_ms1 = prefill_timer1.elapsed_ms();
+
+    Metrics prefill_metrics1;
+    prefill_metrics1.parse(prefill_response1);
+
+    char prefill_response2[2048] = {0};
+    Timer prefill_timer2;
+    int prefill_result2 = cactus_prefill(model, messages, prefill_response2, sizeof(prefill_response2), nullptr, tools);
+    double prefill_elapsed_ms2 = prefill_timer2.elapsed_ms();
+
+    Metrics prefill_metrics2;
+    prefill_metrics2.parse(prefill_response2);
+
+    std::cout << "\n\n[Results]\n";
+    std::cout << "├─ Prefill#1 benchmark: elapsed_ms=" << std::fixed << std::setprecision(2) << prefill_elapsed_ms1
+              << ", prefill_tokens=" << std::setprecision(0) << prefill_metrics1.prefill_tokens
+              << ", prefill_tps=" << std::setprecision(2) << prefill_metrics1.prefill_tps
+              << ", total_time_ms=" << std::setprecision(2) << prefill_metrics1.total_ms << "\n"
+              << "├─ Prefill#2 benchmark: elapsed_ms=" << prefill_elapsed_ms2
+              << ", prefill_tokens=" << std::setprecision(0) << prefill_metrics2.prefill_tokens
+              << ", prefill_tps=" << std::setprecision(2) << prefill_metrics2.prefill_tps
+              << ", total_time_ms=" << std::setprecision(2) << prefill_metrics2.total_ms << "\n";
+
+    bool prefill_success = prefill_result1 > 0 && prefill_result2 > 0
+        && prefill_metrics1.success && prefill_metrics2.success;
+    bool skipped_recompute = prefill_metrics2.prefill_tokens == 0;
+
+    std::cout << "├─ Prefill calls success: " << (prefill_success ? "YES" : "NO") << "\n"
+              << "└─ Second prefill skipped recompute: " << (skipped_recompute ? "YES" : "NO") << std::endl;
+
+    cactus_destroy(model);
+    return prefill_success && skipped_recompute;
+}
+
+bool test_prefill_prefix_extension_reuse() {
+    std::cout << "\n╔══════════════════════════════════════════╗\n"
+              << "║" << std::setw(42) << std::left << "   PREFILL PREFIX EXTENSION TEST" << "║\n"
+              << "╚══════════════════════════════════════════╝\n";
+
+    cactus_model_t model = cactus_init(g_model_path, nullptr, false);
+    if (!model) {
+        std::cerr << "[✗] Failed to initialize model\n";
+        return false;
+    }
+
+    const char* messages_base = R"([
+        {"role": "system", "content": "You are a helpful assistant. Be concise."},
+        {"role": "user", "content": "Write one short sentence about brainrot."}
+    ])";
+
+    const char* messages_extended = R"([
+        {"role": "system", "content": "You are a helpful assistant. Be concise."},
+        {"role": "user", "content": "Write one short sentence about brainrot."},
+        {"role": "assistant", "content": "Brainrot is internet slang for obsessive, meme-heavy online fixation."},
+        {"role": "user", "content": "Now rewrite that in six words."}
+    ])";
+
+    const char* tools = R"([{
+        "type": "function",
+        "function": {
+            "name": "summarize_topic",
+            "description": "Summarize a topic in one short sentence",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string", "description": "Topic to summarize"}
+                },
+                "required": ["topic"]
+            }
+        }
+    }])";
+
+    char prefill_response1[2048] = {0};
+    Timer prefill_timer1;
+    int prefill_result1 = cactus_prefill(model, messages_base, prefill_response1, sizeof(prefill_response1), nullptr, tools);
+    double prefill_elapsed_ms1 = prefill_timer1.elapsed_ms();
+    Metrics prefill_metrics1;
+    prefill_metrics1.parse(prefill_response1);
+
+    char prefill_response2[2048] = {0};
+    Timer prefill_timer2;
+    int prefill_result2 = cactus_prefill(model, messages_extended, prefill_response2, sizeof(prefill_response2), nullptr, tools);
+    double prefill_elapsed_ms2 = prefill_timer2.elapsed_ms();
+    Metrics prefill_metrics2;
+    prefill_metrics2.parse(prefill_response2);
+
+    cactus_reset(model);
+
+    char prefill_response3[2048] = {0};
+    Timer prefill_timer3;
+    int prefill_result3 = cactus_prefill(model, messages_extended, prefill_response3, sizeof(prefill_response3), nullptr, tools);
+    double prefill_elapsed_ms3 = prefill_timer3.elapsed_ms();
+    Metrics prefill_metrics3;
+    prefill_metrics3.parse(prefill_response3);
+
+    std::cout << "\n\n[Results]\n";
+    std::cout << "├─ Prefill#1 (base): elapsed_ms=" << std::fixed << std::setprecision(2) << prefill_elapsed_ms1
+              << ", prefill_tokens=" << std::setprecision(0) << prefill_metrics1.prefill_tokens
+              << ", prefill_tps=" << std::setprecision(2) << prefill_metrics1.prefill_tps
+              << ", total_time_ms=" << std::setprecision(2) << prefill_metrics1.total_ms << "\n"
+              << "├─ Prefill#2 (extended, warm): elapsed_ms=" << prefill_elapsed_ms2
+              << ", prefill_tokens=" << std::setprecision(0) << prefill_metrics2.prefill_tokens
+              << ", prefill_tps=" << std::setprecision(2) << prefill_metrics2.prefill_tps
+              << ", total_time_ms=" << std::setprecision(2) << prefill_metrics2.total_ms << "\n"
+              << "├─ Prefill#3 (extended, cold): elapsed_ms=" << prefill_elapsed_ms3
+              << ", prefill_tokens=" << std::setprecision(0) << prefill_metrics3.prefill_tokens
+              << ", prefill_tps=" << std::setprecision(2) << prefill_metrics3.prefill_tps
+              << ", total_time_ms=" << std::setprecision(2) << prefill_metrics3.total_ms << "\n";
+
+    bool prefill_success = prefill_result1 > 0 && prefill_result2 > 0 && prefill_result3 > 0
+        && prefill_metrics1.success && prefill_metrics2.success && prefill_metrics3.success;
+    bool second_call_prefilled = prefill_metrics2.prefill_tokens > 0;
+    bool warm_reused_prefix = prefill_metrics2.prefill_tokens < prefill_metrics3.prefill_tokens;
+
+    std::cout << "├─ Prefill calls success: " << (prefill_success ? "YES" : "NO") << "\n"
+              << "├─ Warm extension prefilled tokens: " << (second_call_prefilled ? "YES" : "NO") << "\n"
+              << "└─ Warm extension < cold extension: " << (warm_reused_prefix ? "YES" : "NO") << std::endl;
+
+    cactus_destroy(model);
+    return prefill_success && second_call_prefilled && warm_reused_prefix;
+}
+
 bool test_tool_call() {
     const char* messages = R"([
         {"role": "system", "content": "You are a helpful assistant that can use tools."},
@@ -286,6 +535,9 @@ int main() {
     TestUtils::TestRunner runner("LLM Tests");
     runner.run_test("1k_context", test_1k_context());
     runner.run_test("streaming", test_streaming());
+    runner.run_test("prefill", test_prefill());
+    runner.run_test("prefill_idempotent_reuse", test_prefill_idempotent_reuse());
+    runner.run_test("prefill_prefix_extension_reuse", test_prefill_prefix_extension_reuse());
     runner.run_test("tool_calls", test_tool_call());
     runner.run_test("tool_multiple_tool_call_invocations", test_multiple_tool_call_invocations());
     runner.run_test("tool_calls_with_three_tools", test_tool_call_with_three_tools());

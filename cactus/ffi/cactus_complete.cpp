@@ -127,9 +127,94 @@ struct EntropyState {
     }
 };
 
+std::string compute_image_signature(const std::string& image_path) {
+    std::filesystem::path normalized_path(image_path);
+    std::error_code ec;
+
+    auto absolute_path = std::filesystem::absolute(normalized_path, ec);
+    if (!ec) {
+        normalized_path = absolute_path;
+    }
+
+    ec.clear();
+    auto canonical_path = std::filesystem::weakly_canonical(normalized_path, ec);
+    if (!ec) {
+        normalized_path = canonical_path;
+    }
+
+    std::ostringstream signature;
+    signature << normalized_path.string();
+
+    ec.clear();
+    auto status = std::filesystem::status(normalized_path, ec);
+    if (!ec && std::filesystem::is_regular_file(status)) {
+        std::error_code size_ec;
+        std::error_code time_ec;
+        auto file_size = std::filesystem::file_size(normalized_path, size_ec);
+        auto mtime = std::filesystem::last_write_time(normalized_path, time_ec);
+        if (!size_ec && !time_ec) {
+            auto ticks = static_cast<long long>(mtime.time_since_epoch().count());
+            signature << ":" << file_size << ":" << ticks;
+        }
+    }
+
+    return signature.str();
+}
+
+std::vector<std::vector<std::string>> collect_message_image_signatures(const std::vector<ChatMessage>& messages) {
+    std::vector<std::vector<std::string>> message_signatures;
+    message_signatures.reserve(messages.size());
+
+    for (const auto& message : messages) {
+        std::vector<std::string> image_signatures;
+        image_signatures.reserve(message.images.size());
+        for (const auto& image_path : message.images) {
+            image_signatures.push_back(compute_image_signature(image_path));
+        }
+        message_signatures.push_back(std::move(image_signatures));
+    }
+
+    return message_signatures;
+}
+
+bool has_image_context(const std::vector<std::vector<std::string>>& message_image_signatures) {
+    for (const auto& message_images : message_image_signatures) {
+        if (!message_images.empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool prompt_context_matches(
+    const CactusModelHandle* handle,
+    const std::vector<uint32_t>& current_prompt_tokens,
+    const std::vector<std::vector<std::string>>& current_message_image_signatures,
+    bool has_images
+) {
+    if (handle->processed_tokens.empty()) {
+        return false;
+    }
+
+    if (current_prompt_tokens.size() < handle->processed_tokens.size()) {
+        return false;
+    }
+
+    if (!std::equal(handle->processed_tokens.begin(), handle->processed_tokens.end(), current_prompt_tokens.begin())) {
+        return false;
+    }
+
+    if (has_images) {
+        return current_message_image_signatures == handle->message_image_signatures;
+    }
+
+    return !has_image_context(handle->message_image_signatures);
+}
+
 uint32_t generate_first_token(
     CactusModelHandle* handle,
     const std::vector<uint32_t>& tokens_to_process,
+    const std::vector<uint32_t>& current_prompt_tokens,
     const std::vector<std::string>& image_paths,
     float temperature, float top_p, size_t top_k,
     float* first_token_entropy
@@ -143,7 +228,7 @@ uint32_t generate_first_token(
     }
 
     if (!image_paths.empty()) {
-        return handle->model->decode_with_images(tokens_to_process, image_paths, temperature, top_p, top_k, "", first_token_entropy);
+        return handle->model->decode_with_images(current_prompt_tokens, image_paths, temperature, top_p, top_k, "", first_token_entropy);
     }
 
     size_t prefill_chunk_size = handle->model->get_prefill_chunk_size();
@@ -155,6 +240,28 @@ uint32_t generate_first_token(
         return handle->model->decode(last_token, temperature, top_p, top_k, "", first_token_entropy);
     }
     return handle->model->decode(tokens_to_process, temperature, top_p, top_k, "", first_token_entropy);
+}
+
+std::string construct_prefill_response_json(
+    bool success,
+    const std::string* error,
+    size_t prefill_tokens,
+    double prefill_tps,
+    double total_time_ms
+) {
+    std::ostringstream json;
+    json << "{";
+    json << "\"success\":" << (success ? "true" : "false") << ",";
+    if (error) {
+        json << "\"error\":\"" << escape_json_string(*error) << "\",";
+    } else {
+        json << "\"error\":null,";
+    }
+    json << "\"prefill_tokens\":" << prefill_tokens << ",";
+    json << "\"prefill_tps\":" << std::fixed << std::setprecision(2) << prefill_tps << ",";
+    json << "\"total_time_ms\":" << std::fixed << std::setprecision(2) << total_time_ms;
+    json << "}";
+    return json.str();
 }
 
 } // anonymous namespace
@@ -247,20 +354,19 @@ int cactus_complete(
         }
 
         std::vector<uint32_t> current_prompt_tokens = tokenizer->encode(full_prompt);
+        auto current_message_image_signatures = collect_message_image_signatures(messages);
 
         CACTUS_LOG_DEBUG("complete", "Prompt tokens: " << current_prompt_tokens.size() << ", max_tokens: " << max_tokens);
 
         std::vector<uint32_t> tokens_to_process;
 
-        bool has_images = !image_paths.empty();
-        bool is_prefix = !has_images &&
-                         (current_prompt_tokens.size() >= handle->processed_tokens.size()) &&
-                         std::equal(handle->processed_tokens.begin(), handle->processed_tokens.end(), current_prompt_tokens.begin());
+        bool has_images = has_image_context(current_message_image_signatures);
+        bool is_prefix = prompt_context_matches(handle, current_prompt_tokens, current_message_image_signatures, has_images);
 
         if (handle->processed_tokens.empty() || !is_prefix) {
-            if (!has_images) {
-                handle->model->reset_cache();
-            }
+            handle->model->reset_cache();
+            handle->processed_tokens.clear();
+            handle->message_image_signatures.clear();
             tokens_to_process = current_prompt_tokens;
         } else {
             tokens_to_process.assign(current_prompt_tokens.begin() + handle->processed_tokens.size(), current_prompt_tokens.end());
@@ -274,10 +380,11 @@ int cactus_complete(
         double time_to_first_token = 0.0;
         float first_token_entropy = 0.0f;
 
-        uint32_t next_token = generate_first_token(handle, tokens_to_process, image_paths,
+        uint32_t next_token = generate_first_token(handle, tokens_to_process, current_prompt_tokens, image_paths,
                                                     temperature, top_p, top_k, &first_token_entropy);
 
         handle->processed_tokens = current_prompt_tokens;
+        handle->message_image_signatures = current_message_image_signatures;
 
         auto token_end = std::chrono::high_resolution_clock::now();
         time_to_first_token = std::chrono::duration_cast<std::chrono::microseconds>(token_end - start_time).count() / 1000.0;
@@ -485,6 +592,192 @@ int cactus_complete(
         auto* h = static_cast<CactusModelHandle*>(model);
         cactus::telemetry::recordCompletion(h ? h->model_name.c_str() : "unknown", metrics);
 
+        return -1;
+    }
+}
+
+int cactus_prefill(
+    cactus_model_t model,
+    const char* messages_json,
+    char* response_buffer,
+    size_t buffer_size,
+    const char* options_json,
+    const char* tools_json
+) {
+    if (!model) {
+        std::string error_msg = last_error_message.empty()
+            ? "Model not initialized. Check model path and files."
+            : last_error_message;
+        if (response_buffer && buffer_size > 0) {
+            std::string result = construct_prefill_response_json(false, &error_msg, 0, 0.0, 0.0);
+            if (result.size() < buffer_size) {
+                std::strcpy(response_buffer, result.c_str());
+            }
+        }
+        return -1;
+    }
+
+    if (!messages_json || !response_buffer || buffer_size == 0) {
+        std::string error_msg = "Invalid parameters";
+        if (response_buffer && buffer_size > 0) {
+            std::string result = construct_prefill_response_json(false, &error_msg, 0, 0.0, 0.0);
+            if (result.size() < buffer_size) {
+                std::strcpy(response_buffer, result.c_str());
+            }
+        }
+        return -1;
+    }
+
+    try {
+        auto start_time = std::chrono::high_resolution_clock::now();
+
+        auto* handle = static_cast<CactusModelHandle*>(model);
+        auto* tokenizer = handle->model->get_tokenizer();
+        if (!tokenizer) {
+            throw std::runtime_error("Tokenizer unavailable");
+        }
+
+        float temperature = 0.0f;
+        float top_p = 0.0f;
+        float confidence_threshold = 0.0f;
+        size_t top_k = 0;
+        size_t max_tokens = 0;
+        size_t tool_rag_top_k = 0;
+        std::vector<std::string> stop_sequences;
+        bool force_tools = false;
+        bool include_stop_sequences = false;
+        bool use_vad = false;
+        bool telemetry_enabled = false;
+        bool auto_handoff = true;
+        size_t cloud_timeout_ms = 15000;
+        bool handoff_with_images = true;
+        parse_options_json(
+            options_json ? options_json : "", temperature,
+            top_p, top_k, max_tokens, stop_sequences,
+            force_tools, tool_rag_top_k, confidence_threshold,
+            include_stop_sequences, use_vad, telemetry_enabled,
+            &auto_handoff, &cloud_timeout_ms, &handoff_with_images
+        );
+
+        std::vector<std::string> image_paths;
+        auto messages = parse_messages_json(messages_json, image_paths);
+        if (messages.empty()) {
+            throw std::runtime_error("No messages provided");
+        }
+
+        inject_rag_context(handle, messages);
+
+        std::vector<ToolFunction> tools;
+        if (tools_json && std::strlen(tools_json) > 0) {
+            tools = parse_tools_json(tools_json);
+        }
+
+        if (tool_rag_top_k > 0 && tools.size() > tool_rag_top_k) {
+            std::string query = extract_last_user_query(messages);
+            if (!query.empty()) {
+                tools = select_relevant_tools(handle, query, tools, tool_rag_top_k);
+            }
+        }
+
+        Config::ModelType model_type = handle->model->get_config().model_type;
+        std::string formatted_tools;
+        if (model_type == Config::ModelType::GEMMA) {
+            formatted_tools = gemma::format_tools(tools);
+        } else {
+            formatted_tools = serialize_tools_json(tools);
+        }
+
+        std::string full_prompt = tokenizer->format_chat_prompt(messages, true, formatted_tools);
+        if (full_prompt.find("ERROR:") == 0) {
+            throw std::runtime_error(full_prompt.substr(6));
+        }
+
+        std::vector<uint32_t> current_prompt_tokens = tokenizer->encode(full_prompt);
+        auto current_message_image_signatures = collect_message_image_signatures(messages);
+        bool has_images = has_image_context(current_message_image_signatures);
+
+        bool is_prefix = prompt_context_matches(handle, current_prompt_tokens, current_message_image_signatures, has_images);
+        bool is_exact_match = is_prefix && current_prompt_tokens.size() == handle->processed_tokens.size();
+
+        if (is_exact_match) {
+            auto end_time = std::chrono::high_resolution_clock::now();
+            double elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() / 1000.0;
+            std::string result = construct_prefill_response_json(true, nullptr, 0, 0.0, elapsed_ms);
+            if (result.size() >= buffer_size) {
+                std::string error_msg = "Response buffer too small";
+                std::string error_json = construct_prefill_response_json(false, &error_msg, 0, 0.0, 0.0);
+                if (error_json.size() < buffer_size) {
+                    std::strcpy(response_buffer, error_json.c_str());
+                }
+                return -1;
+            }
+            std::strcpy(response_buffer, result.c_str());
+            return static_cast<int>(result.size());
+        }
+
+        std::vector<uint32_t> tokens_to_prefill_input;
+        if (!is_prefix) {
+            handle->model->reset_cache();
+            handle->processed_tokens.clear();
+            handle->message_image_signatures.clear();
+            tokens_to_prefill_input = current_prompt_tokens;
+        } else {
+            tokens_to_prefill_input.assign(
+                current_prompt_tokens.begin() + handle->processed_tokens.size(),
+                current_prompt_tokens.end()
+            );
+        }
+
+        size_t prefill_tokens_count = 0;
+        if (tokens_to_prefill_input.size() > 1) {
+            std::vector<uint32_t> prefill_tokens(tokens_to_prefill_input.begin(), tokens_to_prefill_input.end() - 1);
+            prefill_tokens_count = prefill_tokens.size();
+            size_t prefill_chunk_size = handle->model->get_prefill_chunk_size();
+
+            if (has_images) {
+                handle->model->prefill_with_images(prefill_tokens, image_paths, prefill_chunk_size);
+            } else {
+                handle->model->prefill(prefill_tokens, prefill_chunk_size);
+            }
+        }
+
+        handle->processed_tokens = current_prompt_tokens;
+        if (!handle->processed_tokens.empty()) {
+            handle->processed_tokens.pop_back();
+        }
+        handle->message_image_signatures = current_message_image_signatures;
+
+        auto end_time = std::chrono::high_resolution_clock::now();
+        double elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() / 1000.0;
+        double prefill_tps = (prefill_tokens_count > 0 && elapsed_ms > 0.0)
+            ? (static_cast<double>(prefill_tokens_count) * 1000.0) / elapsed_ms
+            : 0.0;
+
+        std::string result = construct_prefill_response_json(true, nullptr, prefill_tokens_count, prefill_tps, elapsed_ms);
+        if (result.size() >= buffer_size) {
+            std::string error_msg = "Response buffer too small";
+            std::string error_json = construct_prefill_response_json(false, &error_msg, 0, 0.0, 0.0);
+            if (error_json.size() < buffer_size) {
+                std::strcpy(response_buffer, error_json.c_str());
+            }
+            return -1;
+        }
+
+        std::strcpy(response_buffer, result.c_str());
+        return static_cast<int>(result.size());
+    } catch (const std::exception& e) {
+        std::string error_msg = e.what();
+        std::string result = construct_prefill_response_json(false, &error_msg, 0, 0.0, 0.0);
+        if (result.size() < buffer_size) {
+            std::strcpy(response_buffer, result.c_str());
+        }
+        return -1;
+    } catch (...) {
+        std::string error_msg = "Unknown error during prefill";
+        std::string result = construct_prefill_response_json(false, &error_msg, 0, 0.0, 0.0);
+        if (result.size() < buffer_size) {
+            std::strcpy(response_buffer, result.c_str());
+        }
         return -1;
     }
 }

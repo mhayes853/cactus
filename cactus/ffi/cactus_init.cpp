@@ -467,6 +467,7 @@ void cactus_reset(cactus_model_t model) {
     auto* handle = static_cast<CactusModelHandle*>(model);
     handle->model->reset_cache();
     handle->processed_tokens.clear();
+    handle->message_image_signatures.clear();
 }
 
 void cactus_stop(cactus_model_t model) {

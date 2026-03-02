@@ -63,6 +63,7 @@ struct CactusModelHandle {
     std::unique_ptr<cactus::engine::Model> vad_model;
     std::atomic<bool> should_stop;
     std::vector<uint32_t> processed_tokens;
+    std::vector<std::vector<std::string>> message_image_signatures;
     std::mutex model_mutex;
     std::string model_name;
     std::unique_ptr<cactus::engine::index::Index> corpus_index;
