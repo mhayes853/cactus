@@ -208,6 +208,23 @@ bool has_image_context(const std::vector<std::vector<CactusModelHandle::Processe
     return false;
 }
 
+bool image_context_prefix_matches(
+    const std::vector<std::vector<CactusModelHandle::ProcessedImage>>& prefix,
+    const std::vector<std::vector<CactusModelHandle::ProcessedImage>>& full
+) {
+    if (prefix.size() > full.size()) {
+        return false;
+    }
+
+    for (size_t i = 0; i < prefix.size(); ++i) {
+        if (prefix[i] != full[i]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool prompt_context_matches(
     const CactusModelHandle* handle,
     const PreparedPrompt& prompt
@@ -225,7 +242,7 @@ bool prompt_context_matches(
     }
 
     if (prompt.has_images) {
-        return prompt.images == handle->processed_images;
+        return image_context_prefix_matches(handle->processed_images, prompt.images);
     }
 
     return !has_image_context(handle->processed_images);
