@@ -127,25 +127,8 @@ struct EntropyState {
     }
 };
 
-struct RequestOptions {
-    float temperature = 0.0f;
-    float top_p = 0.0f;
-    float confidence_threshold = 0.0f;
-    size_t top_k = 0;
-    size_t max_tokens = 0;
-    size_t tool_rag_top_k = 0;
-    size_t cloud_timeout_ms = 15000;
-    std::vector<std::string> stop_sequences;
-    bool force_tools = false;
-    bool include_stop_sequences = false;
-    bool use_vad = false;
-    bool telemetry_enabled = false;
-    bool auto_handoff = true;
-    bool handoff_with_images = true;
-};
-
 struct PreparedPrompt {
-    RequestOptions options;
+    InferenceOptions options;
     Config::ModelType model_type = Config::ModelType::LFM2;
     std::vector<std::string> image_paths;
     std::vector<ChatMessage> messages;
@@ -283,23 +266,7 @@ PreparedPrompt prepare_prompt(
 
     PreparedPrompt prompt;
 
-    parse_options_json(
-        options_json ? options_json : "",
-        prompt.options.temperature,
-        prompt.options.top_p,
-        prompt.options.top_k,
-        prompt.options.max_tokens,
-        prompt.options.stop_sequences,
-        prompt.options.force_tools,
-        prompt.options.tool_rag_top_k,
-        prompt.options.confidence_threshold,
-        prompt.options.include_stop_sequences,
-        prompt.options.use_vad,
-        prompt.options.telemetry_enabled,
-        &prompt.options.auto_handoff,
-        &prompt.options.cloud_timeout_ms,
-        &prompt.options.handoff_with_images
-    );
+    prompt.options = parse_inference_options_json(options_json ? options_json : "");
 
     prompt.messages = parse_messages_json(messages_json, prompt.image_paths);
     if (prompt.messages.empty()) {

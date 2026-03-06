@@ -140,18 +140,9 @@ int cactus_transcribe(
         std::lock_guard<std::mutex> lock(handle->model_mutex);
         handle->should_stop = false;
 
-        float temperature, top_p, confidence_threshold;
-        size_t top_k, max_tokens, tool_rag_top_k;
-        std::vector<std::string> stop_sequences;
-        bool force_tools, include_stop_sequences, use_vad, telemetry_enabled;
         float cloud_handoff_threshold = handle->model->get_config().default_cloud_handoff_threshold;
         const std::string opts = options_json ? options_json : "";
-        parse_options_json(
-            opts.c_str(), temperature,
-            top_p, top_k, max_tokens, stop_sequences,
-            force_tools, tool_rag_top_k, confidence_threshold,
-            include_stop_sequences, use_vad, telemetry_enabled
-        );
+        InferenceOptions options = parse_inference_options_json(opts);
         {
             size_t pos = opts.find("\"cloud_handoff_threshold\"");
             if (pos != std::string::npos) {
@@ -170,8 +161,6 @@ int cactus_transcribe(
         if (force_handoff_env && force_handoff_env[0] == '1' && force_handoff_env[1] == '\0') {
             cloud_handoff_threshold = 0.0001f;
         }
-
-        (void)telemetry_enabled;
 
         bool is_moonshine = handle->model->get_config().model_type == cactus::engine::Config::ModelType::MOONSHINE;
         bool is_parakeet =
@@ -196,12 +185,12 @@ int cactus_transcribe(
             const float audio_length_sec = static_cast<float>(audio_samples.size()) / static_cast<float>(WHISPER_SAMPLE_RATE);
             const float tps = is_parakeet ? 30.0f : 20.0f;
             const size_t estimated = static_cast<size_t>(audio_length_sec * tps);
-            max_tokens = std::max<size_t>(estimated, 100);
+            options.max_tokens = std::max<size_t>(estimated, 100);
         }
 
         std::vector<std::vector<float>> chunks;
 
-        if (use_vad) {
+        if (options.use_vad) {
             auto* vad = static_cast<SileroVADModel*>(handle->vad_model.get());
             auto vad_segments = vad->get_speech_timestamps(audio_samples, {});
             chunks.reserve(vad_segments.size());
@@ -301,7 +290,7 @@ int cactus_transcribe(
         const auto sot_begin = sot_it != initial_tokens.end() ? sot_it : initial_tokens.begin();
 
         for (auto& raw : chunks) {
-            if (handle->should_stop || completion_tokens >= max_tokens) break;
+            if (handle->should_stop || completion_tokens >= options.max_tokens) break;
 
             std::vector<float> chunk_audio = std::move(raw);
             const float chunk_length_sec = static_cast<float>(chunk_audio.size()) / static_cast<float>(WHISPER_SAMPLE_RATE);
@@ -344,7 +333,7 @@ int cactus_transcribe(
 
             CACTUS_LOG_DEBUG("transcribe", "Chunk audio features size: " << chunk_audio.size());
 
-            size_t chunk_max_tokens = max_tokens - completion_tokens;
+            size_t chunk_max_tokens = options.max_tokens - completion_tokens;
             if (!is_parakeet) {
                 size_t max_allowed = tokens.size() < WHISPER_MAX_DECODER_POSITIONS ?
                     WHISPER_MAX_DECODER_POSITIONS - tokens.size() : 0;
@@ -361,7 +350,15 @@ int cactus_transcribe(
                 if (handle->should_stop) break;
 
                 float token_entropy = 0.0f;
-                uint32_t next_token = handle->model->decode_with_audio(tokens, chunk_audio, temperature, top_p, top_k, "", &token_entropy);
+                uint32_t next_token = handle->model->decode_with_audio(
+                    tokens,
+                    chunk_audio,
+                    options.temperature,
+                    options.top_p,
+                    options.top_k,
+                    "",
+                    &token_entropy
+                );
 
                 if (completion_tokens == 0) [[unlikely]] {
                     auto t_first = std::chrono::high_resolution_clock::now();
@@ -489,24 +486,7 @@ int cactus_detect_language(
             return -1;
         }
 
-        float temperature, top_p, confidence_threshold;
-        size_t top_k, max_tokens, tool_rag_top_k;
-        std::vector<std::string> stop_sequences;
-        bool force_tools, include_stop_sequences, use_vad, telemetry_enabled;
-        parse_options_json(
-            options_json ? options_json : "", temperature,
-            top_p, top_k, max_tokens, stop_sequences,
-            force_tools, tool_rag_top_k, confidence_threshold,
-            include_stop_sequences, use_vad, telemetry_enabled
-        );
-        (void)temperature;
-        (void)top_p;
-        (void)top_k;
-        (void)max_tokens;
-        (void)tool_rag_top_k;
-        (void)force_tools;
-        (void)include_stop_sequences;
-        (void)telemetry_enabled;
+        InferenceOptions options = parse_inference_options_json(options_json ? options_json : "");
 
         std::vector<float> audio_buffer;
         if (audio_file_path == nullptr) {
@@ -523,7 +503,7 @@ int cactus_detect_language(
             audio_buffer = resample_to_16k_fp32(audio.samples, audio.sample_rate);
         }
 
-        if (use_vad && handle->vad_model) {
+        if (options.use_vad && handle->vad_model) {
             auto* vad = static_cast<SileroVADModel*>(handle->vad_model.get());
             auto segments = vad->get_speech_timestamps(audio_buffer, {});
 
