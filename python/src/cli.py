@@ -9,8 +9,41 @@ import shutil
 import platform
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).parent.resolve()
-PROJECT_ROOT = SCRIPT_DIR.parent.parent
+SCRIPT_DIR = Path(__file__).resolve().parent
+
+
+def _looks_like_project_root(path: Path) -> bool:
+    return (
+        (path / "python" / "src" / "cli.py").exists()
+        and (path / "cactus").exists()
+        and (path / "tests").exists()
+    )
+
+
+def _resolve_project_root() -> Path:
+    # Optional explicit override for environments running from installed packages.
+    env_root = os.getenv("CACTUS_PROJECT_ROOT", "").strip()
+    if env_root:
+        candidate = Path(env_root).expanduser().resolve()
+        if _looks_like_project_root(candidate):
+            return candidate
+
+    # Prefer the repo containing this CLI module.
+    module_root = SCRIPT_DIR.parent.parent
+    if _looks_like_project_root(module_root):
+        return module_root
+
+    # Fallback: repo containing current working directory.
+    cwd = Path.cwd().resolve()
+    for candidate in [cwd, *cwd.parents]:
+        if _looks_like_project_root(candidate):
+            return candidate
+
+    # Final fallback for unusual layouts.
+    return module_root
+
+
+PROJECT_ROOT = _resolve_project_root()
 DEFAULT_MODEL_ID = "LiquidAI/LFM2.5-1.2B-Instruct"
 DEFAULT_TEST_TRANSCRIBE_MODEL_ID = "nvidia/parakeet-tdt-0.6b-v3"
 DEFAULT_TEST_WHISPER_MODEL_ID = "openai/whisper-small"
@@ -507,8 +540,11 @@ def cmd_download(args):
                 else:
                     raise
 
-            if model_type == 'lfm2_moe':
-                print("  Note: Loading raw checkpoint tensors for lfm2_moe conversion...")
+            if model_type == 'lfm2_moe' or model_type.startswith('qwen3_5'):
+                if model_type == 'lfm2_moe':
+                    print("  Note: Loading raw checkpoint tensors for lfm2_moe conversion...")
+                else:
+                    print(f"  Note: Loading raw checkpoint tensors for {model_type} conversion...")
                 raw_state_dict = _load_raw_hf_state_dict(model_id)
 
                 class _RawModelWrapper:
