@@ -136,6 +136,35 @@ Java_com_cactus_CactusJNI_nativeComplete(JNIEnv* env, jobject, jlong handle,
 }
 
 JNIEXPORT jstring JNICALL
+Java_com_cactus_CactusJNI_nativePrefill(JNIEnv* env, jobject, jlong handle,
+                                         jstring messagesJson, jstring optionsJson,
+                                         jstring toolsJson) {
+    if (handle == 0) { throwCactusException(env, "Model not initialized"); return nullptr; }
+
+    const char* messages = jstring_to_cstr(env, messagesJson);
+    const char* options = jstring_to_cstr(env, optionsJson);
+    const char* tools = jstring_to_cstr(env, toolsJson);
+
+    std::vector<char> buffer(DEFAULT_BUFFER_SIZE);
+
+    int result = cactus_prefill(
+        reinterpret_cast<cactus_model_t>(handle),
+        messages,
+        buffer.data(),
+        buffer.size(),
+        options,
+        tools
+    );
+
+    release_jstring(env, messagesJson, messages);
+    release_jstring(env, optionsJson, options);
+    release_jstring(env, toolsJson, tools);
+
+    if (result < 0) { throwOnError(env); return nullptr; }
+    return env->NewStringUTF(buffer.data());
+}
+
+JNIEXPORT jstring JNICALL
 Java_com_cactus_CactusJNI_nativeTranscribe(JNIEnv* env, jobject, jlong handle,
                                             jstring audioPath, jstring prompt,
                                             jstring optionsJson, jobject callback,
