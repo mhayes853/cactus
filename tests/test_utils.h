@@ -171,6 +171,7 @@ struct PrefillMetrics {
     double prefill_tokens = 0.0;
     double prefill_tps = 0.0;
     double total_ms = 0.0;
+    double ram_mb = 0.0;
 
     void parse(const std::string& json);
     std::string line() const;

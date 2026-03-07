@@ -347,6 +347,7 @@ void PrefillMetrics::parse(const std::string& json) {
     prefill_tokens = json_number(json, "prefill_tokens");
     prefill_tps = json_number(json, "prefill_tps");
     total_ms = json_number(json, "total_time_ms");
+    ram_mb = json_number(json, "ram_usage_mb");
 }
 
 std::string PrefillMetrics::line() const {
@@ -354,7 +355,8 @@ std::string PrefillMetrics::line() const {
     oss << std::fixed << std::setprecision(2)
         << "prefill_tokens=" << std::setprecision(0) << prefill_tokens
         << ", prefill_tps=" << std::setprecision(2) << prefill_tps
-        << ", total_time_ms=" << std::setprecision(2) << total_ms;
+        << ", total_time_ms=" << std::setprecision(2) << total_ms
+        << ", ram_usage_mb=" << std::setprecision(2) << ram_mb;
     return oss.str();
 }
 

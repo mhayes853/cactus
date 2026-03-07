@@ -89,9 +89,71 @@ if result["cloud_handoff"]:
     "total_time_ms": 163.7,
     "prefill_tps": 619.5,
     "decode_tps": 168.4,
+    "ram_usage_mb": 245.7,
     "prefill_tokens": 28,
     "decode_tokens": 12,
     "total_tokens": 40
+}
+```
+
+### Prefill
+
+Pre-processes input text and populates the KV cache without generating output tokens. This reduces latency for subsequent calls to `cactus_complete`.
+
+```python
+result_json = cactus_prefill(
+    handle: int,
+    messages_json: str,              # JSON array of {role, content}
+    options_json: str | None,        # optional inference options
+    tools_json: str | None           # optional tool definitions
+) -> str
+```
+
+```python
+tools = json.dumps([{
+    "type": "function",
+    "function": {
+        "name": "get_weather",
+        "description": "Get weather for a location",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "City, State, Country"}
+            },
+            "required": ["location"]
+        }
+    }
+}])
+
+messages = json.dumps([
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "What is the weather in Paris?"},
+    {"role": "assistant", "content": "<|tool_call_start|>get_weather(location=\"Paris\")<|tool_call_end|>"},
+    {"role": "tool", "content": "{\"name\": \"get_weather\", \"content\": \"Sunny, 72°F\"}"},
+    {"role": "assistant", "content": "It's sunny and 72°F in Paris!"}
+])
+result = json.loads(cactus_prefill(model, messages, None, tools))
+
+completion_messages = json.dumps([
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "What is the weather in Paris?"},
+    {"role": "assistant", "content": "<|tool_call_start|>get_weather(location=\"Paris\")<|tool_call_end|>"},
+    {"role": "tool", "content": "{\"name\": \"get_weather\", \"content\": \"Sunny, 72°F\"}"},
+    {"role": "assistant", "content": "It's sunny and 72°F in Paris!"},
+    {"role": "user", "content": "What about SF?"}
+])
+result = json.loads(cactus_complete(model, completion_messages, None, tools, None))
+```
+
+**Response format:**
+```json
+{
+    "success": true,
+    "error": null,
+    "prefill_tokens": 25,
+    "prefill_tps": 166.1,
+    "total_time_ms": 150.5,
+    "ram_usage_mb": 245.67
 }
 ```
 

@@ -391,7 +391,8 @@ std::string construct_prefill_response_json(
     }
     json << "\"prefill_tokens\":" << prefill_tokens << ",";
     json << "\"prefill_tps\":" << std::fixed << std::setprecision(2) << prefill_tps << ",";
-    json << "\"total_time_ms\":" << std::fixed << std::setprecision(2) << total_time_ms;
+    json << "\"total_time_ms\":" << std::fixed << std::setprecision(2) << total_time_ms << ",";
+    json << "\"ram_usage_mb\":" << std::fixed << std::setprecision(2) << get_ram_usage_mb();
     json << "}";
     return json.str();
 }

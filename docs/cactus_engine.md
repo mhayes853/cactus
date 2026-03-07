@@ -258,7 +258,8 @@ int cactus_prefill(
     "error": null,
     "prefill_tokens": 25,
     "prefill_tps": 166.1,
-    "total_time_ms": 150.5
+    "total_time_ms": 150.5,
+    "ram_usage_mb": 245.67
 }
 ```
 
@@ -269,7 +270,8 @@ int cactus_prefill(
     "error": "Error message here",
     "prefill_tokens": 0,
     "prefill_tps": 0.0,
-    "total_time_ms": 0.0
+    "total_time_ms": 0.0,
+    "ram_usage_mb": 0.0
 }
 ```
 
