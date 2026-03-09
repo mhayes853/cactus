@@ -429,7 +429,7 @@ void Lfm2VlModel::prefill(const std::vector<uint32_t>& tokens, size_t chunk_size
 }
 
 void Lfm2VlModel::prefill_with_images(const std::vector<uint32_t>& tokens, const std::vector<std::string>& image_paths,
-                                      size_t chunk_size, const std::string& profile_file) {
+                                      const std::string& profile_file) {
     if (!initialized_ || !graph_handle_) {
         throw std::runtime_error("Model not initialized - call init() first");
     }
@@ -437,7 +437,7 @@ void Lfm2VlModel::prefill_with_images(const std::vector<uint32_t>& tokens, const
         return;
     }
     if (image_paths.empty()) {
-        prefill(tokens, chunk_size, profile_file);
+        prefill(tokens, get_prefill_chunk_size(), profile_file);
         return;
     }
 
@@ -448,11 +448,7 @@ void Lfm2VlModel::prefill_with_images(const std::vector<uint32_t>& tokens, const
         : ComputeBackend::NPU;
 
     auto forward_result = forward_images(gb, tokens, image_paths, backend, true);
-    if (!profile_file.empty()) {
-        gb->execute(profile_file);
-    } else {
-        gb->execute();
-    }
+    gb->execute(profile_file);
 
     language_model_.post_execute_updates(gb, forward_result.seq_len);
     language_model_.update_kv_cache(gb, forward_result.seq_len);

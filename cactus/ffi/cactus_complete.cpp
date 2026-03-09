@@ -3,8 +3,11 @@
 #include "cactus_utils.h"
 #include "telemetry/telemetry.h"
 #include <chrono>
+#include <cstdint>
 #include <cstring>
 #include <future>
+#include <memory>
+#include <vector>
 
 using namespace cactus::engine;
 using namespace cactus::ffi;
@@ -129,7 +132,7 @@ struct EntropyState {
 
 struct PreparedPrompt {
     InferenceOptions options;
-    Config::ModelType model_type = Config::ModelType::LFM2;
+    Config::ModelType model_type = Config::ModelType::QWEN;
     std::vector<std::string> image_paths;
     std::vector<ChatMessage> messages;
     std::vector<ToolFunction> tools;
@@ -139,7 +142,7 @@ struct PreparedPrompt {
     bool has_images = false;
 };
 
-CactusModelHandle::ProcessedImage compute_image_signature(const std::string& image_path) {
+CactusModelHandle::ProcessedImage image_signature(const std::string& image_path) {
     std::filesystem::path normalized_path(image_path);
     std::error_code ec;
 
@@ -175,7 +178,7 @@ std::vector<std::vector<CactusModelHandle::ProcessedImage>> images_from_message(
         std::vector<CactusModelHandle::ProcessedImage> image_signatures;
         image_signatures.reserve(message.images.size());
         for (const auto& image_path : message.images) {
-            image_signatures.push_back(compute_image_signature(image_path));
+            image_signatures.push_back(image_signature(image_path));
         }
         message_signatures.push_back(std::move(image_signatures));
     }
@@ -245,13 +248,6 @@ bool prompt_context_matches(
     return !has_image_context(handle->processed_images);
 }
 
-std::vector<std::vector<uint32_t>> build_stop_sequences(
-    Tokenizer* tokenizer,
-    const PreparedPrompt& prompt
-) {
-    return build_stop_sequences(tokenizer, prompt.options.stop_sequences, prompt.model_type, !prompt.tools.empty());
-}
-
 PreparedPrompt prepare_prompt(
     CactusModelHandle* handle,
     const char* messages_json,
@@ -265,9 +261,7 @@ PreparedPrompt prepare_prompt(
     }
 
     PreparedPrompt prompt;
-
     prompt.options = parse_inference_options_json(options_json ? options_json : "");
-
     prompt.messages = parse_messages_json(messages_json, prompt.image_paths);
     if (prompt.messages.empty()) {
         throw std::runtime_error("No messages provided");
@@ -312,8 +306,16 @@ PreparedPrompt prepare_prompt(
     prompt.context_token_count = prompt.tokens.size();
     prompt.images = images_from_message(prompt.messages);
     prompt.has_images = has_image_context(prompt.images);
-
     return prompt;
+}
+
+uint32_t decode(
+    std::unique_ptr<Model>& model,
+    const std::vector<uint32_t>& tokens,
+    const InferenceOptions& options,
+    float* out_entropy
+) {
+    return model->decode(tokens, options.temperature, options.top_p, options.top_k, "", out_entropy);
 }
 
 uint32_t generate_first_token(
@@ -326,15 +328,7 @@ uint32_t generate_first_token(
         if (handle->processed_tokens.empty()) {
             throw std::runtime_error("Cannot generate from empty prompt");
         }
-        std::vector<uint32_t> last_token_vec = { handle->processed_tokens.back() };
-        return handle->model->decode(
-            last_token_vec,
-            prompt.options.temperature,
-            prompt.options.top_p,
-            prompt.options.top_k,
-            "",
-            first_token_entropy
-        );
+        return decode(handle->model, {handle->processed_tokens.back()}, prompt.options, first_token_entropy);
     }
 
     if (!prompt.image_paths.empty()) {
@@ -349,29 +343,12 @@ uint32_t generate_first_token(
         );
     }
 
-    size_t prefill_chunk_size = handle->model->get_prefill_chunk_size();
     if (tokens_to_process.size() > 1) {
         std::vector<uint32_t> prefill_tokens(tokens_to_process.begin(), tokens_to_process.end() - 1);
-        handle->model->prefill(prefill_tokens, prefill_chunk_size);
-
-        std::vector<uint32_t> last_token = {tokens_to_process.back()};
-        return handle->model->decode(
-            last_token,
-            prompt.options.temperature,
-            prompt.options.top_p,
-            prompt.options.top_k,
-            "",
-            first_token_entropy
-        );
+        handle->model->prefill(prefill_tokens, handle->model->get_prefill_chunk_size());
+        return decode(handle->model, {tokens_to_process.back()}, prompt.options, first_token_entropy);
     }
-    return handle->model->decode(
-        tokens_to_process,
-        prompt.options.temperature,
-        prompt.options.top_p,
-        prompt.options.top_k,
-        "",
-        first_token_entropy
-    );
+    return decode(handle->model, tokens_to_process, prompt.options, first_token_entropy);
 }
 
 std::string construct_prefill_response_json(
@@ -455,7 +432,7 @@ int cactus_complete(
 
         size_t prompt_tokens = tokens_to_process.size();
 
-        auto stop_token_sequences = build_stop_sequences(tokenizer, prompt);
+        auto stop_token_sequences = build_stop_sequences(tokenizer, prompt.options.stop_sequences, prompt.model_type, !prompt.tools.empty());
 
         std::vector<uint32_t> generated_tokens;
         double time_to_first_token = 0.0;
@@ -524,14 +501,7 @@ int cactus_complete(
                 if (handle->should_stop) break;
 
                 float token_entropy = 0.0f;
-                next_token = handle->model->decode(
-                    {next_token},
-                    prompt.options.temperature,
-                    prompt.options.top_p,
-                    prompt.options.top_k,
-                    "",
-                    &token_entropy
-                );
+                next_token = decode(handle->model, {next_token}, prompt.options, &token_entropy);
                 generated_tokens.push_back(next_token);
                 handle->processed_tokens.push_back(next_token);
 
@@ -764,24 +734,21 @@ int cactus_prefill(
         if (tokens_to_prefill_input.size() > 1) {
             std::vector<uint32_t> prefill_tokens(tokens_to_prefill_input.begin(), tokens_to_prefill_input.end() - 1);
             prefill_tokens_count = prefill_tokens.size();
-            size_t prefill_chunk_size = handle->model->get_prefill_chunk_size();
-
+            std::vector<std::string> prefill_image_paths;
             if (has_images) {
-                std::vector<std::string> prefill_image_paths = prompt.image_paths;
+                prefill_image_paths = prompt.image_paths;
                 if (is_prefix) {
                     prefill_image_paths = image_paths_from_messages(
                         prompt.messages,
                         handle->processed_images.size()
                     );
                 }
+            }
 
-                if (!prefill_image_paths.empty()) {
-                    handle->model->prefill_with_images(prefill_tokens, prefill_image_paths, prefill_chunk_size);
-                } else {
-                    handle->model->prefill(prefill_tokens, prefill_chunk_size);
-                }
+            if (prompt.has_images) {
+                handle->model->prefill_with_images(prefill_tokens, prefill_image_paths);
             } else {
-                handle->model->prefill(prefill_tokens, prefill_chunk_size);
+                handle->model->prefill(prefill_tokens, handle->model->get_prefill_chunk_size());
             }
         }
 

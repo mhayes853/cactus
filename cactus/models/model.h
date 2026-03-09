@@ -1171,7 +1171,7 @@ public:
     void prefill(const std::vector<uint32_t>& tokens, size_t chunk_size = 256, const std::string& profile_file = "") override;
 
     void prefill_with_images(const std::vector<uint32_t>& tokens, const std::vector<std::string>& image_paths,
-                             size_t chunk_size = 256, const std::string& profile_file = "") override;
+                             const std::string& profile_file = "") override;
 
     uint32_t decode_with_images(
         const std::vector<uint32_t>& tokens,
