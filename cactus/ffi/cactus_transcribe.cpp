@@ -162,6 +162,34 @@ int cactus_transcribe(
             cloud_handoff_threshold = 0.0001f;
         }
 
+        const bool request_has_custom_vocabulary_options =
+            opts.find("\"custom_vocabulary\"") != std::string::npos ||
+            opts.find("\"vocabulary_boost\"") != std::string::npos;
+        const bool apply_request_scoped_vocabulary_bias =
+            request_has_custom_vocabulary_options && !handle->model->has_vocab_bias();
+
+        struct ScopedVocabularyBiasReset {
+            Model* model;
+            bool clear_on_exit;
+            ~ScopedVocabularyBiasReset() {
+                if (clear_on_exit && model) {
+                    model->clear_vocab_bias();
+                }
+            }
+        } scoped_vocabulary_bias_reset{
+            handle->model.get(),
+            apply_request_scoped_vocabulary_bias
+        };
+        if (apply_request_scoped_vocabulary_bias) {
+            apply_custom_vocabulary_options(handle->model.get(), opts);
+        }
+
+        if (request_has_custom_vocabulary_options &&
+            options.temperature == 0.0f && options.top_p <= 0.0f && options.top_k == 0) {
+            // Keep deterministic decoding while ensuring bias is applied in sampling.
+            options.top_k = 1;
+        }
+
         bool is_moonshine = handle->model->get_config().model_type == cactus::engine::Config::ModelType::MOONSHINE;
         bool is_parakeet =
             handle->model->get_config().model_type == cactus::engine::Config::ModelType::PARAKEET ||
