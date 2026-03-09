@@ -102,6 +102,12 @@ void trim_stop_suffix(std::vector<uint32_t>& generated_tokens,
     }
 }
 
+void reset_cache(CactusModelHandle* handle) {
+    handle->model->reset_cache();
+    handle->processed_tokens.clear();
+    handle->processed_images.clear();
+}
+
 struct EntropyState {
     std::vector<float> window;
     float window_sum = 0.0f;
@@ -139,7 +145,11 @@ struct PreparedPrompt {
     std::vector<uint32_t> tokens;
     size_t context_token_count = 0;
     std::vector<std::vector<CactusModelHandle::ProcessedImage>> images;
-    bool has_images = false;
+
+    bool has_images() const {
+        return std::any_of(images.begin(), images.end(),
+            [](const auto& msg_imgs) { return !msg_imgs.empty(); });
+    }
 };
 
 CactusModelHandle::ProcessedImage image_signature(const std::string& image_path) {
@@ -196,30 +206,12 @@ std::vector<std::string> image_paths_from_messages(
     return image_paths;
 }
 
-bool has_image_context(const std::vector<std::vector<CactusModelHandle::ProcessedImage>>& message_image_signatures) {
-    for (const auto& message_images : message_image_signatures) {
-        if (!message_images.empty()) {
-            return true;
-        }
-    }
-    return false;
-}
-
 bool image_context_prefix_matches(
     const std::vector<std::vector<CactusModelHandle::ProcessedImage>>& prefix,
     const std::vector<std::vector<CactusModelHandle::ProcessedImage>>& full
 ) {
-    if (prefix.size() > full.size()) {
-        return false;
-    }
-
-    for (size_t i = 0; i < prefix.size(); ++i) {
-        if (prefix[i] != full[i]) {
-            return false;
-        }
-    }
-
-    return true;
+    return prefix.size() <= full.size() &&
+           std::equal(prefix.begin(), prefix.end(), full.begin());
 }
 
 bool prompt_context_matches(
@@ -229,20 +221,16 @@ bool prompt_context_matches(
     if (handle->processed_tokens.empty()) {
         return false;
     }
-
     if (prompt.context_token_count < handle->processed_tokens.size()) {
         return false;
     }
-
     if (!std::equal(handle->processed_tokens.begin(), handle->processed_tokens.end(), prompt.tokens.begin())) {
         return false;
     }
-
-    if (prompt.has_images) {
+    if (prompt.has_images()) {
         return image_context_prefix_matches(handle->processed_images, prompt.images);
     }
-
-    return !has_image_context(handle->processed_images);
+    return !prompt.has_images();
 }
 
 PreparedPrompt prepare_prompt(
@@ -303,7 +291,6 @@ PreparedPrompt prepare_prompt(
     prompt.tokens = tokenizer->encode(full_prompt);
     prompt.context_token_count = prompt.tokens.size();
     prompt.images = images_from_message(prompt.messages);
-    prompt.has_images = has_image_context(prompt.images);
     return prompt;
 }
 
@@ -413,13 +400,11 @@ int cactus_complete(
 
         std::vector<uint32_t> tokens_to_process;
 
-        bool has_images = prompt.has_images;
+        bool has_images = prompt.has_images();
         bool is_prefix = prompt_context_matches(handle, prompt);
 
         if (handle->processed_tokens.empty() || !is_prefix) {
-            handle->model->reset_cache();
-            handle->processed_tokens.clear();
-            handle->processed_images.clear();
+            reset_cache(handle);
             tokens_to_process = prompt.tokens;
         } else {
             tokens_to_process.assign(
@@ -693,7 +678,7 @@ int cactus_prefill(
 
         auto* handle = static_cast<CactusModelHandle*>(model);
         auto prompt = prepare_prompt(handle, messages_json, options_json, tools_json, false, false);
-        bool has_images = prompt.has_images;
+        bool has_images = prompt.has_images();
 
         bool is_prefix = prompt_context_matches(handle, prompt);
         bool is_exact_match = is_prefix && prompt.context_token_count == handle->processed_tokens.size();
@@ -714,36 +699,26 @@ int cactus_prefill(
             return static_cast<int>(result.size());
         }
 
-        std::vector<uint32_t> tokens_to_prefill_input;
+        std::vector<uint32_t> tokens_to_process;
         std::vector<uint32_t> context_tokens(prompt.tokens.begin(), prompt.tokens.begin() + prompt.context_token_count);
         if (!is_prefix) {
-            handle->model->reset_cache();
-            handle->processed_tokens.clear();
-            handle->processed_images.clear();
-            tokens_to_prefill_input = context_tokens;
+            reset_cache(handle);
+            tokens_to_process = context_tokens;
         } else {
-            tokens_to_prefill_input.assign(
+            tokens_to_process.assign(
                 context_tokens.begin() + handle->processed_tokens.size(),
                 context_tokens.end()
             );
         }
 
         size_t prefill_tokens_count = 0;
-        if (tokens_to_prefill_input.size() > 1) {
-            std::vector<uint32_t> prefill_tokens(tokens_to_prefill_input.begin(), tokens_to_prefill_input.end() - 1);
+        if (tokens_to_process.size() > 1) {
+            std::vector<uint32_t> prefill_tokens(tokens_to_process.begin(), tokens_to_process.end() - 1);
             prefill_tokens_count = prefill_tokens.size();
-            std::vector<std::string> prefill_image_paths;
             if (has_images) {
-                prefill_image_paths = prompt.image_paths;
-                if (is_prefix) {
-                    prefill_image_paths = image_paths_from_messages(
-                        prompt.messages,
-                        handle->processed_images.size()
-                    );
-                }
-            }
-
-            if (prompt.has_images) {
+                auto prefill_image_paths = is_prefix
+                    ? image_paths_from_messages(prompt.messages, handle->processed_images.size())
+                    : prompt.image_paths;
                 handle->model->prefill_with_images(prefill_tokens, prefill_image_paths);
             } else {
                 handle->model->prefill(prefill_tokens, handle->model->get_prefill_chunk_size());
