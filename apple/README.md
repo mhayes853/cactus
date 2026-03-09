@@ -109,6 +109,70 @@ let resultJson = try cactusComplete(model, messages, options, nil) { token, _ in
 }
 ```
 
+### Prefill
+
+Pre-processes input text and populates the KV cache without generating output tokens. This reduces latency for subsequent calls to `cactusComplete`.
+
+```swift
+func cactusPrefill(
+    _ model: CactusModelT,
+    _ messagesJson: String,
+    _ optionsJson: String?,
+    _ toolsJson: String?
+) throws -> String
+```
+
+```swift
+let tools = #"[
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get weather for a location",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {"type": "string", "description": "City, State, Country"}
+                },
+                "required": ["location"]
+            }
+        }
+    }
+]"#
+
+let messages = #"[
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "What is the weather in Paris?"},
+    {"role": "assistant", "content": "<|tool_call_start|>get_weather(location=\"Paris\")<|tool_call_end|>"},
+    {"role": "tool", "content": "{\"name\": \"get_weather\", \"content\": \"Sunny, 72°F\"}"},
+    {"role": "assistant", "content": "It's sunny and 72°F in Paris!"}
+]"#
+
+let resultJson = try cactusPrefill(model, messages, nil, tools)
+
+let completionMessages = #"[
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "What is the weather in Paris?"},
+    {"role": "assistant", "content": "<|tool_call_start|>get_weather(location=\"Paris\")<|tool_call_end|>"},
+    {"role": "tool", "content": "{\"name\": \"get_weather\", \"content\": \"Sunny, 72°F\"}"},
+    {"role": "assistant", "content": "It's sunny and 72°F in Paris!"},
+    {"role": "user", "content": "What about SF?"}
+]"#
+let completion = try cactusComplete(model, completionMessages, nil, tools, nil)
+```
+
+**Response format:**
+```json
+{
+    "success": true,
+    "error": null,
+    "prefill_tokens": 25,
+    "prefill_tps": 166.1,
+    "total_time_ms": 150.5,
+    "ram_usage_mb": 245.67
+}
+```
+
 ### Audio Transcription
 
 ```swift
@@ -193,6 +257,17 @@ func cactusDestroy(_ model: CactusModelT)
 func cactusReset(_ model: CactusModelT)
 func cactusStop(_ model: CactusModelT)
 func cactusGetLastError() -> String
+```
+
+### Prefill
+
+```swift
+func cactusPrefill(
+    _ model: CactusModelT,
+    _ messagesJson: String,
+    _ optionsJson: String?,
+    _ toolsJson: String?
+) throws -> String
 ```
 
 ### Completion
