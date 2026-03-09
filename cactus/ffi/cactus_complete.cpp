@@ -170,7 +170,7 @@ CactusModelHandle::ProcessedImage image_signature(const std::string& image_path)
         std::error_code time_ec;
         auto mtime = std::filesystem::last_write_time(normalized_path, time_ec);
         if (!time_ec) {
-            image.timestamp = static_cast<long long>(mtime.time_since_epoch().count());
+            image.last_modified_timestamp = static_cast<long long>(mtime.time_since_epoch().count());
         }
     }
 

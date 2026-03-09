@@ -65,10 +65,10 @@ struct CactusModelHandle {
     std::vector<uint32_t> processed_tokens;
     struct ProcessedImage {
         std::string path;
-        long long timestamp = 0;
+        long long last_modified_timestamp = 0;
 
         bool operator==(const ProcessedImage& other) const {
-            return path == other.path && timestamp == other.timestamp;
+            return path == other.path && last_modified_timestamp == other.last_modified_timestamp;
         }
     };
 
