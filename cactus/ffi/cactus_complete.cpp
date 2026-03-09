@@ -157,12 +157,9 @@ CactusModelHandle::ProcessedImage image_signature(const std::string& image_path)
     ec.clear();
     auto status = std::filesystem::status(normalized_path, ec);
     if (!ec && std::filesystem::is_regular_file(status)) {
-        std::error_code size_ec;
         std::error_code time_ec;
-        auto file_size = std::filesystem::file_size(normalized_path, size_ec);
         auto mtime = std::filesystem::last_write_time(normalized_path, time_ec);
-        if (!size_ec && !time_ec) {
-            image.file_size = static_cast<size_t>(file_size);
+        if (!time_ec) {
             image.timestamp = static_cast<long long>(mtime.time_since_epoch().count());
         }
     }

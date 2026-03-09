@@ -66,10 +66,9 @@ struct CactusModelHandle {
     struct ProcessedImage {
         std::string path;
         long long timestamp = 0;
-        size_t file_size = 0;
 
         bool operator==(const ProcessedImage& other) const {
-            return path == other.path && timestamp == other.timestamp && file_size == other.file_size;
+            return path == other.path && timestamp == other.timestamp;
         }
     };
 
