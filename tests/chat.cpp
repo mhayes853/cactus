@@ -359,6 +359,7 @@ int main(int argc, char* argv[]) {
             options.c_str(),
             nullptr,
             print_token,
+            nullptr,
             nullptr
         );
 

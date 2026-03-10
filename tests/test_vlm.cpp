@@ -50,7 +50,7 @@ bool test_vlm_multiturn() {
     std::cout << "Assistant: ";
 
     int result1 = cactus_complete(model, messages1.c_str(), response1, sizeof(response1),
-                                  g_options, nullptr, stream_callback, &stream_data1);
+                                  g_options, nullptr, stream_callback, &stream_data1, nullptr);
 
     std::cout << "\n\n[Results - Turn 1]\n";
     Metrics metrics1;
@@ -85,7 +85,7 @@ bool test_vlm_multiturn() {
     std::cout << "Assistant: ";
 
     int result2 = cactus_complete(model, messages2.c_str(), response2, sizeof(response2),
-                                  g_options, nullptr, stream_callback, &stream_data2);
+                                  g_options, nullptr, stream_callback, &stream_data2, nullptr);
 
     std::cout << "\n\n[Results - Turn 2]\n";
     Metrics metrics2;

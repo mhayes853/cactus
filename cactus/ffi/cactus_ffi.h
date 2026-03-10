@@ -20,6 +20,7 @@ extern "C" {
 typedef void* cactus_model_t;
 typedef void* cactus_index_t;
 typedef void* cactus_stream_transcribe_t;
+typedef void* cactus_compiled_grammar_t;
 
 typedef void (*cactus_token_callback)(const char* token, uint32_t token_id, void* user_data);
 
@@ -41,7 +42,8 @@ CACTUS_FFI_EXPORT int cactus_complete(
     const char* options_json,               // optional
     const char* tools_json,                 // optional
     cactus_token_callback callback,         // optional
-    void* user_data                         // optional
+    void* user_data,                        // optional
+    cactus_compiled_grammar_t grammar        // optional
 );
 
 CACTUS_FFI_EXPORT int cactus_tokenize(

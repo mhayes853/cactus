@@ -54,7 +54,7 @@ bool test_streaming() {
     std::cout << "Assistant: ";
 
     int result1 = cactus_complete(model, messages1, response1, sizeof(response1),
-                                 g_options, nullptr, stream_callback, &data1);
+                                 g_options, nullptr, stream_callback, &data1, nullptr);
 
     std::cout << "\n\n[Results - Turn 1]\n";
     Metrics metrics1;
@@ -90,7 +90,7 @@ bool test_streaming() {
     std::cout << "Assistant: ";
 
     int result2 = cactus_complete(model, messages2_str.c_str(), response2, sizeof(response2),
-                                 g_options, nullptr, stream_callback, &data2);
+                                 g_options, nullptr, stream_callback, &data2, nullptr);
 
     std::cout << "\n\n[Results - Turn 2]\n";
     Metrics metrics2;
