@@ -210,6 +210,21 @@ CACTUS_FFI_EXPORT void cactus_set_app_id(const char* app_id);
 CACTUS_FFI_EXPORT void cactus_telemetry_flush(void);
 CACTUS_FFI_EXPORT void cactus_telemetry_shutdown(void);
 
+typedef void* cactus_grammar_t;
+
+CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_ebnf(const char* ebnf, const char* start_symbol);
+CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_json();
+CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_json_schema(const char* json_schema);
+CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_regex(const char* regex);
+CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_union(cactus_grammar_t g1, cactus_grammar_t g2);
+CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_concatenate(cactus_grammar_t g1, cactus_grammar_t g2);
+CACTUS_FFI_EXPORT void cactus_grammar_destroy(cactus_grammar_t grammar);
+
+typedef void* cactus_compiled_grammar_t;
+
+CACTUS_FFI_EXPORT cactus_compiled_grammar_t cactus_grammar_compile(cactus_grammar_t grammar);
+CACTUS_FFI_EXPORT void cactus_grammar_destroy_compiled(cactus_compiled_grammar_t compiled_grammar);
+
 #ifdef __cplusplus
 }
 #endif
