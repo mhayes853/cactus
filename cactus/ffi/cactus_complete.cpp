@@ -283,7 +283,12 @@ PreparedPrompt prepare_prompt(
         formatted_tools = serialize_tools_json(prompt.tools);
     }
 
-    std::string full_prompt = tokenizer->format_chat_prompt(prompt.messages, add_generation_prompt, formatted_tools);
+    std::string full_prompt = tokenizer->format_chat_prompt(
+        prompt.messages,
+        add_generation_prompt,
+        formatted_tools,
+        prompt.options.enable_thinking_if_supported
+    );
     if (full_prompt.find("ERROR:") == 0) {
         throw std::runtime_error(full_prompt.substr(6));
     }
@@ -533,6 +538,13 @@ int cactus_complete(
         std::vector<std::string> function_calls;
         parse_function_calls_from_response(response_text, regular_response, function_calls);
 
+        std::string thinking_text;
+        if (prompt.options.enable_thinking_if_supported) {
+            std::string stripped_content;
+            strip_thinking_block(regular_response, thinking_text, stripped_content);
+            regular_response = stripped_content;
+        }
+
         if (confidence < prompt.options.confidence_threshold) {
             maybe_start_cloud_handoff(regular_response, function_calls);
         }
@@ -569,7 +581,8 @@ int cactus_complete(
         const bool handoff_succeeded = cloud_used;
         std::string result = construct_response_json(primary_response, primary_function_calls, time_to_first_token,
                                                      total_time_ms, prefill_tps, decode_tps, prompt_tokens,
-                                                     completion_tokens, confidence, handoff_succeeded);
+                                                     completion_tokens, confidence, handoff_succeeded,
+                                                     thinking_text);
 
         if (result.length() >= buffer_size) {
             handle_error_response("Response buffer too small", response_buffer, buffer_size);
