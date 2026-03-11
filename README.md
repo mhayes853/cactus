@@ -120,7 +120,7 @@ graph.hard_reset();
 | [Rust SDK](/rust/) | Rust | Mac, Linux |
 | [React Native](https://github.com/cactus-compute/cactus-react-native) | JavaScript | iOS, Android |
 
-## Benchmarks
+## Benchmarks (CPU-only, no GPU)
 
 - All weights INT4 quantised
 - LFM: 1k-prefill / 100-decode, values are prefill tps / decode tps
