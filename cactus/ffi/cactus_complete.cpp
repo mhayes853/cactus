@@ -170,7 +170,7 @@ int cactus_complete(
     const char* tools_json,
     cactus_token_callback callback,
     void* user_data,
-    cactus_compiled_grammar_t grammar
+    cactus_grammar_t grammar
 ) {
     if (!model) {
         std::string error_msg = last_error_message.empty() ?

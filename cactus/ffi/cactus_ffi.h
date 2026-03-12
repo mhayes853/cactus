@@ -1,6 +1,7 @@
 #ifndef CACTUS_FFI_H
 #define CACTUS_FFI_H
 
+#include <cstddef>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -20,7 +21,7 @@ extern "C" {
 typedef void* cactus_model_t;
 typedef void* cactus_index_t;
 typedef void* cactus_stream_transcribe_t;
-typedef void* cactus_compiled_grammar_t;
+typedef void* cactus_grammar_t;
 
 typedef void (*cactus_token_callback)(const char* token, uint32_t token_id, void* user_data);
 
@@ -43,7 +44,7 @@ CACTUS_FFI_EXPORT int cactus_complete(
     const char* tools_json,                 // optional
     cactus_token_callback callback,         // optional
     void* user_data,                        // optional
-    cactus_compiled_grammar_t grammar        // optional
+    cactus_grammar_t grammar                // optional
 );
 
 CACTUS_FFI_EXPORT int cactus_tokenize(
@@ -212,20 +213,23 @@ CACTUS_FFI_EXPORT void cactus_set_app_id(const char* app_id);
 CACTUS_FFI_EXPORT void cactus_telemetry_flush(void);
 CACTUS_FFI_EXPORT void cactus_telemetry_shutdown(void);
 
-typedef void* cactus_grammar_t;
-
-CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_ebnf(const char* ebnf, const char* start_symbol);
+CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_gbnf(const char* gbnf, const char* start_symbol);
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_json();
-CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_json_schema(const char* json_schema);
+CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_empty();
+CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_json_schema(
+    const char* json_schema,
+    bool any_whitespace,                    // optional (negates indent and separators)
+    int indent,                             // optional
+    const char*** separators,               // optional
+    size_t separators_count,                // optional (must be provided if separators is non-null)
+    bool strict_mode,                       // optional
+    int max_whitespace_count                // optional
+);
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_regex(const char* regex);
-CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_union(cactus_grammar_t g1, cactus_grammar_t g2);
-CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_concatenate(cactus_grammar_t g1, cactus_grammar_t g2);
+CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_structural_tag(const char* structural_tag_json);
+CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_union(cactus_grammar_t* grammars, size_t num_grammars);
+CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_concatenate(cactus_grammar_t* grammars, size_t num_grammars);
 CACTUS_FFI_EXPORT void cactus_grammar_destroy(cactus_grammar_t grammar);
-
-typedef void* cactus_compiled_grammar_t;
-
-CACTUS_FFI_EXPORT cactus_compiled_grammar_t cactus_grammar_compile(cactus_grammar_t grammar);
-CACTUS_FFI_EXPORT void cactus_grammar_destroy_compiled(cactus_compiled_grammar_t compiled_grammar);
 
 #ifdef __cplusplus
 }
