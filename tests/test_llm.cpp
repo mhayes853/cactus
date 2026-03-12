@@ -1,4 +1,6 @@
 #include "test_utils.h"
+#include "../libs/xgrammar/include/picojson/picojson.h"
+#include <cctype>
 #include <fstream>
 #include <cstdlib>
 #include <cstdio>
@@ -282,10 +284,97 @@ bool test_1k_context() {
         }, nullptr, 100);
 }
 
+bool is_valid_json_document(const std::string& text, std::string& error) {
+    picojson::value value;
+    auto begin = text.begin();
+    auto end = picojson::parse(value, begin, text.end(), &error);
+    if (!error.empty()) {
+        return false;
+    }
+    while (end != text.end() && std::isspace(static_cast<unsigned char>(*end))) {
+        ++end;
+    }
+    if (end != text.end()) {
+        error = "Trailing characters after JSON document";
+        return false;
+    }
+    return true;
+}
+
+bool test_json_grammar_outputs_valid_json() {
+    std::cout << "\n╔══════════════════════════════════════════╗\n"
+              << "║" << std::setw(42) << std::left << "      JSON GRAMMAR TEST" << "║\n"
+              << "╚══════════════════════════════════════════╝\n";
+
+    cactus_model_t model = cactus_init(g_model_path, nullptr, false);
+    if (!model) {
+        std::cerr << "[✗] Failed to initialize model\n";
+        return false;
+    }
+
+    cactus_grammar_t grammar = cactus_grammar_init_json();
+    if (!grammar) {
+        std::cerr << "[✗] Failed to initialize JSON grammar\n";
+        cactus_destroy(model);
+        return false;
+    }
+
+    const std::vector<std::string> prompts = {
+        "Tell me three short facts about otters.",
+        "Write a haiku about the moon.",
+        "What is 17 multiplied by 19?"
+    };
+
+    bool success = true;
+
+    for (size_t i = 0; i < prompts.size(); ++i) {
+        std::string messages = R"([
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": ")" + escape_json(prompts[i]) + R"("}
+    ])";
+
+        StreamingData data;
+        data.model = model;
+        char response[4096];
+
+        std::cout << "\n[Prompt " << (i + 1) << "]\n";
+        std::cout << "User: " << prompts[i] << "\n";
+        std::cout << "Assistant: ";
+
+        int result = cactus_complete(model, messages.c_str(), response, sizeof(response),
+                                     g_options, nullptr, stream_callback, &data, grammar);
+
+        std::string output;
+        for (const auto& token : data.tokens) {
+            output += token;
+        }
+
+        std::string json_error;
+        bool valid_json = is_valid_json_document(output, json_error);
+
+        std::cout << "\n\n[Results - Prompt " << (i + 1) << "]\n";
+        Metrics metrics;
+        metrics.parse(response);
+        std::cout << "├─ Valid JSON: " << (valid_json ? "YES" : "NO") << "\n";
+        if (!valid_json) {
+            std::cout << "├─ JSON error: " << json_error << "\n";
+            std::cout << "├─ Raw output: " << output << "\n";
+        }
+        metrics.print_json();
+
+        success = success && result > 0 && data.token_count > 0 && valid_json;
+    }
+
+    cactus_grammar_destroy(grammar);
+    cactus_destroy(model);
+    return success;
+}
+
 int main() {
     TestUtils::TestRunner runner("LLM Tests");
     runner.run_test("1k_context", test_1k_context());
     runner.run_test("streaming", test_streaming());
+    runner.run_test("json_grammar_outputs_valid_json", test_json_grammar_outputs_valid_json());
     runner.run_test("tool_calls", test_tool_call());
     runner.run_test("tool_multiple_tool_call_invocations", test_multiple_tool_call_invocations());
     runner.run_test("tool_calls_with_three_tools", test_tool_call_with_three_tools());
