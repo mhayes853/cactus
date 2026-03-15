@@ -2,6 +2,7 @@
 
 #include "../engine/engine.h"
 #include "../npu/npu.h"
+#include "../grammar/grammar.h"
 
 namespace cactus {
 namespace engine {
@@ -1267,7 +1268,8 @@ public:
                       float top_p = -1.0f,
                       size_t top_k = 0,
                       const std::string& profile_file = "",
-                      float* out_entropy = nullptr) override;
+                      float* out_entropy = nullptr,
+                      cactus::grammar::GrammarMatcher* matcher = nullptr) override;
 
     void prefill(const std::vector<uint32_t>& tokens, size_t chunk_size = 256, const std::string& profile_file = "") override;
 

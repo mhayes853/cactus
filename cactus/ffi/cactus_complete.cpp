@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstring>
 #include <future>
+#include <memory>
 
 using namespace cactus::engine;
 using namespace cactus::ffi;
@@ -132,14 +133,15 @@ uint32_t generate_first_token(
     const std::vector<uint32_t>& tokens_to_process,
     const std::vector<std::string>& image_paths,
     float temperature, float top_p, size_t top_k,
-    float* first_token_entropy
+    float* first_token_entropy,
+    cactus::grammar::GrammarMatcher* matcher
 ) {
     if (tokens_to_process.empty()) {
         if (handle->processed_tokens.empty()) {
             throw std::runtime_error("Cannot generate from empty prompt");
         }
         std::vector<uint32_t> last_token_vec = { handle->processed_tokens.back() };
-        return handle->model->decode(last_token_vec, temperature, top_p, top_k, "", first_token_entropy);
+        return handle->model->decode(last_token_vec, temperature, top_p, top_k, "", first_token_entropy, matcher);
     }
 
     if (!image_paths.empty()) {
@@ -152,9 +154,20 @@ uint32_t generate_first_token(
         handle->model->prefill(prefill_tokens, prefill_chunk_size);
 
         std::vector<uint32_t> last_token = {tokens_to_process.back()};
-        return handle->model->decode(last_token, temperature, top_p, top_k, "", first_token_entropy);
+        return handle->model->decode(last_token, temperature, top_p, top_k, "", first_token_entropy, matcher);
     }
-    return handle->model->decode(tokens_to_process, temperature, top_p, top_k, "", first_token_entropy);
+    return handle->model->decode(tokens_to_process, temperature, top_p, top_k, "", first_token_entropy, matcher);
+}
+
+cactus::grammar::TokenizerInfo model_tokenizer_info(CactusModelHandle* handle) {
+    auto* tokenizer = handle->model->get_tokenizer();
+    const auto& raw_vocab = tokenizer->get_raw_vocab();
+    return cactus::grammar::TokenizerInfo{
+        raw_vocab,
+        raw_vocab.size(),
+        {tokenizer->get_eos_token()},
+        tokenizer->get_add_prefix_space()
+    };
 }
 
 } // anonymous namespace
@@ -277,8 +290,16 @@ int cactus_complete(
         double time_to_first_token = 0.0;
         float first_token_entropy = 0.0f;
 
+        std::unique_ptr<cactus::grammar::GrammarMatcher> matcher = nullptr;
+        if (grammar) {
+            const CactusGrammarHandle* grammar_handle = static_cast<const CactusGrammarHandle*>(grammar);
+            matcher = std::make_unique<cactus::grammar::GrammarMatcher>(
+                cactus::grammar::GrammarMatcher(grammar_handle->grammar.get(), model_tokenizer_info(handle))
+            );
+        }
+
         uint32_t next_token = generate_first_token(handle, tokens_to_process, image_paths,
-                                                    temperature, top_p, top_k, &first_token_entropy);
+                                                    temperature, top_p, top_k, &first_token_entropy, matcher.get());
 
         handle->processed_tokens = current_prompt_tokens;
 
@@ -335,7 +356,7 @@ int cactus_complete(
                 if (handle->should_stop) break;
 
                 float token_entropy = 0.0f;
-                next_token = handle->model->decode({next_token}, temperature, top_p, top_k, "", &token_entropy);
+                next_token = handle->model->decode({next_token}, temperature, top_p, top_k, "", &token_entropy, matcher.get());
                 generated_tokens.push_back(next_token);
                 handle->processed_tokens.push_back(next_token);
 

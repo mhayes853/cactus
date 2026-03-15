@@ -12,6 +12,7 @@ void compute_sample_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
     float top_p = node.params.top_p;
     size_t top_k = node.params.top_k;
     size_t random_seed = node.params.random_seed;
+    cactus::grammar::GrammarMatcher* matcher = node.params.matcher;
 
     const float* bias_values = node.params.bias_values.empty() ? nullptr : node.params.bias_values.data();
     const uint32_t* bias_indices = node.params.bias_indices.empty() ? nullptr : node.params.bias_indices.data();
@@ -27,7 +28,14 @@ void compute_sample_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
 
     if (logits_buffer.precision == Precision::FP16) {
         const __fp16* logits_fp16 = logits_buffer.data_as<__fp16>();
-        cactus_sample_f16(logits_fp16 + last_token_offset, node.output_buffer.data_as<uint32_t>(),
+        std::vector<__fp16> masked_logits(
+            logits_fp16 + last_token_offset,
+            logits_fp16 + last_token_offset + vocab_size
+        );
+        if (matcher) {
+            matcher->apply_bitmask(masked_logits.data(), vocab_size);
+        }
+        cactus_sample_f16(masked_logits.data(), node.output_buffer.data_as<uint32_t>(),
                          vocab_size, temperature, top_p, top_k, random_seed,
                          bias_values, bias_indices, bias_count);
     } else {

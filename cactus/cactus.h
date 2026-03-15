@@ -8,5 +8,6 @@
 #include "models/model.h"
 #include "ffi/cactus_ffi.h"
 #include "npu/npu.h"
+#include "grammar/grammar.h"
 
 #endif // CACTUS_H

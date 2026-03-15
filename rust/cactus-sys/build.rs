@@ -9,6 +9,7 @@ fn main() {
 
     let build_dir = build_native_library(&cactus_src);
     link_native_library(&build_dir);
+    link_vendored_xgrammar(&cactus_src);
     link_platform_dependencies();
     link_clang_runtime_for_sme2();
 
@@ -104,6 +105,19 @@ fn build_native_library(cactus_src: &Path) -> PathBuf {
 fn link_native_library(build_dir: &Path) {
     println!("cargo:rustc-link-search=native={}", build_dir.display());
     println!("cargo:rustc-link-lib=static=cactus");
+}
+
+fn link_vendored_xgrammar(cactus_src: &Path) {
+    let xgrammar_dir = cactus_src.join("..").join("libs").join("xgrammar").join("macos");
+    let xgrammar_lib = xgrammar_dir.join("libxgrammar.a");
+    assert!(
+        xgrammar_lib.exists(),
+        "missing vendored xgrammar archive at {}",
+        xgrammar_lib.display()
+    );
+
+    println!("cargo:rustc-link-search=native={}", xgrammar_dir.display());
+    println!("cargo:rustc-link-lib=static=xgrammar");
 }
 
 #[cfg(target_os = "macos")]

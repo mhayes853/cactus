@@ -2,6 +2,8 @@
 #include "../models/model.h"
 #include "../graph/graph.h"
 #include "../npu/npu.h"
+#include "../grammar/grammar.h"
+#include <cstdint>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -222,7 +224,8 @@ void Model::prefill(const std::vector<uint32_t>& tokens, size_t chunk_size, cons
 }
 
 uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, float top_p,
-                        size_t top_k, const std::string& profile_file, float* out_entropy) {
+                        size_t top_k, const std::string& profile_file, float* out_entropy,
+                        cactus::grammar::GrammarMatcher* matcher) {
 
     if (temperature < 0) {
         temperature = config_.default_temperature;
@@ -253,7 +256,7 @@ uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, f
         logits_node_id = gb->tanh(logits_node_id);
         logits_node_id = gb->scalar_multiply(logits_node_id, config_.final_logit_softcapping);
     }
-    auto sampled_token_id = sample_token(gb, logits_node_id, temperature, top_p, top_k);
+    auto sampled_token_id = sample_token(gb, logits_node_id, temperature, top_p, top_k, nullptr, matcher);
 
     gb->execute(profile_file);
 
@@ -302,12 +305,16 @@ uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, f
     post_execute_updates(gb, tokens.size());
     update_kv_cache(gb, tokens.size());
 
-    auto* output_ptr = gb->get_output(sampled_token_id);
-    return *static_cast<uint32_t*>(output_ptr);
+    uint32_t token_id = *static_cast<uint32_t*>(gb->get_output(sampled_token_id));
+    if (matcher) {
+        matcher->accept(token_id);
+    }
+    return token_id;
 }
 
 size_t Model::sample_token(CactusGraph* gb, size_t logits_node_id, float temperature, float top_p, size_t top_k,
-                           const std::unordered_map<uint32_t, float>* extra_bias) const {
+                           const std::unordered_map<uint32_t, float>* extra_bias, 
+                           cactus::grammar::GrammarMatcher* matcher) const {
     auto combined_bias = tool_constrainer_.get_bias();
     for (const auto& [token_id, boost] : vocab_bias_) {
         combined_bias[token_id] += boost;
@@ -317,7 +324,7 @@ size_t Model::sample_token(CactusGraph* gb, size_t logits_node_id, float tempera
             combined_bias[token_id] += boost;
         }
     }
-    return gb->sample(logits_node_id, temperature, top_p, top_k, combined_bias);
+    return gb->sample(logits_node_id, temperature, top_p, top_k, combined_bias, matcher);
 }
 
 uint32_t Model::decode_with_audio(const std::vector<uint32_t>& tokens, const std::vector<float>& /*mel_bins*/, float temperature, float top_p, size_t top_k, const std::string& profile_file, float* out_entropy, float* /*out_token_time_start*/, float* /*out_token_time_end*/){

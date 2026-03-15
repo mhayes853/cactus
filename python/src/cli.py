@@ -672,6 +672,7 @@ def cmd_build(args):
     cactus_dir = PROJECT_ROOT / "cactus"
     lib_path = cactus_dir / "build" / "libcactus.a"
     vendored_curl = PROJECT_ROOT / "libs" / "curl" / "macos" / "libcurl.a"
+    vendored_xgrammar = PROJECT_ROOT / "libs" / "xgrammar" / "macos" / "libxgrammar.a"
 
     print_color(YELLOW, "Building Cactus library...")
     build_script = cactus_dir / "build.sh"
@@ -701,6 +702,10 @@ def cmd_build(args):
             print_color(RED, f"Error: vendored libcurl not found at {vendored_curl}")
             print("Build it first and place it in libs/curl/macos/libcurl.a")
             return 1
+        if not vendored_xgrammar.exists():
+            print_color(RED, f"Error: vendored xgrammar not found at {vendored_xgrammar}")
+            print("Build it first and place it in libs/xgrammar/macos/libxgrammar.a")
+            return 1
         compiler = "clang++"
         cmd = [
             compiler, "-std=c++20", "-O3",
@@ -710,6 +715,7 @@ def cmd_build(args):
             str(lib_path),
             "-o", "chat",
             str(vendored_curl),
+            str(vendored_xgrammar),
             "-framework", "Accelerate",
             "-framework", "CoreML",
             "-framework", "Foundation",
@@ -788,6 +794,7 @@ def cmd_build(args):
                 str(lib_path),
                 "-o", "asr",
                 str(vendored_curl),
+                str(vendored_xgrammar),
                 "-framework", "Accelerate",
                 "-framework", "CoreML",
                 "-framework", "Foundation",

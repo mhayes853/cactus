@@ -7,8 +7,8 @@
 #ifndef XGRAMMAR_COMPILER_H_
 #define XGRAMMAR_COMPILER_H_
 
-#include <xgrammar/grammar.h>
-#include <xgrammar/tokenizer_info.h>
+#include "grammar.h"
+#include "tokenizer_info.h"
 
 #include <cstddef>
 #include <optional>
@@ -17,7 +17,7 @@
 #include <variant>
 #include <vector>
 
-#include "xgrammar/exception.h"
+#include "exception.h"
 
 namespace xgrammar {
 

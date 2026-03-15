@@ -7,9 +7,9 @@
 #ifndef XGRAMMAR_MATCHER_H_
 #define XGRAMMAR_MATCHER_H_
 
-#include <dlpack/dlpack.h>
-#include <xgrammar/compiler.h>
-#include <xgrammar/object.h>
+#include "../dlpack/dlpack.h"
+#include "compiler.h"
+#include "object.h"
 
 #include <cstdint>
 #include <optional>

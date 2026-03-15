@@ -1,11 +1,9 @@
 #include "cactus_ffi.h"
 #include "cactus_utils.h"
+#include "grammar/grammar.h"
 
 using namespace cactus::ffi;
-
-struct CactusGrammarHandle {
-
-};
+using namespace cactus::grammar;
 
 extern "C" {
 
@@ -14,11 +12,11 @@ cactus_grammar_t cactus_grammar_init_gbnf(const char* ebnf, const char* start_sy
 }
 
 cactus_grammar_t cactus_grammar_init_json() {
-    return nullptr;
+    return new CactusGrammarHandle{std::make_unique<Grammar>(Grammar::json())};
 }
 
 cactus_grammar_t cactus_grammar_init_empty() {
-    return nullptr;
+    return new CactusGrammarHandle{std::make_unique<Grammar>()};
 }
 
 cactus_grammar_t cactus_grammar_init_json_schema(
@@ -50,6 +48,7 @@ cactus_grammar_t cactus_grammar_concatenate(cactus_grammar_t* grammars, size_t n
 }
 
 void cactus_grammar_destroy(cactus_grammar_t grammar) {
+    if (grammar) delete static_cast<CactusGrammarHandle*>(grammar);
 }
 
 }

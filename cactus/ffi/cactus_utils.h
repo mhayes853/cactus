@@ -3,6 +3,7 @@
 
 #include "../engine/engine.h"
 #include "../models/model.h"
+#include "../grammar/grammar.h"
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -57,6 +58,10 @@ inline size_t get_memory_footprint_bytes() {
 inline double get_ram_usage_mb() {
     return get_memory_footprint_bytes() / (1024.0 * 1024.0);
 }
+
+struct CactusGrammarHandle {
+    std::unique_ptr<cactus::grammar::Grammar> grammar;
+};
 
 struct CactusModelHandle {
     std::unique_ptr<cactus::engine::Model> model;

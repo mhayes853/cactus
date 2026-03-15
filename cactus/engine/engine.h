@@ -8,6 +8,7 @@
 #include <cstdint>
 
 #include "../graph/graph.h"
+#include "../grammar/grammar.h"
 
 #ifdef __clang__
 #pragma clang diagnostic push
@@ -195,6 +196,8 @@ public:
     virtual uint32_t get_unk_token() const = 0;
     virtual uint32_t get_bos_token() const = 0;
     virtual uint32_t get_eos_token() const = 0;
+    virtual const std::vector<std::string>& get_raw_vocab() const = 0;
+    virtual bool get_add_prefix_space() const { return false; }
     virtual bool has_chat_template() const { return has_chat_template_; }
     std::string get_default_stop_sequence() const;
 
@@ -238,6 +241,7 @@ public:
     uint32_t get_unk_token() const override { return unk_token_id_; }
     uint32_t get_bos_token() const override { return bos_token_id_; }
     uint32_t get_eos_token() const override { return eos_token_id_; }
+    const std::vector<std::string>& get_raw_vocab() const override { return id_to_token_; }
 
 private:
     std::unordered_map<std::string, uint32_t> token_to_id_;
@@ -295,6 +299,8 @@ public:
     uint32_t get_unk_token() const override { return unk_token_id_; }
     uint32_t get_bos_token() const override { return bos_token_id_; }
     uint32_t get_eos_token() const override { return eos_token_id_; }
+    const std::vector<std::string>& get_raw_vocab() const override { return id_to_token_; }
+    bool get_add_prefix_space() const override { return model_type_ == ModelType::BERT; }
 
 private:
     struct TrieNode {
@@ -540,7 +546,8 @@ public:
               const std::string& system_prompt = "", bool do_warmup = true);
 
     virtual uint32_t decode(const std::vector<uint32_t>& tokens, float temperature = -1.0f, float top_p = -1.0f,
-                      size_t top_k = 0, const std::string& profile_file = "", float* out_entropy = nullptr);
+                      size_t top_k = 0, const std::string& profile_file = "", float* out_entropy = nullptr, 
+                      cactus::grammar::GrammarMatcher* matcher = nullptr);
 
     virtual void prefill(const std::vector<uint32_t>& tokens, size_t chunk_size = 256, const std::string& profile_file = "");
 
@@ -593,7 +600,7 @@ public:
 
 protected:
     size_t sample_token(CactusGraph* gb, size_t logits_node_id, float temperature, float top_p, size_t top_k,
-                        const std::unordered_map<uint32_t, float>* extra_bias = nullptr) const;
+                        const std::unordered_map<uint32_t, float>* extra_bias = nullptr, cactus::grammar::GrammarMatcher* matcher = nullptr) const;
 
     virtual size_t forward(const std::vector<uint32_t>& tokens, bool use_cache = false) = 0;
     
