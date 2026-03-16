@@ -8,13 +8,18 @@ keywords: ["Android SDK", "Kotlin Multiplatform", "on-device AI", "mobile infere
 
 Run AI models on-device with a simple Kotlin API.
 
+> **Model weights:** Pre-converted weights for all supported models at [huggingface.co/Cactus-Compute](https://huggingface.co/Cactus-Compute).
+
 ## Building
 
+<!-- --8<-- [start:install] -->
 ```bash
+git clone https://github.com/cactus-compute/cactus && cd cactus && source ./setup
 cactus build --android
 ```
 
-Build output: `android/build/lib/libcactus.so`
+Build output: `android/libcactus.so` (and `android/libcactus.a`)
+<!-- --8<-- [end:install] -->
 
 see the main [README.md](../README.md) for how to use CLI & download weight
 
@@ -32,6 +37,7 @@ CACTUS_CURL_ROOT=/absolute/path/to/curl cactus build --android
 
 ## Integration
 
+<!-- --8<-- [start:integration] -->
 ### Android-only
 
 1. Copy `libcactus.so` to `app/src/main/jniLibs/arm64-v8a/`
@@ -82,6 +88,7 @@ kotlin {
     }
 }
 ```
+<!-- --8<-- [end:integration] -->
 
 ## Usage
 
@@ -89,6 +96,7 @@ Handles are plain `Long` values (C pointers). All functions are top-level.
 
 ### Basic Completion
 
+<!-- --8<-- [start:example] -->
 ```kotlin
 import com.cactus.*
 import org.json.JSONObject
@@ -100,6 +108,9 @@ val result = JSONObject(resultJson)
 println(result.getString("response"))
 cactusDestroy(model)
 ```
+<!-- --8<-- [end:example] -->
+
+For vision models (LFM2-VL, LFM2.5-VL), add `"images": ["path/to/image.png"]` to any message. See [Engine API](/docs/cactus_engine.md) for details.
 
 ### Completion with Options and Streaming
 
@@ -314,6 +325,12 @@ fun cactusTokenize(model: Long, text: String): IntArray
 fun cactusScoreWindow(model: Long, tokens: IntArray, start: Int, end: Int, context: Int): String
 ```
 
+### Detect Language
+
+```kotlin
+fun cactusDetectLanguage(model: Long, audioPath: String?, optionsJson: String?, pcmData: ByteArray?): String
+```
+
 ### VAD / RAG
 
 ```kotlin
@@ -333,6 +350,13 @@ fun cactusIndexQuery(index: Long, embedding: FloatArray, optionsJson: String?): 
 fun cactusIndexCompact(index: Long): Int
 ```
 
+### Logging
+
+```kotlin
+fun cactusLogSetLevel(level: Int)  // 0=DEBUG 1=INFO 2=WARN 3=ERROR 4=NONE
+fun cactusLogSetCallback(callback: CactusLogCallback?)
+```
+
 ### Telemetry
 
 ```kotlin
@@ -348,12 +372,16 @@ fun cactusTelemetryShutdown()
 fun interface CactusTokenCallback {
     fun onToken(token: String, tokenId: Int)
 }
+
+fun interface CactusLogCallback {
+    fun onLog(level: Int, component: String, message: String)
+}
 ```
 
 ## Requirements
 
 - Android API 24+ / arm64-v8a
-- iOS 14+ / arm64 (KMP only)
+- iOS 13+ / arm64 (KMP only)
 
 ## See Also
 
