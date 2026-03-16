@@ -8,6 +8,7 @@
 #include "../../libs/xgrammar/include/xgrammar/matcher.h"
 #include "../../libs/xgrammar/include/xgrammar/object.h"
 #include "../../libs/xgrammar/include/xgrammar/tokenizer_info.h"
+#include <cmath>
 #include <cstdint>
 #include <arm_neon.h>
 #include <memory>
@@ -31,7 +32,6 @@ public:
     static Grammar json();
 
     std::shared_ptr<xgrammar::Grammar> handle() const;
-
 private:
     std::shared_ptr<xgrammar::Grammar> grammar;
 };
@@ -43,8 +43,11 @@ public:
 
     bool accept(uint32_t token_id);
 
-    bool apply_bitmask(__fp16* logits, size_t num_logits);
+    bool apply_bitmask(std::vector<__fp16>& logits);
+    bool apply_bitmask(std::vector<float>& logits);
 private:
+    bool apply_bitmask(void* logits, size_t num_logits, uint8_t bits);
+
     xgrammar::GrammarMatcher matcher;
     xgrammar::TokenizerInfo tokenizer_info;
 };

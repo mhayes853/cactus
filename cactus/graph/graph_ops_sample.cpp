@@ -30,19 +30,26 @@ void compute_sample_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
         const __fp16* logits_fp16 = logits_buffer.data_as<__fp16>();
         std::vector<__fp16> masked_logits(
             logits_fp16 + last_token_offset,
-            logits_fp16 + last_token_offset + vocab_size
+            logits_fp16 + last_token_offset + vocab_size * sizeof(__fp16)
         );
         if (matcher) {
-            matcher->apply_bitmask(masked_logits.data(), vocab_size);
+            matcher->apply_bitmask(masked_logits);
         }
         cactus_sample_f16(masked_logits.data(), node.output_buffer.data_as<uint32_t>(),
                          vocab_size, temperature, top_p, top_k, random_seed,
                          bias_values, bias_indices, bias_count);
     } else {
         const float* logits_fp32 = logits_buffer.data_as<float>();
-        cactus_sample_f32(logits_fp32 + last_token_offset, node.output_buffer.data_as<uint32_t>(),
-                         vocab_size, temperature, top_p, top_k, random_seed,
-                         bias_values, bias_indices, bias_count);
+        std::vector<float> masked_logits(
+            logits_fp32 + last_token_offset,
+            logits_fp32 + last_token_offset + vocab_size * sizeof(float)
+        );
+        if (matcher) {
+            matcher->apply_bitmask(masked_logits);
+        }
+        cactus_sample_f32(masked_logits.data(), node.output_buffer.data_as<uint32_t>(),
+                          vocab_size, temperature, top_p, top_k, random_seed,
+                          bias_values, bias_indices, bias_count);
     }
 }
 
