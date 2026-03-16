@@ -108,6 +108,13 @@ void reset_cache(CactusModelHandle* handle) {
     handle->processed_images.clear();
 }
 
+struct PrefillResult {
+    std::vector<uint32_t> remaining_tokens;
+    size_t prefilled_count = 0;
+    bool was_prefix = false;
+    bool was_exact_match = false;
+};
+
 struct EntropyState {
     std::vector<float> window;
     float window_sum = 0.0f;
@@ -299,6 +306,52 @@ PreparedPrompt prepare_prompt(
     return prompt;
 }
 
+PrefillResult do_prefill(
+    CactusModelHandle* handle,
+    const PreparedPrompt& prompt,
+    const std::vector<uint32_t>& target_tokens
+) {
+    PrefillResult result = {};
+    bool has_images = prompt.has_images();
+
+    result.was_prefix = prompt_context_matches(handle, prompt);
+    result.was_exact_match = result.was_prefix &&
+        target_tokens.size() == handle->processed_tokens.size();
+
+    if (result.was_exact_match) {
+        return result;
+    }
+
+    std::vector<uint32_t> tokens_to_process;
+    if (!result.was_prefix) {
+        reset_cache(handle);
+        tokens_to_process = target_tokens;
+    } else {
+        tokens_to_process.assign(
+            target_tokens.begin() + handle->processed_tokens.size(),
+            target_tokens.end()
+        );
+    }
+
+    if (tokens_to_process.size() > 1) {
+        std::vector<uint32_t> prefill_tokens(tokens_to_process.begin(), tokens_to_process.end() - 1);
+        result.prefilled_count = prefill_tokens.size();
+        if (has_images) {
+            auto prefill_image_paths = result.was_prefix
+                ? image_paths_from_messages(prompt.messages, handle->processed_images.size())
+                : prompt.image_paths;
+            handle->model->prefill_with_images(prefill_tokens, prefill_image_paths);
+        } else {
+            handle->model->prefill(prefill_tokens, handle->model->get_prefill_chunk_size());
+        }
+        result.remaining_tokens = {tokens_to_process.back()};
+    } else {
+        result.remaining_tokens = tokens_to_process;
+    }
+
+    return result;
+}
+
 uint32_t decode(
     std::unique_ptr<Model>& model,
     const std::vector<uint32_t>& tokens,
@@ -310,35 +363,17 @@ uint32_t decode(
 
 uint32_t generate_first_token(
     CactusModelHandle* handle,
-    const std::vector<uint32_t>& tokens_to_process,
+    const PrefillResult& prefill_result,
     const PreparedPrompt& prompt,
     float* first_token_entropy
 ) {
-    if (tokens_to_process.empty()) {
+    if (prefill_result.was_exact_match || prefill_result.remaining_tokens.empty()) {
         if (handle->processed_tokens.empty()) {
             throw std::runtime_error("Cannot generate from empty prompt");
         }
         return decode(handle->model, {handle->processed_tokens.back()}, prompt.options, first_token_entropy);
     }
-
-    if (!prompt.image_paths.empty()) {
-        return handle->model->decode_with_images(
-            prompt.tokens,
-            prompt.image_paths,
-            prompt.options.temperature,
-            prompt.options.top_p,
-            prompt.options.top_k,
-            "",
-            first_token_entropy
-        );
-    }
-
-    if (tokens_to_process.size() > 1) {
-        std::vector<uint32_t> prefill_tokens(tokens_to_process.begin(), tokens_to_process.end() - 1);
-        handle->model->prefill(prefill_tokens, handle->model->get_prefill_chunk_size());
-        return decode(handle->model, {tokens_to_process.back()}, prompt.options, first_token_entropy);
-    }
-    return decode(handle->model, tokens_to_process, prompt.options, first_token_entropy);
+    return decode(handle->model, prefill_result.remaining_tokens, prompt.options, first_token_entropy);
 }
 
 std::string construct_prefill_response_json(
@@ -403,22 +438,10 @@ int cactus_complete(
         CACTUS_LOG_DEBUG("complete", "Prompt tokens: " << prompt.tokens.size()
             << ", max_tokens: " << prompt.options.max_tokens);
 
-        std::vector<uint32_t> tokens_to_process;
-
         bool has_images = prompt.has_images();
-        bool is_prefix = prompt_context_matches(handle, prompt);
 
-        if (handle->processed_tokens.empty() || !is_prefix) {
-            reset_cache(handle);
-            tokens_to_process = prompt.tokens;
-        } else {
-            tokens_to_process.assign(
-                prompt.tokens.begin() + handle->processed_tokens.size(),
-                prompt.tokens.end()
-            );
-        }
-
-        size_t prompt_tokens = tokens_to_process.size();
+        auto prefill_result = do_prefill(handle, prompt, prompt.tokens);
+        size_t prompt_tokens = prefill_result.prefilled_count + prefill_result.remaining_tokens.size();
 
         auto stop_token_sequences = build_stop_sequences(tokenizer, prompt.options.stop_sequences, prompt.model_type, !prompt.tools.empty());
 
@@ -428,7 +451,7 @@ int cactus_complete(
 
         uint32_t next_token = generate_first_token(
             handle,
-            tokens_to_process,
+            prefill_result,
             prompt,
             &first_token_entropy
         );
@@ -691,66 +714,25 @@ int cactus_prefill(
 
         auto* handle = static_cast<CactusModelHandle*>(model);
         auto prompt = prepare_prompt(handle, messages_json, options_json, tools_json, false, false);
-        bool has_images = prompt.has_images();
 
-        bool is_prefix = prompt_context_matches(handle, prompt);
-        bool is_exact_match = is_prefix && prompt.context_token_count == handle->processed_tokens.size();
-
-        if (is_exact_match) {
-            auto end_time = std::chrono::high_resolution_clock::now();
-            double elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() / 1000.0;
-            std::string result = construct_prefill_response_json(true, nullptr, 0, 0.0, elapsed_ms);
-            if (result.size() >= buffer_size) {
-                std::string error_msg = "Response buffer too small";
-                std::string error_json = construct_prefill_response_json(false, &error_msg, 0, 0.0, 0.0);
-                if (error_json.size() < buffer_size) {
-                    std::strcpy(response_buffer, error_json.c_str());
-                }
-                return -1;
-            }
-            std::strcpy(response_buffer, result.c_str());
-            return static_cast<int>(result.size());
-        }
-
-        std::vector<uint32_t> tokens_to_process;
         std::vector<uint32_t> context_tokens(prompt.tokens.begin(), prompt.tokens.begin() + prompt.context_token_count);
-        if (!is_prefix) {
-            reset_cache(handle);
-            tokens_to_process = context_tokens;
-        } else {
-            tokens_to_process.assign(
-                context_tokens.begin() + handle->processed_tokens.size(),
-                context_tokens.end()
-            );
-        }
+        auto prefill_result = do_prefill(handle, prompt, context_tokens);
 
-        size_t prefill_tokens_count = 0;
-        if (tokens_to_process.size() > 1) {
-            std::vector<uint32_t> prefill_tokens(tokens_to_process.begin(), tokens_to_process.end() - 1);
-            prefill_tokens_count = prefill_tokens.size();
-            if (has_images) {
-                auto prefill_image_paths = is_prefix
-                    ? image_paths_from_messages(prompt.messages, handle->processed_images.size())
-                    : prompt.image_paths;
-                handle->model->prefill_with_images(prefill_tokens, prefill_image_paths);
-            } else {
-                handle->model->prefill(prefill_tokens, handle->model->get_prefill_chunk_size());
+        if (!prefill_result.was_exact_match) {
+            handle->processed_tokens = context_tokens;
+            if (!handle->processed_tokens.empty()) {
+                handle->processed_tokens.pop_back();
             }
-        }
-
-        handle->processed_tokens = context_tokens;
-        if (!handle->processed_tokens.empty()) {
-            handle->processed_tokens.pop_back();
         }
         handle->processed_images = prompt.images;
 
         auto end_time = std::chrono::high_resolution_clock::now();
         double elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() / 1000.0;
-        double prefill_tps = (prefill_tokens_count > 0 && elapsed_ms > 0.0)
-            ? (static_cast<double>(prefill_tokens_count) * 1000.0) / elapsed_ms
+        double prefill_tps = (prefill_result.prefilled_count > 0 && elapsed_ms > 0.0)
+            ? (static_cast<double>(prefill_result.prefilled_count) * 1000.0) / elapsed_ms
             : 0.0;
 
-        std::string result = construct_prefill_response_json(true, nullptr, prefill_tokens_count, prefill_tps, elapsed_ms);
+        std::string result = construct_prefill_response_json(true, nullptr, prefill_result.prefilled_count, prefill_tps, elapsed_ms);
         if (result.size() >= buffer_size) {
             std::string error_msg = "Response buffer too small";
             std::string error_json = construct_prefill_response_json(false, &error_msg, 0, 0.0, 0.0);
