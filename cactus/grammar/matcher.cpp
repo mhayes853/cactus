@@ -4,6 +4,19 @@
 namespace cactus {
 namespace grammar {
 
+namespace {
+
+static xgrammar::VocabType to_xgrammar_vocab_type(VocabType vocab_type) {
+    switch (vocab_type) {
+        case VocabType::RAW:
+            return xgrammar::VocabType::RAW;
+        case VocabType::BYTE_LEVEL:
+            return xgrammar::VocabType::BYTE_LEVEL;
+    }
+}
+
+} // anonymous namespace
+
 GrammarMatcher::GrammarMatcher(const Grammar* grammar, const TokenizerInfo& tokenizer_info)
     : matcher(nullptr), tokenizer_info(nullptr) {
     auto handle = grammar->handle();
@@ -13,7 +26,7 @@ GrammarMatcher::GrammarMatcher(const Grammar* grammar, const TokenizerInfo& toke
     std::vector<int32_t> stop_token_ids_int32(tokenizer_info.stop_token_ids.begin(), tokenizer_info.stop_token_ids.end());
     xgrammar::TokenizerInfo xgrammar_tokenizer_info{
         tokenizer_info.encoded_vocab,
-        xgrammar::VocabType::RAW,
+        to_xgrammar_vocab_type(tokenizer_info.vocab_type),
         static_cast<int>(tokenizer_info.vocab_size),
         stop_token_ids_int32,
         tokenizer_info.add_prefix_space

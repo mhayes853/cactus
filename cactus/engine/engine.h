@@ -232,7 +232,7 @@ public:
     virtual uint32_t get_unk_token() const = 0;
     virtual uint32_t get_bos_token() const = 0;
     virtual uint32_t get_eos_token() const = 0;
-    virtual const std::vector<std::string>& get_raw_vocab() const = 0;
+    virtual cactus::grammar::TokenizerInfo get_tokenizer_info() const = 0;
     virtual bool get_add_prefix_space() const { return false; }
     virtual bool has_chat_template() const { return has_chat_template_; }
     std::string get_default_stop_sequence() const;
@@ -282,7 +282,15 @@ public:
     uint32_t get_unk_token() const override { return unk_token_id_; }
     uint32_t get_bos_token() const override { return bos_token_id_; }
     uint32_t get_eos_token() const override { return eos_token_id_; }
-    const std::vector<std::string>& get_raw_vocab() const override { return id_to_token_; }
+    cactus::grammar::TokenizerInfo get_tokenizer_info() const override {
+        return cactus::grammar::TokenizerInfo{
+            id_to_token_,
+            cactus::grammar::VocabType::BYTE_LEVEL,
+            id_to_token_.size(),
+            {eos_token_id_},
+            get_add_prefix_space()
+        };
+    }
 
 private:
     std::unordered_map<std::string, uint32_t> token_to_id_;
@@ -340,7 +348,15 @@ public:
     uint32_t get_unk_token() const override { return unk_token_id_; }
     uint32_t get_bos_token() const override { return bos_token_id_; }
     uint32_t get_eos_token() const override { return eos_token_id_; }
-    const std::vector<std::string>& get_raw_vocab() const override { return id_to_token_; }
+    cactus::grammar::TokenizerInfo get_tokenizer_info() const override {
+        return cactus::grammar::TokenizerInfo{
+            id_to_token_,
+            cactus::grammar::VocabType::RAW,
+            id_to_token_.size(),
+            {eos_token_id_},
+            get_add_prefix_space()
+        };
+    }
     bool get_add_prefix_space() const override { return model_type_ == ModelType::BERT; }
 
 private:

@@ -9,16 +9,24 @@
 #include "../../libs/xgrammar/include/xgrammar/object.h"
 #include "../../libs/xgrammar/include/xgrammar/tokenizer_info.h"
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <arm_neon.h>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace cactus {
 namespace grammar {
 
+enum class VocabType {
+    RAW,
+    BYTE_LEVEL,
+};
+
 struct TokenizerInfo {
     std::vector<std::string> encoded_vocab;
+    VocabType vocab_type = VocabType::RAW;
     size_t vocab_size;
     std::vector<uint32_t> stop_token_ids;
     bool add_prefix_space = false;

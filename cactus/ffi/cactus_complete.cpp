@@ -159,17 +159,6 @@ uint32_t generate_first_token(
     return handle->model->decode(tokens_to_process, temperature, top_p, top_k, "", first_token_entropy, matcher);
 }
 
-cactus::grammar::TokenizerInfo model_tokenizer_info(CactusModelHandle* handle) {
-    auto* tokenizer = handle->model->get_tokenizer();
-    const auto& raw_vocab = tokenizer->get_raw_vocab();
-    return cactus::grammar::TokenizerInfo{
-        raw_vocab,
-        raw_vocab.size(),
-        {tokenizer->get_eos_token()},
-        tokenizer->get_add_prefix_space()
-    };
-}
-
 } // anonymous namespace
 
 extern "C" {
@@ -294,7 +283,7 @@ int cactus_complete(
         if (grammar) {
             const CactusGrammarHandle* grammar_handle = static_cast<const CactusGrammarHandle*>(grammar);
             matcher = std::make_unique<cactus::grammar::GrammarMatcher>(
-                cactus::grammar::GrammarMatcher(grammar_handle->grammar.get(), model_tokenizer_info(handle))
+                cactus::grammar::GrammarMatcher(grammar_handle->grammar.get(), tokenizer->get_tokenizer_info())
             );
         }
 
