@@ -8,9 +8,13 @@ keywords: ["Flutter SDK", "dart FFI", "on-device AI", "mobile inference", "iOS",
 
 Run AI models on-device with dart:ffi direct bindings for iOS, macOS, and Android.
 
+> **Model weights:** Pre-converted weights for all supported models at [huggingface.co/Cactus-Compute](https://huggingface.co/Cactus-Compute).
+
 ## Building
 
+<!-- --8<-- [start:install] -->
 ```bash
+git clone https://github.com/cactus-compute/cactus && cd cactus && source ./setup
 cactus build --flutter
 ```
 
@@ -21,11 +25,13 @@ Build output:
 | `libcactus.so` | Android (arm64-v8a) |
 | `cactus-ios.xcframework` | iOS |
 | `cactus-macos.xcframework` | macOS |
+<!-- --8<-- [end:install] -->
 
 see the main [README.md](../README.md) for how to use CLI & download weight
 
 ## Integration
 
+<!-- --8<-- [start:integration] -->
 ### Android
 
 1. Copy `libcactus.so` to `android/app/src/main/jniLibs/arm64-v8a/`
@@ -46,6 +52,7 @@ see the main [README.md](../README.md) for how to use CLI & download weight
 3. Drag the xcframework into the project
 4. In Runner target > General > "Frameworks, Libraries, and Embedded Content", set to "Embed & Sign"
 5. Copy `cactus.dart` to your `lib/` folder
+<!-- --8<-- [end:integration] -->
 
 ## Usage
 
@@ -53,6 +60,7 @@ Handles are typed as `CactusModelT`, `CactusIndexT`, and `CactusStreamTranscribe
 
 ### Basic Completion
 
+<!-- --8<-- [start:example] -->
 ```dart
 import 'cactus.dart';
 import 'dart:convert';
@@ -64,6 +72,9 @@ final result = jsonDecode(resultJson);
 print(result['response']);
 cactusDestroy(model);
 ```
+<!-- --8<-- [end:example] -->
+
+For vision models (LFM2-VL, LFM2.5-VL), add `"images": ["path/to/image.png"]` to any message. See [Engine API](/docs/cactus_engine.md) for details.
 
 ### Completion with Options and Streaming
 
@@ -210,6 +221,12 @@ List<int> cactusTokenize(CactusModelT model, String text)
 String cactusScoreWindow(CactusModelT model, List<int> tokens, int start, int end, int context)
 ```
 
+### Detect Language
+
+```dart
+String cactusDetectLanguage(CactusModelT model, String? audioPath, String? optionsJson, Uint8List? pcmData)
+```
+
 ### VAD / RAG
 
 ```dart
@@ -229,10 +246,17 @@ String cactusIndexQuery(CactusIndexT index, List<double> embedding, String? opti
 int cactusIndexCompact(CactusIndexT index)
 ```
 
+### Logging
+
+```dart
+void cactusLogSetLevel(int level)  // 0=DEBUG 1=INFO 2=WARN 3=ERROR 4=NONE
+void cactusLogSetCallback(void Function(int level, String component, String message)? onLog)
+```
+
 ### Telemetry
 
 ```dart
-void cactusSetTelemetryEnvironment(String cacheDir)
+void cactusSetTelemetryEnvironment(String cacheLocation)
 void cactusSetAppId(String appId)
 void cactusTelemetryFlush()
 void cactusTelemetryShutdown()
@@ -280,7 +304,7 @@ final path = '${Directory.current.path}/model';
 
 - Flutter 3.0+
 - Dart 2.17+
-- iOS 14.0+ / macOS 13.0+
+- iOS 13.0+ / macOS 13.0+
 - Android API 24+ / arm64-v8a
 
 ## See Also
