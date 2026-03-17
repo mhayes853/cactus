@@ -1,5 +1,7 @@
 #include "engine.h"
+#include <cstddef>
 #include <fstream>
+#include <memory>
 #include <sstream>
 #include <algorithm>
 #include <cmath>
@@ -10,6 +12,44 @@ extern "C" {
 
 namespace cactus {
 namespace engine {
+
+namespace {
+
+bool model_uses_bpe_tokenizer(const std::string& merges_file) {
+    std::ifstream merges_check(merges_file);
+    if (!merges_check.is_open()) {
+        return false;
+    }
+
+    std::string line;
+    int line_count = 0;
+    while (std::getline(merges_check, line) && line_count < 10) {
+        if (!line.empty() && line[0] != '#') {
+            return true;
+        }
+        ++line_count;
+    }
+    return false;
+}
+
+} // anonymous namespace
+
+std::unique_ptr<Tokenizer> create_tokenizer_from_model_dir(const std::string& model_dir) {
+    const std::string vocab_file = model_dir + "/vocab.txt";
+    const std::string merges_file = model_dir + "/merges.txt";
+    const std::string config_file = model_dir + "/tokenizer_config.txt";
+
+    std::unique_ptr<Tokenizer> tokenizer;
+    if (model_uses_bpe_tokenizer(merges_file)) {
+        tokenizer = std::make_unique<BPETokenizer>();
+    } else {
+        tokenizer = std::make_unique<SPTokenizer>();
+    }
+    if (!tokenizer->load_vocabulary_with_config(vocab_file, merges_file, config_file)) {
+        return nullptr;
+    }
+    return tokenizer;
+}
 
 void Tokenizer::detect_model_type(const std::string& config_path) {
     std::ifstream file(config_path);

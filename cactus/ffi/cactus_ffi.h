@@ -216,14 +216,26 @@ CACTUS_FFI_EXPORT void cactus_telemetry_shutdown(void);
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_gbnf(const char* gbnf, const char* start_symbol);
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_json();
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_empty();
+
+typedef struct cactus_grammar_json_schema_options_t {
+    bool any_whitespace;                    // negates indent and separators if true
+    int indent;
+    const char* separators[2];
+    bool strict_mode;
+    int max_whitespace_count;               // -1 means no limit
+} cactus_grammar_json_schema_options_t;
+
+#define CACTUS_GRAMMAR_JSON_SCHEMA_DEFAULT_OPTIONS (cactus_grammar_json_schema_options_t){ \
+    .any_whitespace = true, \
+    .indent = 2, \
+    .separators = {",", ":"}, \
+    .strict_mode = true, \
+    .max_whitespace_count = -1 \
+}
+
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_json_schema(
     const char* json_schema,
-    bool any_whitespace,                    // optional (negates indent and separators)
-    int indent,                             // optional
-    const char*** separators,               // optional
-    size_t separators_count,                // optional (must be provided if separators is non-null)
-    bool strict_mode,                       // optional
-    int max_whitespace_count                // optional
+    cactus_grammar_json_schema_options_t options
 );
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_regex(const char* regex);
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_structural_tag(const char* structural_tag_json);

@@ -279,12 +279,14 @@ int cactus_complete(
         double time_to_first_token = 0.0;
         float first_token_entropy = 0.0f;
 
-        std::unique_ptr<cactus::grammar::GrammarMatcher> matcher = nullptr;
+        std::unique_ptr<cactus::grammar::GrammarMatcher> matcher;
         if (grammar) {
             const CactusGrammarHandle* grammar_handle = static_cast<const CactusGrammarHandle*>(grammar);
-            matcher = std::make_unique<cactus::grammar::GrammarMatcher>(
-                cactus::grammar::GrammarMatcher(grammar_handle->grammar.get(), tokenizer->get_tokenizer_info())
-            );
+            if (grammar_handle->grammar) {
+                matcher = std::make_unique<cactus::grammar::GrammarMatcher>(
+                    cactus::grammar::GrammarMatcher(grammar_handle->grammar.get(), tokenizer->get_tokenizer_info())
+                );
+            }
         }
 
         uint32_t next_token = generate_first_token(handle, tokens_to_process, image_paths,

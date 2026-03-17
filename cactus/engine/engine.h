@@ -395,6 +395,8 @@ private:
     void load_chat_template(const std::string& template_file);
 };
 
+std::unique_ptr<Tokenizer> create_tokenizer_from_model_dir(const std::string& model_dir);
+
 class ConvCache {
 public:
     struct CircularView {

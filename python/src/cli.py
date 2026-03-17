@@ -1471,7 +1471,7 @@ def cmd_test(args):
     if getattr(args, 'exhaustive', False):
         cmd.append("--exhaustive")
     test_filter = args.only
-    for _test_name in ['llm', 'vlm', 'stt', 'embed', 'rag', 'graph', 'index', 'kernel', 'kv_cache', 'performance']:
+    for _test_name in ['llm', 'vlm', 'stt', 'embed', 'rag', 'graph', 'grammar', 'index', 'kernel', 'kv_cache', 'performance']:
         if getattr(args, _test_name, False):
             test_filter = _test_name
             break
@@ -2080,7 +2080,7 @@ def create_parser():
     test_parser.add_argument('--exhaustive', action='store_true',
                              help='Run exhaustive golden tests for all model families and precisions')
     test_parser.add_argument('--only', help='(deprecated, use --<test_name> instead) Only run the specified test')
-    for _test_name in ['llm', 'vlm', 'stt', 'embed', 'rag', 'graph', 'index', 'kernel', 'kv_cache', 'performance']:
+    for _test_name in ['llm', 'vlm', 'stt', 'embed', 'rag', 'graph', 'grammar', 'index', 'kernel', 'kv_cache', 'performance']:
         test_parser.add_argument(f'--{_test_name}', action='store_true',
                                  help=f'Only run the {_test_name} tests')
     test_parser.add_argument('--enable-telemetry', action='store_true',
