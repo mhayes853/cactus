@@ -4,6 +4,9 @@ project(CactusTests LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+set(CACTUS_XGRAMMAR_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../libs/xgrammar" CACHE PATH "Path to vendored xgrammar artifacts")
+set(CACTUS_XGRAMMAR_INCLUDE_DIR "${CACTUS_XGRAMMAR_ROOT}/include")
+
 function(cactus_require_vendored_curl include_dir library_path platform_label)
     if(NOT EXISTS "${include_dir}/curl/curl.h" OR NOT EXISTS "${library_path}")
         message(WARNING "==============================================================================")
@@ -102,7 +105,7 @@ foreach(TEST_FILE ${TEST_SOURCES})
         )
     endif()
 
-    target_include_directories(${TEST_NAME} PRIVATE ${CACTUS_ROOT})
+    target_include_directories(${TEST_NAME} PRIVATE ${CACTUS_ROOT} ${CACTUS_XGRAMMAR_INCLUDE_DIR})
 
     message(STATUS "Added test: ${TEST_NAME}")
 endforeach()
@@ -143,7 +146,7 @@ foreach(APP_NAME chat asr)
             message(STATUS "asr will link with SDL2 for live transcription")
         endif()
 
-        target_include_directories(${APP_NAME} PRIVATE ${CACTUS_ROOT})
+        target_include_directories(${APP_NAME} PRIVATE ${CACTUS_ROOT} ${CACTUS_XGRAMMAR_INCLUDE_DIR})
         message(STATUS "Added executable: ${APP_NAME}")
     endif()
 endforeach()

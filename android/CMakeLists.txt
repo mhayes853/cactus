@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 set(SOURCE_DIR ${CMAKE_SOURCE_DIR}/../cactus)
 set(CACTUS_CURL_ROOT "${CMAKE_SOURCE_DIR}/../libs/curl" CACHE PATH "Path to vendored libcurl artifacts")
+set(CACTUS_XGRAMMAR_ROOT "${CMAKE_SOURCE_DIR}/../libs/xgrammar" CACHE PATH "Path to vendored xgrammar artifacts")
+set(CACTUS_XGRAMMAR_INCLUDE_DIR "${CACTUS_XGRAMMAR_ROOT}/include")
 
 set(_CACTUS_VERSION_FILE "${CMAKE_SOURCE_DIR}/../CACTUS_VERSION")
 if(EXISTS "${_CACTUS_VERSION_FILE}")
@@ -85,6 +87,8 @@ set(COMMON_INCLUDE_DIRS
 
 target_include_directories(cactus PRIVATE ${COMMON_INCLUDE_DIRS})
 target_include_directories(cactus_static PRIVATE ${COMMON_INCLUDE_DIRS})
+target_include_directories(cactus SYSTEM PRIVATE ${CACTUS_XGRAMMAR_INCLUDE_DIR})
+target_include_directories(cactus_static SYSTEM PRIVATE ${CACTUS_XGRAMMAR_INCLUDE_DIR})
 
 target_link_libraries(cactus ${LOG_LIB} android)
 

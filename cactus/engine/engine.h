@@ -12,14 +12,14 @@
 #include <variant>
 #include <vector>
 
-#include "../../libs/xgrammar/include/dlpack/dlpack.h"
-#include "../../libs/xgrammar/include/xgrammar/compiler.h"
-#include "../../libs/xgrammar/include/xgrammar/config.h"
-#include "../../libs/xgrammar/include/xgrammar/exception.h"
-#include "../../libs/xgrammar/include/xgrammar/grammar.h"
-#include "../../libs/xgrammar/include/xgrammar/matcher.h"
-#include "../../libs/xgrammar/include/xgrammar/object.h"
-#include "../../libs/xgrammar/include/xgrammar/tokenizer_info.h"
+#include <dlpack/dlpack.h>
+#include <xgrammar/compiler.h>
+#include <xgrammar/config.h>
+#include <xgrammar/exception.h>
+#include <xgrammar/grammar.h>
+#include <xgrammar/matcher.h>
+#include <xgrammar/object.h>
+#include <xgrammar/tokenizer_info.h>
 
 #include "../graph/graph.h"
 

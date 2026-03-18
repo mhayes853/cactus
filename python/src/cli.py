@@ -678,6 +678,7 @@ def cmd_build(args):
     lib_path = cactus_dir / "build" / "libcactus.a"
     vendored_curl = PROJECT_ROOT / "libs" / "curl" / "macos" / "libcurl.a"
     vendored_xgrammar = PROJECT_ROOT / "libs" / "xgrammar" / "macos" / "libxgrammar.a"
+    vendored_xgrammar_include = PROJECT_ROOT / "libs" / "xgrammar" / "include"
 
     print_color(YELLOW, "Building Cactus library...")
     build_script = cactus_dir / "build.sh"
@@ -716,6 +717,7 @@ def cmd_build(args):
             compiler, "-std=c++20", "-O3",
             "-DACCELERATE_NEW_LAPACK",
             f"-I{PROJECT_ROOT}",
+            f"-I{vendored_xgrammar_include}",
             str(chat_cpp),
             str(lib_path),
             "-o", "chat",
@@ -733,6 +735,7 @@ def cmd_build(args):
         cmd = [
             compiler, "-std=c++20", "-O3",
             f"-I{PROJECT_ROOT}",
+            f"-I{vendored_xgrammar_include}",
             str(chat_cpp),
             str(lib_path),
             "-o", "chat",
@@ -791,6 +794,7 @@ def cmd_build(args):
                 compiler, "-std=c++20", "-O3",
                 "-DACCELERATE_NEW_LAPACK",
                 f"-I{PROJECT_ROOT}",
+                f"-I{vendored_xgrammar_include}",
             ]
             if sdl2_available:
                 cmd.extend(["-DHAVE_SDL2", sdl2_include])
@@ -813,6 +817,7 @@ def cmd_build(args):
             cmd = [
                 compiler, "-std=c++20", "-O3",
                 f"-I{PROJECT_ROOT}",
+                f"-I{vendored_xgrammar_include}",
             ]
             if sdl2_available:
                 cmd.extend(["-DHAVE_SDL2", sdl2_include])

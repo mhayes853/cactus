@@ -148,7 +148,7 @@ function(configure_cactus_target target_name)
             ${CACTUS_XGRAMMAR_LIBRARY_MACOS}
         )
         target_include_directories(${target_name} PUBLIC ${CACTUS_CURL_INCLUDE_DIR})
-        target_include_directories(${target_name} PUBLIC ${CACTUS_XGRAMMAR_INCLUDE_DIR})
+        target_include_directories(${target_name} SYSTEM PUBLIC ${CACTUS_XGRAMMAR_INCLUDE_DIR})
         target_compile_definitions(${target_name} PRIVATE CACTUS_USE_CURL=1)
         target_compile_definitions(${target_name} PRIVATE CACTUS_USE_XGRAMMAR=1)
     elseif(CURL_FOUND)

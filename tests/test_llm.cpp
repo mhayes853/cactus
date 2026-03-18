@@ -1,5 +1,5 @@
 #include "test_utils.h"
-#include "../libs/xgrammar/include/picojson/picojson.h"
+#include <picojson/picojson.h>
 #include <cctype>
 #include <fstream>
 #include <cstdlib>
