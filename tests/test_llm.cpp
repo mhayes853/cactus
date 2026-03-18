@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstdio>
 #include <iostream>
+#include <regex>
 #include <thread>
 #include <chrono>
 
@@ -412,10 +413,8 @@ bool test_regex_grammar_outputs_address() {
         output += token;
     }
 
-    bool matches_regex = !output.empty()
-        && output.find(',') != std::string::npos
-        && output.find("Seattle") != std::string::npos
-        && output.find("WA") != std::string::npos;
+    const std::basic_regex<char> address_pattern(address_regex);
+    bool matches_regex = std::regex_match(output, address_pattern);
 
     std::cout << "\n\n[Results]\n";
     Metrics metrics;
