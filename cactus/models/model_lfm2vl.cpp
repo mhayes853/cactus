@@ -397,7 +397,7 @@ uint32_t Lfm2VlModel::decode(const std::vector<uint32_t>& tokens,
                                size_t top_k,
                                const std::string& profile_file,
                                float* out_entropy,
-                               cactus::grammar::GrammarMatcher* matcher) {
+                               cactus::engine::GrammarMatcher* matcher) {
     if (!initialized_ || !graph_handle_) {
         throw std::runtime_error("Model not initialized - call init() first");
     }

@@ -1,4 +1,5 @@
 #include "graph.h"
+#include "../engine/engine.h"
 #include "../kernel/kernel.h"
 #include <cstring>
 #include <algorithm>
@@ -12,7 +13,7 @@ void compute_sample_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
     float top_p = node.params.top_p;
     size_t top_k = node.params.top_k;
     size_t random_seed = node.params.random_seed;
-    cactus::grammar::GrammarMatcher* matcher = node.params.matcher;
+    cactus::engine::GrammarMatcher* matcher = node.params.matcher;
 
     const float* bias_values = node.params.bias_values.empty() ? nullptr : node.params.bias_values.data();
     const uint32_t* bias_indices = node.params.bias_indices.empty() ? nullptr : node.params.bias_indices.data();

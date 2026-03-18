@@ -90,7 +90,6 @@ file(GLOB KERNEL_SOURCES "kernel/*.cpp")
 file(GLOB FFI_SOURCES "ffi/*.cpp")
 file(GLOB MODEL_SOURCES "models/*.cpp")
 file(GLOB TELEMETRY_SOURCES "telemetry/*.cpp")
-file(GLOB GRAMMAR_SOURCES "grammar/*.cpp")
 
 set(SME2_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/kernel/kernel_sme2.cpp")
 list(REMOVE_ITEM KERNEL_SOURCES "${SME2_SOURCE}")
@@ -111,7 +110,6 @@ set(COMMON_SOURCES
     ${MODEL_SOURCES}
     ${NPU_SOURCES}
     ${TELEMETRY_SOURCES}
-    ${GRAMMAR_SOURCES}
 )
 
 set(COMMON_INCLUDES
@@ -123,7 +121,6 @@ set(COMMON_INCLUDES
     models
     npu
     telemetry
-    grammar
 )
 
 function(configure_cactus_target target_name)

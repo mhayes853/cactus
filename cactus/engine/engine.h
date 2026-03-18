@@ -1,14 +1,27 @@
 #pragma once
 
-#include <vector>
+#include <arm_neon.h>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
-#include <memory>
-#include <cstdint>
+#include <variant>
+#include <vector>
+
+#include "../../libs/xgrammar/include/dlpack/dlpack.h"
+#include "../../libs/xgrammar/include/xgrammar/compiler.h"
+#include "../../libs/xgrammar/include/xgrammar/config.h"
+#include "../../libs/xgrammar/include/xgrammar/exception.h"
+#include "../../libs/xgrammar/include/xgrammar/grammar.h"
+#include "../../libs/xgrammar/include/xgrammar/matcher.h"
+#include "../../libs/xgrammar/include/xgrammar/object.h"
+#include "../../libs/xgrammar/include/xgrammar/tokenizer_info.h"
 
 #include "../graph/graph.h"
-#include "../grammar/grammar.h"
 
 #ifdef __clang__
 #pragma clang diagnostic push
@@ -40,6 +53,66 @@ namespace npu {
 namespace engine {
 
 class Siglip2Preprocessor;
+
+enum class VocabType {
+    RAW,
+    BYTE_LEVEL,
+};
+
+struct TokenizerInfo {
+    std::vector<std::string> encoded_vocab;
+    VocabType vocab_type = VocabType::RAW;
+    size_t vocab_size;
+    std::vector<uint32_t> stop_token_ids;
+    bool add_prefix_space = false;
+};
+
+class Grammar {
+public:
+    Grammar();
+    ~Grammar() = default;
+
+    static Grammar gbnf(const std::string& gbnf, const std::string& start_symbol = "root");
+    static Grammar json();
+    static Grammar json_schema(
+        const std::string& json_schema,
+        bool any_whitespace = true,
+        int indent = 2,
+        std::pair<std::string, std::string> separators = {",", ":"},
+        bool strict_mode = true,
+        int max_whitespace_count = -1
+    );
+    static Grammar regex(const std::string& regex);
+    static Grammar structural_tag(const std::string& structural_tag_json);
+    static Grammar unite(const std::vector<Grammar>& grammars);
+    static Grammar concatenate(const std::vector<Grammar>& grammars);
+
+    bool is_empty() const;
+
+    std::shared_ptr<xgrammar::Grammar> handle() const;
+
+private:
+    explicit Grammar(xgrammar::Grammar raw_grammar);
+
+    std::shared_ptr<xgrammar::Grammar> grammar;
+};
+
+class GrammarMatcher {
+public:
+    GrammarMatcher(const Grammar* grammar, const TokenizerInfo& tokenizer_info);
+    ~GrammarMatcher() = default;
+
+    bool accept(uint32_t token_id);
+
+    bool apply_bitmask(std::vector<__fp16>& logits);
+    bool apply_bitmask(std::vector<float>& logits);
+
+private:
+    bool apply_bitmask(void* logits, size_t num_logits, uint8_t bits);
+
+    xgrammar::GrammarMatcher matcher;
+    xgrammar::TokenizerInfo tokenizer_info;
+};
 
 struct Config {
     uint32_t vocab_size = 151936;
@@ -232,7 +305,7 @@ public:
     virtual uint32_t get_unk_token() const = 0;
     virtual uint32_t get_bos_token() const = 0;
     virtual uint32_t get_eos_token() const = 0;
-    virtual cactus::grammar::TokenizerInfo get_tokenizer_info() const = 0;
+    virtual TokenizerInfo get_tokenizer_info() const = 0;
     virtual bool get_add_prefix_space() const { return false; }
     virtual bool has_chat_template() const { return has_chat_template_; }
     std::string get_default_stop_sequence() const;
@@ -282,10 +355,10 @@ public:
     uint32_t get_unk_token() const override { return unk_token_id_; }
     uint32_t get_bos_token() const override { return bos_token_id_; }
     uint32_t get_eos_token() const override { return eos_token_id_; }
-    cactus::grammar::TokenizerInfo get_tokenizer_info() const override {
-        return cactus::grammar::TokenizerInfo{
+    TokenizerInfo get_tokenizer_info() const override {
+        return TokenizerInfo{
             id_to_token_,
-            cactus::grammar::VocabType::BYTE_LEVEL,
+            VocabType::BYTE_LEVEL,
             id_to_token_.size(),
             {eos_token_id_},
             get_add_prefix_space()
@@ -348,10 +421,10 @@ public:
     uint32_t get_unk_token() const override { return unk_token_id_; }
     uint32_t get_bos_token() const override { return bos_token_id_; }
     uint32_t get_eos_token() const override { return eos_token_id_; }
-    cactus::grammar::TokenizerInfo get_tokenizer_info() const override {
-        return cactus::grammar::TokenizerInfo{
+    TokenizerInfo get_tokenizer_info() const override {
+        return TokenizerInfo{
             id_to_token_,
-            cactus::grammar::VocabType::RAW,
+            VocabType::RAW,
             id_to_token_.size(),
             {eos_token_id_},
             get_add_prefix_space()
@@ -611,7 +684,7 @@ public:
 
     virtual uint32_t decode(const std::vector<uint32_t>& tokens, float temperature = -1.0f, float top_p = -1.0f,
                       size_t top_k = 0, const std::string& profile_file = "", float* out_entropy = nullptr, 
-                      cactus::grammar::GrammarMatcher* matcher = nullptr);
+                       GrammarMatcher* matcher = nullptr);
 
     virtual void prefill(const std::vector<uint32_t>& tokens, size_t chunk_size = 256, const std::string& profile_file = "");
 
@@ -664,7 +737,7 @@ public:
 
 protected:
     size_t sample_token(CactusGraph* gb, size_t logits_node_id, float temperature, float top_p, size_t top_k,
-                        const std::unordered_map<uint32_t, float>* extra_bias = nullptr, cactus::grammar::GrammarMatcher* matcher = nullptr) const;
+                        const std::unordered_map<uint32_t, float>* extra_bias = nullptr, GrammarMatcher* matcher = nullptr) const;
 
     static void compute_entropy(CactusGraph* gb, size_t logits_node_id, float* out_entropy);
 

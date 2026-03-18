@@ -5,9 +5,9 @@
 #include <iostream>
 #include <memory>
 
-using cactus::grammar::Grammar;
-using cactus::grammar::GrammarMatcher;
-using cactus::grammar::TokenizerInfo;
+using cactus::engine::Grammar;
+using cactus::engine::GrammarMatcher;
+using cactus::engine::TokenizerInfo;
 
 namespace {
 

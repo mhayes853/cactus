@@ -1,12 +1,11 @@
 #include "cactus_ffi.h"
 #include "cactus_utils.h"
-#include "grammar/grammar.h"
 
 #include <vector>
 #include <optional>
 
 using namespace cactus::ffi;
-using namespace cactus::grammar;
+using namespace cactus::engine;
 
 namespace {
 

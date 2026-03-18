@@ -3,7 +3,6 @@
 
 #include "../engine/engine.h"
 #include "../models/model.h"
-#include "../grammar/grammar.h"
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -60,7 +59,7 @@ inline double get_ram_usage_mb() {
 }
 
 struct CactusGrammarHandle {
-    std::unique_ptr<cactus::grammar::Grammar> grammar;
+    std::unique_ptr<cactus::engine::Grammar> grammar;
 };
 
 struct CactusModelHandle {

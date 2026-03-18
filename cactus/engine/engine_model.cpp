@@ -2,7 +2,6 @@
 #include "../models/model.h"
 #include "../graph/graph.h"
 #include "../npu/npu.h"
-#include "../grammar/grammar.h"
 #include <cstdint>
 #include <fstream>
 #include <iomanip>
@@ -201,7 +200,7 @@ void Model::prefill(const std::vector<uint32_t>& tokens, size_t chunk_size, cons
 
 uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, float top_p,
                         size_t top_k, const std::string& profile_file, float* out_entropy,
-                        cactus::grammar::GrammarMatcher* matcher) {
+                        cactus::engine::GrammarMatcher* matcher) {
 
     if (temperature < 0) {
         temperature = config_.default_temperature;
@@ -250,7 +249,7 @@ uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, f
 
 size_t Model::sample_token(CactusGraph* gb, size_t logits_node_id, float temperature, float top_p, size_t top_k,
                            const std::unordered_map<uint32_t, float>* extra_bias, 
-                           cactus::grammar::GrammarMatcher* matcher) const {
+                           cactus::engine::GrammarMatcher* matcher) const {
     auto combined_bias = tool_constrainer_.get_bias();
     for (const auto& [token_id, boost] : vocab_bias_) {
         combined_bias[token_id] += boost;

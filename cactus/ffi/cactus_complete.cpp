@@ -134,7 +134,7 @@ uint32_t generate_first_token(
     const std::vector<std::string>& image_paths,
     float temperature, float top_p, size_t top_k,
     float* first_token_entropy,
-    cactus::grammar::GrammarMatcher* matcher
+    cactus::engine::GrammarMatcher* matcher
 ) {
     if (tokens_to_process.empty()) {
         if (handle->processed_tokens.empty()) {
@@ -279,12 +279,12 @@ int cactus_complete(
         double time_to_first_token = 0.0;
         float first_token_entropy = 0.0f;
 
-        std::unique_ptr<cactus::grammar::GrammarMatcher> matcher;
+        std::unique_ptr<cactus::engine::GrammarMatcher> matcher;
         if (grammar) {
             const CactusGrammarHandle* grammar_handle = static_cast<const CactusGrammarHandle*>(grammar);
             if (grammar_handle->grammar) {
-                matcher = std::make_unique<cactus::grammar::GrammarMatcher>(
-                    cactus::grammar::GrammarMatcher(grammar_handle->grammar.get(), tokenizer->get_tokenizer_info())
+                matcher = std::make_unique<cactus::engine::GrammarMatcher>(
+                    cactus::engine::GrammarMatcher(grammar_handle->grammar.get(), tokenizer->get_tokenizer_info())
                 );
             }
         }
