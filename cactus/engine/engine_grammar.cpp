@@ -130,31 +130,15 @@ bool GrammarMatcher::accept(uint32_t token_id) {
     return matcher.AcceptToken(token_id);
 }
 
-bool GrammarMatcher::apply_bitmask(std::vector<__fp16>& logits) {
-    return apply_bitmask(logits.data(), logits.size(), 16);
-}
-
-bool GrammarMatcher::apply_bitmask(std::vector<float>& logits) {
-    return apply_bitmask(logits.data(), logits.size(), 32);
-}
-
-bool GrammarMatcher::apply_bitmask(void* logits, size_t num_logits, uint8_t bits) {
+bool GrammarMatcher::fill_next_token_bitmask(std::vector<int32_t>& token_bitmask) {
     const int32_t bitmask_size = xgrammar::GetBitmaskSize(tokenizer_info.GetVocabSize());
-    std::vector<int32_t> token_bitmask(bitmask_size);
+    token_bitmask.resize(bitmask_size);
 
-    int64_t logits_shape[1] = {static_cast<int64_t>(num_logits)};
-    int64_t logits_strides[1] = {1};
-    DLTensor logits_tensor;
-    logits_tensor.data = logits;
-    logits_tensor.device = DLDevice{kDLCPU, 0};
-    logits_tensor.ndim = 1;
-    logits_tensor.dtype = DLDataType{static_cast<uint8_t>(kDLFloat), bits, 1};
-    logits_tensor.shape = logits_shape;
-    logits_tensor.strides = logits_strides;
-    logits_tensor.byte_offset = 0;
+    int64_t bitmask_shape[1];
+    int64_t bitmask_strides[1];
+    bitmask_shape[0] = static_cast<int64_t>(token_bitmask.size());
+    bitmask_strides[0] = 1;
 
-    int64_t bitmask_shape[1] = {bitmask_size};
-    int64_t bitmask_strides[1] = {1};
     DLTensor bitmask_tensor;
     bitmask_tensor.data = token_bitmask.data();
     bitmask_tensor.device = DLDevice{kDLCPU, 0};
@@ -164,13 +148,7 @@ bool GrammarMatcher::apply_bitmask(void* logits, size_t num_logits, uint8_t bits
     bitmask_tensor.strides = bitmask_strides;
     bitmask_tensor.byte_offset = 0;
 
-    const bool should_apply = matcher.FillNextTokenBitmask(&bitmask_tensor, 0);
-    if (!should_apply) {
-        return false;
-    }
-
-    xgrammar::ApplyTokenBitmaskInplaceCPU(&logits_tensor, bitmask_tensor, tokenizer_info.GetVocabSize());
-    return true;
+    return matcher.FillNextTokenBitmask(&bitmask_tensor, 0);
 }
 
 } // namespace engine

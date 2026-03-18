@@ -129,10 +129,35 @@ static bool test_three_way_union(const GrammarFixture& fixture) {
         && rejects_text(combined, fixture, "orange");
 }
 
+static bool test_unordered_choice(const GrammarFixture& fixture) {
+    Grammar combined = Grammar::gbnf("root ::= \"a\" | \"ab\"");
+
+    return accepts_complete_text(combined, fixture, "a")
+        && accepts_complete_text(combined, fixture, "ab")
+        && rejects_text(combined, fixture, "ac");
+}
+
 static bool test_regex_and_json_schema_construction() {
     Grammar regex = Grammar::regex("(cat|dog)");
     Grammar json_schema = Grammar::json_schema(R"({"type":"object","properties":{"name":{"type":"string"}},"required":["name"]})");
     return !regex.is_empty() && !json_schema.is_empty();
+}
+
+static bool test_regex_accepts_expected_text(const GrammarFixture& fixture) {
+    Grammar regex = Grammar::regex("(cat|dog)");
+
+    return accepts_complete_text(regex, fixture, "cat")
+        && accepts_complete_text(regex, fixture, "dog")
+        && rejects_text(regex, fixture, "cow");
+}
+
+static bool test_json_schema_accepts_expected_text(const GrammarFixture& fixture) {
+    Grammar json_schema = Grammar::json_schema(
+        R"({"type":"object","properties":{"name":{"type":"string"}},"required":["name"]})"
+    );
+
+    return accepts_complete_text(json_schema, fixture, R"({"name":"cactus"})")
+        && rejects_text(json_schema, fixture, R"({"age":1})");
 }
 
 } // anonymous namespace
@@ -149,12 +174,11 @@ int main() {
         runner.run_test("union_language", test_union_accepts_expected_language(fixture));
         runner.run_test("three_way_concat", test_three_way_concat(fixture));
         runner.run_test("three_way_union", test_three_way_union(fixture));
+        runner.run_test("unordred_choice", test_unordered_choice(fixture));
+        runner.run_test("regex_language", test_regex_accepts_expected_text(fixture));
+        runner.run_test("json_schema_language", test_json_schema_accepts_expected_text(fixture));
     } catch (const std::exception& e) {
         std::cerr << "[✗] Grammar test setup failed: " << e.what() << "\n";
-        runner.run_test("concat_language", false);
-        runner.run_test("union_language", false);
-        runner.run_test("three_way_concat", false);
-        runner.run_test("three_way_union", false);
     }
 
     runner.print_summary();

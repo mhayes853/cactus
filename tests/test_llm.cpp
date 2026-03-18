@@ -1,4 +1,5 @@
 #include "test_utils.h"
+#include <cstddef>
 #include <picojson/picojson.h>
 #include <cctype>
 #include <fstream>
@@ -381,7 +382,7 @@ bool test_regex_grammar_outputs_address() {
         return false;
     }
 
-    const char* address_regex = R"([0-9]{3,5} [A-Za-z0-9.'-]+( [A-Za-z0-9.'-]+){0,4}, [A-Za-z.'-]+( [A-Za-z.'-]+){0,2}, [A-Z]{2} [0-9]{5})";
+    const char* address_regex = R"(^[0-9]{3,5} [A-Za-z0-9.'-]+( [A-Za-z0-9.'-]+){0,4}, [A-Za-z.'-]+( [A-Za-z.'-]+){0,2}, [A-Z]{2} [0-9]{5}$)";
     cactus_grammar_t grammar = cactus_grammar_init_regex(address_regex);
     if (!grammar) {
         std::cerr << "[✗] Failed to initialize regex grammar\n";

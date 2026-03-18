@@ -103,12 +103,7 @@ public:
     ~GrammarMatcher() = default;
 
     bool accept(uint32_t token_id);
-
-    bool apply_bitmask(std::vector<__fp16>& logits);
-    bool apply_bitmask(std::vector<float>& logits);
-
-private:
-    bool apply_bitmask(void* logits, size_t num_logits, uint8_t bits);
+    bool fill_next_token_bitmask(std::vector<int32_t>& token_bitmask);
 
     xgrammar::GrammarMatcher matcher;
     xgrammar::TokenizerInfo tokenizer_info;
@@ -737,7 +732,8 @@ public:
 
 protected:
     size_t sample_token(CactusGraph* gb, size_t logits_node_id, float temperature, float top_p, size_t top_k,
-                        const std::unordered_map<uint32_t, float>* extra_bias = nullptr, GrammarMatcher* matcher = nullptr) const;
+                        const std::unordered_map<uint32_t, float>* extra_bias = nullptr,
+                        const std::vector<int32_t>* token_bitmask = nullptr) const;
 
     static void compute_entropy(CactusGraph* gb, size_t logits_node_id, float* out_entropy);
 

@@ -17,10 +17,6 @@
 
 namespace cactus {
 
-namespace engine {
-class GrammarMatcher;
-}
-
 enum class LogLevel {
     DEBUG = 0,
     INFO = 1,
@@ -351,6 +347,7 @@ struct OpParams {
 
     std::vector<float> bias_values;
     std::vector<uint32_t> bias_indices;
+    std::vector<int32_t> token_bitmask;
 
     const int8_t* cached_keys_int8 = nullptr;
     const int8_t* cached_values_int8 = nullptr;
@@ -362,8 +359,6 @@ struct OpParams {
     size_t num_fft_bins = 0;
     size_t chunk_size = 0;
     size_t num_altup_inputs = 0;
-    
-    cactus::engine::GrammarMatcher* matcher = nullptr;
 };
 
 struct GraphNode {
@@ -574,7 +569,8 @@ public:
     size_t gaussian_topk(size_t input, float ppf);
 
     size_t sample(size_t logits, float temperature = 0.6f, float top_p = 0.95f, size_t top_k = 20,
-                  const std::unordered_map<uint32_t, float>& logit_bias = {}, cactus::engine::GrammarMatcher* matcher = nullptr);
+                  const std::unordered_map<uint32_t, float>& logit_bias = {},
+                  const std::vector<int32_t>& token_bitmask = {});
     
     size_t concat(size_t input1, size_t input2, int axis = 0);
     size_t scatter_topk(size_t indices, size_t values, size_t num_classes);

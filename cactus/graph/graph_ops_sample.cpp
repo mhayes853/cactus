@@ -1,5 +1,4 @@
 #include "graph.h"
-#include "../engine/engine.h"
 #include "../kernel/kernel.h"
 #include <cstring>
 #include <algorithm>
@@ -13,7 +12,8 @@ void compute_sample_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
     float top_p = node.params.top_p;
     size_t top_k = node.params.top_k;
     size_t random_seed = node.params.random_seed;
-    cactus::engine::GrammarMatcher* matcher = node.params.matcher;
+    const int32_t* token_bitmask = node.params.token_bitmask.empty() ? nullptr : node.params.token_bitmask.data();
+    size_t token_bitmask_size = node.params.token_bitmask.size();
 
     const float* bias_values = node.params.bias_values.empty() ? nullptr : node.params.bias_values.data();
     const uint32_t* bias_indices = node.params.bias_indices.empty() ? nullptr : node.params.bias_indices.data();
@@ -29,27 +29,15 @@ void compute_sample_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
 
     if (logits_buffer.precision == Precision::FP16) {
         const __fp16* logits_fp16 = logits_buffer.data_as<__fp16>();
-        std::vector<__fp16> masked_logits(
-            logits_fp16 + last_token_offset,
-            logits_fp16 + last_token_offset + vocab_size * sizeof(__fp16)
-        );
-        if (matcher) {
-            matcher->apply_bitmask(masked_logits);
-        }
-        cactus_sample_f16(masked_logits.data(), node.output_buffer.data_as<uint32_t>(),
+        cactus_sample_f16(logits_fp16 + last_token_offset, node.output_buffer.data_as<uint32_t>(),
                          vocab_size, temperature, top_p, top_k, random_seed,
+                         token_bitmask, token_bitmask_size,
                          bias_values, bias_indices, bias_count);
     } else {
         const float* logits_fp32 = logits_buffer.data_as<float>();
-        std::vector<float> masked_logits(
-            logits_fp32 + last_token_offset,
-            logits_fp32 + last_token_offset + vocab_size * sizeof(float)
-        );
-        if (matcher) {
-            matcher->apply_bitmask(masked_logits);
-        }
-        cactus_sample_f32(masked_logits.data(), node.output_buffer.data_as<uint32_t>(),
+        cactus_sample_f32(logits_fp32 + last_token_offset, node.output_buffer.data_as<uint32_t>(),
                           vocab_size, temperature, top_p, top_k, random_seed,
+                          token_bitmask, token_bitmask_size,
                           bias_values, bias_indices, bias_count);
     }
 }

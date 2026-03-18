@@ -47,7 +47,7 @@ Model::~Model() {
 bool Model::init(const std::string& model_folder, size_t context_size, const std::string& system_prompt, bool do_warmup) {
     if (initialized_) {
         return true;
-    }   
+    }
     auto* gb = new CactusGraph();
     graph_handle_ = gb;
     owns_graph_ = true;
@@ -231,7 +231,13 @@ uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, f
         logits_node_id = gb->tanh(logits_node_id);
         logits_node_id = gb->scalar_multiply(logits_node_id, config_.final_logit_softcapping);
     }
-    auto sampled_token_id = sample_token(gb, logits_node_id, temperature, top_p, top_k, nullptr, matcher);
+
+    std::vector<int32_t> token_bitmask;
+    if (matcher && matcher->fill_next_token_bitmask(token_bitmask)) {
+        matcher->fill_next_token_bitmask(token_bitmask);
+    }
+
+    auto sampled_token_id = sample_token(gb, logits_node_id, temperature, top_p, top_k, nullptr, &token_bitmask);
 
     gb->execute(profile_file);
 
@@ -248,8 +254,8 @@ uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, f
 }
 
 size_t Model::sample_token(CactusGraph* gb, size_t logits_node_id, float temperature, float top_p, size_t top_k,
-                           const std::unordered_map<uint32_t, float>* extra_bias, 
-                           cactus::engine::GrammarMatcher* matcher) const {
+                           const std::unordered_map<uint32_t, float>* extra_bias,
+                           const std::vector<int32_t>* token_bitmask) const {
     auto combined_bias = tool_constrainer_.get_bias();
     for (const auto& [token_id, boost] : vocab_bias_) {
         combined_bias[token_id] += boost;
@@ -259,7 +265,14 @@ size_t Model::sample_token(CactusGraph* gb, size_t logits_node_id, float tempera
             combined_bias[token_id] += boost;
         }
     }
-    return gb->sample(logits_node_id, temperature, top_p, top_k, combined_bias, matcher);
+    return gb->sample(
+        logits_node_id,
+        temperature,
+        top_p,
+        top_k,
+        combined_bias,
+        token_bitmask ? *token_bitmask : std::vector<int32_t>{}
+    );
 }
 
 void Model::compute_entropy(CactusGraph* gb, size_t logits_node_id, float* out_entropy) {
@@ -417,22 +430,22 @@ bool Config::from_json(const std::string& config_path) {
         CACTUS_LOG_ERROR("config", "Failed to open config file: " << config_path);
         return false;
     }
-    
+
     std::string line;
     while (std::getline(file, line)) {
         if (line.empty() || line[0] == '#') continue;
-        
+
         size_t eq_pos = line.find('=');
         if (eq_pos == std::string::npos) continue;
-        
+
         std::string key = line.substr(0, eq_pos);
         std::string value = line.substr(eq_pos + 1);
-        
+
         key.erase(0, key.find_first_not_of(" \t"));
         key.erase(key.find_last_not_of(" \t") + 1);
         value.erase(0, value.find_first_not_of(" \t"));
         value.erase(value.find_last_not_of(" \t") + 1);
-        
+
         if (key == "vocab_size") vocab_size = static_cast<uint32_t>(std::stoul(value));
         else if (key == "bos_token_id") bos_token_id = static_cast<uint32_t>(std::stoul(value));
         else if (key == "eos_token_id") eos_token_id = static_cast<uint32_t>(std::stoul(value));
@@ -886,19 +899,19 @@ double Model::score_tokens_window_logprob(
     if (tokens_scored)
         *tokens_scored = 0;
 
-    if (tokens.empty()) 
+    if (tokens.empty())
         return 0.0;
 
-    if (end > tokens.size()) 
+    if (end > tokens.size())
         end = tokens.size();
 
-    if (start >= end) 
+    if (start >= end)
         return 0.0;
 
-    if (start == 0) 
+    if (start == 0)
         start = 1;
 
-    if (start >= end) 
+    if (start >= end)
         return 0.0;
 
     const size_t target_len = end - start;
@@ -907,12 +920,12 @@ double Model::score_tokens_window_logprob(
     if (end < 2) return 0.0;
     const size_t input_end = end - 1;
 
-    if (input_end <= ctx_begin) 
+    if (input_end <= ctx_begin)
         return 0.0;
 
     std::vector<uint32_t> input_tokens(tokens.begin() + ctx_begin,tokens.begin() + input_end);
 
-    if (tokens_scored) 
+    if (tokens_scored)
         *tokens_scored = target_len;
 
     reset_cache();
@@ -935,7 +948,7 @@ double Model::score_tokens_window_logprob(
     gb->execute();
 
     const auto& logits_buf = gb->get_output_buffer(logits_node);
-    if (logits_buf.shape.size() != 2) 
+    if (logits_buf.shape.size() != 2)
         throw std::runtime_error("Expected logits to be rank-2 [T, vocab]");
 
     const size_t T = logits_buf.shape[0];
@@ -950,17 +963,17 @@ double Model::score_tokens_window_logprob(
 
     for (size_t i = 0; i < target_len; ++i) {
         const uint32_t y = tokens[start + i];
-        if (y >= vocab_size) 
+        if (y >= vocab_size)
             throw std::runtime_error("Target token out of vocab range");
 
         if (logits_buf.precision == Precision::FP32) {
             const float* src = static_cast<const float*>(logits_ptr) + i * vocab_size;
             std::memcpy(row.data(), src, vocab_size * sizeof(float));
-        } 
+        }
         else if (logits_buf.precision == Precision::FP16) {
             const __fp16* src = static_cast<const __fp16*>(logits_ptr) + i * vocab_size;
             Quantization::fp16_to_fp32(const_cast<__fp16*>(src), row.data(), vocab_size);
-        } 
+        }
         else {
             const int8_t* src = static_cast<const int8_t*>(logits_ptr) + i * vocab_size;
             Quantization::int8_to_fp32(const_cast<int8_t*>(src), row.data(), vocab_size, 1.0f);
@@ -968,7 +981,7 @@ double Model::score_tokens_window_logprob(
 
         float max_logit = *std::max_element(row.begin(), row.end());
         double sum = 0.0;
-        
+
         for (size_t j = 0; j < vocab_size; ++j)
             sum += std::exp(double(row[j] - max_logit));
 

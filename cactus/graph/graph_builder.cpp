@@ -1134,8 +1134,8 @@ size_t CactusGraph::scatter_topk(size_t indices, size_t values, size_t num_class
 }
 
 size_t CactusGraph::sample(size_t logits, float temperature, float top_p, size_t top_k,
-                           const std::unordered_map<uint32_t, float>& logit_bias, 
-                           cactus::engine::GrammarMatcher* matcher) {
+                           const std::unordered_map<uint32_t, float>& logit_bias,
+                           const std::vector<int32_t>& token_bitmask) {
     const auto& logits_buffer = get_output_buffer(logits);
 
     if (logits_buffer.shape.empty()) {
@@ -1148,7 +1148,7 @@ size_t CactusGraph::sample(size_t logits, float temperature, float top_p, size_t
     params.top_k = top_k;
     params.random_seed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
     params.output_precision = Precision::FP32;
-    params.matcher = matcher;
+    params.token_bitmask = token_bitmask;
 
     if (!logit_bias.empty()) {
         params.bias_indices.reserve(logit_bias.size());
