@@ -14,6 +14,8 @@ static constexpr size_t ROLLING_ENTROPY_WINDOW = 10;
 
 namespace {
 
+const Grammar OPTIONAL_REASONING_GRAMMAR = Grammar::regex(R"((<think>\n.*\n</think>\n\n*)?)");
+
 std::string extract_last_user_query(const std::vector<ChatMessage>& messages) {
     for (auto it = messages.rbegin(); it != messages.rend(); ++it) {
         if (it->role == "user") {
@@ -98,6 +100,21 @@ void trim_stop_suffix(std::vector<uint32_t>& generated_tokens,
             break;
         }
     }
+}
+
+Grammar create_decode_grammar(cactus_grammar_t grammar, Config::ModelType model_type, bool enable_thinking) {
+    if (!grammar) return Grammar();
+
+    const CactusGrammarHandle* grammar_handle = static_cast<const CactusGrammarHandle*>(grammar);
+    const bool is_qwen_family = model_type == Config::ModelType::QWEN
+        || model_type == Config::ModelType::QWEN3P5;
+    auto reasoning_grammar = is_qwen_family && enable_thinking
+        ? OPTIONAL_REASONING_GRAMMAR
+        : Grammar();
+    return Grammar::concatenate({
+        reasoning_grammar,
+        *grammar_handle->grammar
+    });
 }
 
 struct EntropyState {
@@ -279,12 +296,15 @@ int cactus_complete(
         double time_to_first_token = 0.0;
         float first_token_entropy = 0.0f;
 
+        std::unique_ptr<Grammar> decode_grammar;
         std::unique_ptr<cactus::engine::GrammarMatcher> matcher;
         if (grammar) {
-            const CactusGrammarHandle* grammar_handle = static_cast<const CactusGrammarHandle*>(grammar);
-            if (grammar_handle->grammar) {
+            decode_grammar = std::make_unique<Grammar>(
+                create_decode_grammar(grammar, model_type, enable_thinking)
+            );
+            if (!decode_grammar->is_empty()) {
                 matcher = std::make_unique<cactus::engine::GrammarMatcher>(
-                    cactus::engine::GrammarMatcher(grammar_handle->grammar.get(), tokenizer->get_tokenizer_info())
+                    cactus::engine::GrammarMatcher(decode_grammar.get(), tokenizer->get_tokenizer_info())
                 );
             }
         }

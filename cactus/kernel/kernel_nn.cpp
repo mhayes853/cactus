@@ -747,8 +747,7 @@ void cactus_apply_token_bitmask_f16(
 
     init_token_mask_table();
 
-    const uint16x8_t neg_inf_u16 = vdupq_n_u16(0xFC00);
-    const float16x8_t neg_inf = vreinterpretq_f16_u16(neg_inf_u16);
+    const float16x8_t neg_inf = vreinterpretq_f16_u16(vdupq_n_u16(0xFC00));
     const uint8_t* token_bitmask_bytes = reinterpret_cast<const uint8_t*>(token_bitmask);
     const size_t token_bitmask_byte_size = token_bitmask_size * sizeof(uint8_t);
 
