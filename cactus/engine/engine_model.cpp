@@ -233,7 +233,7 @@ uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, f
     }
 
     std::vector<int32_t> token_bitmask;
-    if (matcher && matcher->fill_next_token_bitmask(token_bitmask)) {
+    if (matcher) {
         matcher->fill_next_token_bitmask(token_bitmask);
     }
 

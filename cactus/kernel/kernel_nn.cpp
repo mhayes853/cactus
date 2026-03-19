@@ -549,8 +549,6 @@ void cactus_sample_f32(const float* logits, uint32_t* output, size_t vocab_size,
     std::vector<float> filtered_logits(vocab_size);
     std::memcpy(filtered_logits.data(), logits, vocab_size * sizeof(float));
 
-    cactus_apply_token_bitmask_f32(filtered_logits.data(), vocab_size, token_bitmask, token_bitmask_size);
-
     if (has_bias) {
         for (size_t i = 0; i < bias_count; ++i) {
             uint32_t idx = bias_indices[i];
@@ -559,6 +557,8 @@ void cactus_sample_f32(const float* logits, uint32_t* output, size_t vocab_size,
             }
         }
     }
+
+    cactus_apply_token_bitmask_f32(filtered_logits.data(), vocab_size, token_bitmask, token_bitmask_size);
 
     if (temperature == 0.0f && top_p <= 0.0f && top_k == 0) {
         auto it = std::max_element(filtered_logits.begin(), filtered_logits.end());
@@ -763,8 +763,6 @@ void cactus_sample_f16(const __fp16* logits, uint32_t* output, size_t vocab_size
     std::vector<__fp16> filtered_logits(vocab_size);
     std::memcpy(filtered_logits.data(), logits, vocab_size * sizeof(__fp16));
 
-    cactus_apply_token_bitmask_f16(filtered_logits.data(), vocab_size, token_bitmask, token_bitmask_size);
-
     if (has_bias) {
         for (size_t i = 0; i < bias_count; ++i) {
             uint32_t idx = bias_indices[i];
@@ -774,24 +772,12 @@ void cactus_sample_f16(const __fp16* logits, uint32_t* output, size_t vocab_size
         }
     }
 
+    cactus_apply_token_bitmask_f16(filtered_logits.data(), vocab_size, token_bitmask, token_bitmask_size);
+
     if (temperature == 0.0f && top_p <= 0.0f && top_k == 0) {
         auto it = std::max_element(filtered_logits.begin(), filtered_logits.end());
         output[0] = static_cast<uint32_t>(std::distance(filtered_logits.begin(), it));
         return;
-    }
-
-    if (temperature > 0) {
-        __fp16 inv_temp = static_cast<__fp16>(1.0f / temperature);
-        float16x8_t inv_temp_vec = vdupq_n_f16(inv_temp);
-        size_t i = 0;
-        for (; i + 8 <= vocab_size; i += 8) {
-            float16x8_t logits_vec = vld1q_f16(&filtered_logits[i]);
-            float16x8_t scaled = vmulq_f16(logits_vec, inv_temp_vec);
-            vst1q_f16(&filtered_logits[i], scaled);
-        }
-        for (; i < vocab_size; ++i) {
-            filtered_logits[i] = filtered_logits[i] * inv_temp;
-        }
     }
 
     static std::vector<uint32_t> token_history;
@@ -808,6 +794,20 @@ void cactus_sample_f16(const __fp16* logits, uint32_t* output, size_t vocab_size
                     ? static_cast<__fp16>(filtered_logits[prev_token] * penalty_inv)
                     : static_cast<__fp16>(filtered_logits[prev_token] * penalty);
             }
+        }
+    }
+
+    if (temperature > 0) {
+        __fp16 inv_temp = static_cast<__fp16>(1.0f / temperature);
+        float16x8_t inv_temp_vec = vdupq_n_f16(inv_temp);
+        size_t i = 0;
+        for (; i + 8 <= vocab_size; i += 8) {
+            float16x8_t logits_vec = vld1q_f16(&filtered_logits[i]);
+            float16x8_t scaled = vmulq_f16(logits_vec, inv_temp_vec);
+            vst1q_f16(&filtered_logits[i], scaled);
+        }
+        for (; i < vocab_size; ++i) {
+            filtered_logits[i] = filtered_logits[i] * inv_temp;
         }
     }
 
