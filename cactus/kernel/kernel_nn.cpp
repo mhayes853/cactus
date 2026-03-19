@@ -721,6 +721,20 @@ void cactus_sample_f32(const float* logits, uint32_t* output, size_t vocab_size,
     output[0] = 0;
 }
 
+static uint16_t token_mask_table[256][8];
+static bool did_init_token_mask_table = false;
+
+static void init_token_mask_table() {
+    if (did_init_token_mask_table) return;
+    for (int b = 0; b < 256; ++b) {
+        for (int i = 0; i < 8; ++i) {
+            token_mask_table[b][i] = ((b >> i) & 1) ? 0xFFFF : 0x0000;
+        }
+    }
+    did_init_token_mask_table = true;
+}
+
+
 void cactus_apply_token_bitmask_f16(
     __fp16* logits,
     size_t vocab_size,
@@ -731,20 +745,29 @@ void cactus_apply_token_bitmask_f16(
         return;
     }
 
-    const __fp16 neg_inf = static_cast<__fp16>(-std::numeric_limits<float>::infinity());
-    for (size_t token_id = 0; token_id < vocab_size; ++token_id) {
-        const size_t word_index = token_id >> 5;
-        if (word_index >= token_bitmask_size) {
-            logits[token_id] = neg_inf;
-            continue;
-        }
+    init_token_mask_table();
 
-        const uint32_t word = static_cast<uint32_t>(token_bitmask[word_index]);
-        const uint32_t bit_index = static_cast<uint32_t>(token_id & 31);
-        const bool allowed = ((word >> bit_index) & 1u) != 0u;
-        if (!allowed) {
-            logits[token_id] = neg_inf;
-        }
+    const uint16x8_t neg_inf_u16 = vdupq_n_u16(0xFC00);
+    const float16x8_t neg_inf = vreinterpretq_f16_u16(neg_inf_u16);
+    const uint8_t* token_bitmask_bytes = reinterpret_cast<const uint8_t*>(token_bitmask);
+    const size_t token_bitmask_byte_size = token_bitmask_size * sizeof(uint8_t);
+
+    size_t i = 0;
+
+    for (; i + 8 <= vocab_size; i += 8) {
+        const size_t byte_index = i >> 3;
+        const uint8_t table_index = byte_index < token_bitmask_byte_size ? token_bitmask_bytes[byte_index] : 0;
+        float16x8_t x = vld1q_f16(logits + i);
+        uint16x8_t m = vld1q_u16(token_mask_table[table_index]);
+        float16x8_t y = vbslq_f16(m, x, neg_inf);
+        vst1q_f16(logits + i, y);
+    }
+
+    for (; i < vocab_size; ++i) {
+        const size_t byte_index = i >> 3;
+        const uint8_t bits = byte_index < token_bitmask_byte_size ? token_bitmask_bytes[byte_index] : 0;
+        const uint8_t bit = (bits >> (i & 7)) & 1;
+        if (!bit) logits[i] = (__fp16)-__builtin_inff();
     }
 }
 
