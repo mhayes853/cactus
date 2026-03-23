@@ -225,13 +225,13 @@ typedef struct cactus_grammar_json_schema_options_t {
     int max_whitespace_count;               // -1 means no limit
 } cactus_grammar_json_schema_options_t;
 
-#define CACTUS_GRAMMAR_JSON_SCHEMA_DEFAULT_OPTIONS (cactus_grammar_json_schema_options_t){ \
+#define CACTUS_GRAMMAR_JSON_SCHEMA_DEFAULT_OPTIONS ((cactus_grammar_json_schema_options_t){ \
     .any_whitespace = true, \
     .indent = 2, \
     .separators = {",", ":"}, \
     .strict_mode = true, \
-    .max_whitespace_count = -1 \
-}
+    .max_whitespace_count = 1 \
+})
 
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_json_schema(
     const char* json_schema,
