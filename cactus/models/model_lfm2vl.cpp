@@ -511,7 +511,8 @@ uint32_t Lfm2VlModel::decode_with_images(
     float top_p,
     size_t top_k,
     const std::string& profile_file,
-    float* out_entropy) {
+    float* out_entropy,
+    GrammarMatcher* matcher) {
 
     if (!initialized_ || !graph_handle_) {
         throw std::runtime_error("Model not initialized - call init() first");
@@ -577,9 +578,14 @@ uint32_t Lfm2VlModel::decode_with_images(
         seq_len_for_updates = incremental_tokens.size();
         last_token_count_ = tokens.size();
     }
+    
+    std::vector<int32_t> bitmask;
+    if (matcher) {
+        matcher->fill_next_token_bitmask(bitmask);
+    }
 
     auto logits_node_id = gb->matmul(final_hidden_node, language_model_.output_weight_node_id_, true, backend);
-    auto sampled_token_id = gb->sample(logits_node_id, temperature, top_p, top_k);
+    auto sampled_token_id = gb->sample(logits_node_id, temperature, top_p, top_k, {}, bitmask);
     if (!profile_file.empty()) {
         gb->execute(profile_file);
 
@@ -593,8 +599,11 @@ uint32_t Lfm2VlModel::decode_with_images(
     language_model_.post_execute_updates(gb, seq_len_for_updates);
     language_model_.update_kv_cache(gb, seq_len_for_updates);
 
-    auto* output_ptr = gb->get_output(sampled_token_id);
-    return *static_cast<uint32_t*>(output_ptr);
+    uint32_t token_id = *static_cast<uint32_t*>(gb->get_output(sampled_token_id));
+    if (matcher && !matcher->accept(token_id)) {
+        CACTUS_LOG_WARN("model decode", "Token id: " + std::to_string(token_id) + " was not accepted by grammar matcher.");
+    }
+    return token_id;
 }
 
 }

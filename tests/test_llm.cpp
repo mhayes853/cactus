@@ -1,7 +1,5 @@
 #include "test_utils.h"
 #include <cstddef>
-#include <picojson/picojson.h>
-#include <cctype>
 #include <fstream>
 #include <cstdlib>
 #include <cstdio>
@@ -561,23 +559,6 @@ bool test_1k_context() {
             m.print_json();
             return result > 0;
         }, nullptr, 100);
-}
-
-bool is_valid_json_document(const std::string& text, std::string& error) {
-    picojson::value value;
-    auto begin = text.begin();
-    auto end = picojson::parse(value, begin, text.end(), &error);
-    if (!error.empty()) {
-        return false;
-    }
-    while (end != text.end() && std::isspace(static_cast<unsigned char>(*end))) {
-        ++end;
-    }
-    if (end != text.end()) {
-        error = "Trailing characters after JSON document";
-        return false;
-    }
-    return true;
 }
 
 bool test_json_grammar_outputs_valid_json() {

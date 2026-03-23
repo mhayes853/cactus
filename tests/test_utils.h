@@ -3,6 +3,8 @@
 
 #include "../cactus/cactus.h"
 #include "../cactus/ffi/cactus_ffi.h"
+#include "../libs/xgrammar/include/picojson/picojson.h"
+#include <cctype>
 #include <vector>
 #include <string>
 #include <chrono>
@@ -10,6 +12,7 @@
 #include <iomanip>
 #include <functional>
 #include <cmath>
+#include <type_traits>
 #include <atomic>
 #include <mutex>
 
@@ -124,6 +127,23 @@ bool test_scalar_operation(const std::string& op_name,
 }
 
 namespace EngineTestUtils {
+
+inline bool is_valid_json_document(const std::string& text, std::string& error) {
+    picojson::value value;
+    auto begin = text.begin();
+    auto end = picojson::parse(value, begin, text.end(), &error);
+    if (!error.empty()) {
+        return false;
+    }
+    while (end != text.end() && std::isspace(static_cast<unsigned char>(*end))) {
+        ++end;
+    }
+    if (end != text.end()) {
+        error = "Trailing characters after JSON document";
+        return false;
+    }
+    return true;
+}
 
 struct Timer {
     std::chrono::high_resolution_clock::time_point start;

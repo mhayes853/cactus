@@ -395,12 +395,119 @@ bool test_prefill_prefix_extension_reuse_vlm() {
     return prefill_success && second_call_prefilled && warm_reused_prefix;
 }
 
+bool test_json_schema_grammar_with_image() {
+    std::cout << "\n╔══════════════════════════════════════════╗\n"
+              << "║" << std::setw(42) << std::left << " JSON SCHEMA IMAGE TEST" << "║\n"
+              << "╚══════════════════════════════════════════╝\n";
+
+    std::string model_path_str(g_model_path ? g_model_path : "");
+    std::string vision_file = model_path_str + "/vision_patch_embedding.weights";
+    std::ifstream vf(vision_file);
+    if (!vf.good()) {
+        std::cout << "⊘ SKIP │ Vision weights not found\n";
+        return true;
+    }
+    vf.close();
+
+    if (!g_assets_path) {
+        std::cout << "⊘ SKIP │ CACTUS_TEST_ASSETS not set\n";
+        return true;
+    }
+
+    std::string img_path = std::string(g_assets_path) + "/test_thing.png";
+    std::ifstream imgf(img_path);
+    if (!imgf.good()) {
+        std::cout << "⊘ SKIP │ test_thing.png not found\n";
+        return true;
+    }
+    imgf.close();
+
+    cactus_model_t model = cactus_init(g_model_path, nullptr, false);
+    if (!model) {
+        std::cerr << "[✗] Failed to initialize model\n";
+        return false;
+    }
+
+    const char* image_schema = R"({
+        "type": "object",
+        "properties": {
+            "shape": {"type": "string"},
+            "pose": {"type": "string"}
+        },
+        "required": ["shape", "pose", "dominant_color"],
+        "additionalProperties": false
+    })";
+
+    cactus_grammar_t grammar = cactus_grammar_init_json_schema(image_schema, CACTUS_GRAMMAR_JSON_SCHEMA_DEFAULT_OPTIONS);
+    if (!grammar) {
+        std::cerr << "[✗] Failed to initialize JSON Schema grammar\n";
+        cactus_destroy(model);
+        return false;
+    }
+
+    std::string messages = "[{\"role\": \"system\", \"content\": \"You are a helpful assistant that answers with concise factual image descriptions.\"}, "
+        "{\"role\": \"user\", \"content\": \"Look at this image and describe its shape and pose.\", \"images\": [\""
+        + img_path + "\"]}]";
+
+    StreamingData data;
+    data.model = model;
+    char response[4096];
+
+    std::cout << "\n[Prompt]\n";
+    std::cout << "User: Look at this image and describe its shape and pose.\n";
+    std::cout << "Assistant: ";
+
+    int result = cactus_complete(model, messages.c_str(), response, sizeof(response),
+                                 g_options, nullptr, stream_callback, &data, grammar);
+
+    std::string output;
+    for (const auto& token : data.tokens) {
+        output += token;
+    }
+
+    std::string json_error;
+    bool valid_json = is_valid_json_document(output, json_error);
+    bool has_shape = false;
+    bool has_pose = false;
+
+    if (valid_json) {
+        picojson::value value;
+        auto begin = output.begin();
+        picojson::parse(value, begin, output.end(), &json_error);
+        if (value.is<picojson::object>()) {
+            has_shape = value.contains("shape") && value.get("shape").is<std::string>()
+                && !value.get("shape").get<std::string>().empty();
+            has_pose = value.contains("pose") && value.get("pose").is<std::string>()
+                && !value.get("pose").get<std::string>().empty();
+        }
+    }
+
+    std::cout << "\n\n[Results]\n";
+    Metrics metrics;
+    metrics.parse(response);
+    std::cout << "├─ Valid JSON: " << (valid_json ? "YES" : "NO") << "\n"
+              << "├─ Has shape: " << (has_shape ? "YES" : "NO") << "\n"
+              << "├─ Has pose: " << (has_pose ? "YES" : "NO") << "\n";
+    if (!valid_json) {
+        std::cout << "├─ JSON error: " << json_error << "\n";
+    }
+    if (!valid_json || !has_shape || !has_pose) {
+        std::cout << "├─ Raw output: " << output << "\n";
+    }
+    metrics.print_json();
+
+    cactus_grammar_destroy(grammar);
+    cactus_destroy(model);
+    return result > 0 && data.token_count > 0 && valid_json && has_shape && has_pose;
+}
+
 int main() {
     TestUtils::TestRunner runner("VLM Tests");
     runner.run_test("prefill_with_images", test_prefill_with_images());
     runner.run_test("prefill_prefix_extension_reuse", test_prefill_prefix_extension_reuse_vlm());
     runner.run_test("prefill_invalidated_on_message_change", test_prefill_invalidated_on_message_change_vlm());
     runner.run_test("vlm_multiturn", test_vlm_multiturn());
+    runner.run_test("json_schema_grammar_with_image", test_json_schema_grammar_with_image());
     runner.print_summary();
     return runner.all_passed() ? 0 : 1;
 }

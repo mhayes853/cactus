@@ -2,6 +2,7 @@
 
 #include "../engine/engine.h"
 #include "../npu/npu.h"
+#include <cstddef>
 
 namespace cactus {
 namespace engine {
@@ -1282,7 +1283,8 @@ public:
         float top_p = -1.0f,
         size_t top_k = 0,
         const std::string& profile_file = "",
-        float* out_entropy = nullptr) override;
+        float* out_entropy = nullptr, 
+        GrammarMatcher* matcher = nullptr) override;
 
     void reset_cache() override;
     std::vector<float> get_image_embeddings(const std::string& image_path) override;

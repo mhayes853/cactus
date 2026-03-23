@@ -239,12 +239,12 @@ uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, f
         logits_node_id = gb->scalar_multiply(logits_node_id, config_.final_logit_softcapping);
     }
 
-    std::vector<int32_t> token_bitmask;
+    std::vector<int32_t> bitmask;
     if (matcher) {
-        matcher->fill_next_token_bitmask(token_bitmask);
+        matcher->fill_next_token_bitmask(bitmask);
     }
 
-    auto sampled_token_id = sample_token(gb, logits_node_id, temperature, top_p, top_k, nullptr, &token_bitmask);
+    auto sampled_token_id = sample_token(gb, logits_node_id, temperature, top_p, top_k, nullptr, &bitmask);
 
     gb->execute(profile_file);
 
@@ -328,9 +328,9 @@ uint32_t Model::decode_with_audio(const std::vector<uint32_t>& tokens, const std
 }
 
 uint32_t Model::decode_with_images(const std::vector<uint32_t>& tokens, const std::vector<std::string>& image_paths,
-                                     float temperature, float top_p, size_t top_k, const std::string& profile_file, float* out_entropy) {
+                                     float temperature, float top_p, size_t top_k, const std::string& profile_file, float* out_entropy, GrammarMatcher* matcher) {
     (void)image_paths;
-    return decode(tokens, temperature, top_p, top_k, profile_file, out_entropy);
+    return decode(tokens, temperature, top_p, top_k, profile_file, out_entropy, matcher);
 }
 
 std::vector<float> Model::get_image_embeddings(const std::string& /*image_path*/) {
