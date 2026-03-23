@@ -185,7 +185,18 @@ struct Config {
     uint32_t linear_k_proj_dim = 0;
     uint32_t linear_v_proj_dim = 0;
 
-    enum class ModelType {QWEN = 0, GEMMA = 1, NOMIC = 3, LFM2 = 5, SIGLIP2 = 6, WHISPER = 7, MOONSHINE = 8, SILERO_VAD = 9, PARAKEET = 10, QWEN3P5 = 11, PARAKEET_TDT = 12, GEMMA3N = 13};
+    uint32_t kv_lora_rank = 0;
+    uint32_t q_lora_rank = 0;
+    uint32_t qk_head_dim = 0;
+    uint32_t qk_nope_head_dim = 0;
+    uint32_t qk_rope_head_dim = 0;
+    uint32_t v_head_dim = 0;
+    uint32_t rope_interleave = 0;
+    bool attention_bias = false;
+    float rope_scaling_factor = 1.0f;
+    float rope_mscale_all_dim = 0.0f;
+
+    enum class ModelType {QWEN = 0, GEMMA = 1, NOMIC = 3, LFM2 = 5, SIGLIP2 = 6, WHISPER = 7, MOONSHINE = 8, SILERO_VAD = 9, PARAKEET = 10, QWEN3P5 = 11, PARAKEET_TDT = 12, GEMMA3N = 13, YOUTU = 14};
     uint32_t predictor_hidden_dim = 0;
     uint32_t predictor_num_layers = 0;
     uint32_t tdt_joint_dim = 0;
@@ -312,7 +323,7 @@ public:
     uint32_t get_global_img_token_id() const { return global_img_token_id_; }
 
 protected:
-    enum class ModelType { UNKNOWN, QWEN, QWEN3P5, GEMMA, LFM2, BERT, WHISPER, PARAKEET};
+    enum class ModelType { UNKNOWN, QWEN, QWEN3P5, GEMMA, LFM2, BERT, WHISPER, PARAKEET, YOUTU};
     ModelType model_type_ = ModelType::UNKNOWN;
     enum class ModelVariant { DEFAULT, VLM, EXTRACT, RAG};
     ModelVariant model_variant_ = ModelVariant::DEFAULT;
@@ -333,6 +344,7 @@ protected:
     std::string format_gemma_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json) const;
     std::string format_lfm2_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json) const;
     std::string format_lfm2_vl_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json) const;
+    std::string format_youtu_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json) const;
 };
 
 class BPETokenizer : public Tokenizer {
