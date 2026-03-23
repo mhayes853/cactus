@@ -3,6 +3,7 @@
 #include <arm_neon.h>
 #include <cmath>
 #include <algorithm>
+#include <cstdint>
 #include <vector>
 #include <cstring>
 #include <limits>
@@ -507,25 +508,20 @@ void cactus_softmax_f16(
         });
 }
 
-void cactus_apply_token_bitmask_f32(
-    float* logits,
-    size_t vocab_size,
-    const int32_t* token_bitmask,
-    size_t token_bitmask_size
-) {
-    if (!token_bitmask || token_bitmask_size == 0) {
+void cactus_bitmask_f32(float* logits, size_t vocab_size, const int32_t* bitmask, size_t bitmask_size) {
+    if (!bitmask || bitmask_size == 0) {
         return;
     }
 
-        const float neg_inf = -std::numeric_limits<float>::infinity();
+    const float neg_inf = -std::numeric_limits<float>::infinity();
     for (size_t token_id = 0; token_id < vocab_size; ++token_id) {
         const size_t word_index = token_id >> 5;
-        if (word_index >= token_bitmask_size) {
+        if (word_index >= bitmask_size) {
             logits[token_id] = neg_inf;
             continue;
         }
 
-        const uint32_t word = static_cast<uint32_t>(token_bitmask[word_index]);
+        const uint32_t word = static_cast<uint32_t>(bitmask[word_index]);
         const uint32_t bit_index = static_cast<uint32_t>(token_id & 31);
         const bool allowed = ((word >> bit_index) & 1u) != 0u;
         if (!allowed) {
@@ -558,7 +554,7 @@ void cactus_sample_f32(const float* logits, uint32_t* output, size_t vocab_size,
         }
     }
 
-    cactus_apply_token_bitmask_f32(filtered_logits.data(), vocab_size, token_bitmask, token_bitmask_size);
+    cactus_bitmask_f32(filtered_logits.data(), vocab_size, token_bitmask, token_bitmask_size);
 
     if (temperature == 0.0f && top_p <= 0.0f && top_k == 0) {
         auto it = std::max_element(filtered_logits.begin(), filtered_logits.end());
@@ -721,50 +717,45 @@ void cactus_sample_f32(const float* logits, uint32_t* output, size_t vocab_size,
     output[0] = 0;
 }
 
-static uint16_t token_mask_table[256][8];
-static bool did_init_token_mask_table = false;
+static uint16_t f16_bitmask_table[256][8];
+static bool did_init_f16_bitmask_table = false;
 
-static void init_token_mask_table() {
-    if (did_init_token_mask_table) return;
+static void init_f16_bitmask_table() {
+    if (did_init_f16_bitmask_table) return;
     for (int b = 0; b < 256; ++b) {
         for (int i = 0; i < 8; ++i) {
-            token_mask_table[b][i] = ((b >> i) & 1) ? 0xFFFF : 0x0000;
+            f16_bitmask_table[b][i] = ((b >> i) & 1) ? 0xFFFF : 0x0000;
         }
     }
-    did_init_token_mask_table = true;
+    did_init_f16_bitmask_table = true;
 }
 
 
-void cactus_apply_token_bitmask_f16(
-    __fp16* logits,
-    size_t vocab_size,
-    const int32_t* token_bitmask,
-    size_t token_bitmask_size
-) {
-    if (!token_bitmask || token_bitmask_size == 0) {
+void cactus_bitmask_f16(__fp16* logits, size_t vocab_size, const int32_t* bitmask, size_t bitmask_size) {
+    if (!bitmask || bitmask_size == 0) {
         return;
     }
 
-    init_token_mask_table();
+    init_f16_bitmask_table();
 
     const float16x8_t neg_inf = vreinterpretq_f16_u16(vdupq_n_u16(0xFC00));
-    const uint8_t* token_bitmask_bytes = reinterpret_cast<const uint8_t*>(token_bitmask);
-    const size_t token_bitmask_byte_size = token_bitmask_size * sizeof(uint8_t);
+    const uint8_t* bitmask_bytes = reinterpret_cast<const uint8_t*>(bitmask);
+    const size_t bitmask_bytes_size = bitmask_size * sizeof(int32_t);
 
     size_t i = 0;
 
     for (; i + 8 <= vocab_size; i += 8) {
         const size_t byte_index = i >> 3;
-        const uint8_t table_index = byte_index < token_bitmask_byte_size ? token_bitmask_bytes[byte_index] : 0;
+        const uint8_t table_index = byte_index < bitmask_bytes_size ? bitmask_bytes[byte_index] : 0;
         float16x8_t x = vld1q_f16(logits + i);
-        uint16x8_t m = vld1q_u16(token_mask_table[table_index]);
+        uint16x8_t m = vld1q_u16(f16_bitmask_table[table_index]);
         float16x8_t y = vbslq_f16(m, x, neg_inf);
         vst1q_f16(logits + i, y);
     }
 
     for (; i < vocab_size; ++i) {
         const size_t byte_index = i >> 3;
-        const uint8_t bits = byte_index < token_bitmask_byte_size ? token_bitmask_bytes[byte_index] : 0;
+        const uint8_t bits = byte_index < bitmask_bytes_size ? bitmask_bytes[byte_index] : 0;
         const uint8_t bit = (bits >> (i & 7)) & 1;
         if (!bit) logits[i] = (__fp16)-__builtin_inff();
     }
@@ -794,7 +785,7 @@ void cactus_sample_f16(const __fp16* logits, uint32_t* output, size_t vocab_size
         }
     }
 
-    cactus_apply_token_bitmask_f16(filtered_logits.data(), vocab_size, token_bitmask, token_bitmask_size);
+    cactus_bitmask_f16(filtered_logits.data(), vocab_size, token_bitmask, token_bitmask_size);
 
     if (temperature == 0.0f && top_p <= 0.0f && top_k == 0) {
         auto it = std::max_element(filtered_logits.begin(), filtered_logits.end());

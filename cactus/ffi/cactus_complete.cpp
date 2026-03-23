@@ -16,7 +16,7 @@ static constexpr size_t ROLLING_ENTROPY_WINDOW = 10;
 
 namespace {
 
-const Grammar OPTIONAL_REASONING_GRAMMAR = Grammar::regex(R"((<think>\n.*\n</think>\n\n*)?)");
+const Grammar OPTIONAL_REASONING_GRAMMAR = Grammar::regex(R"((<think>\n[^<]*\n</think>\n\n*)?)");
 
 std::string extract_last_user_query(const std::vector<ChatMessage>& messages) {
     for (auto it = messages.rbegin(); it != messages.rend(); ++it) {

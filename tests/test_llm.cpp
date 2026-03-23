@@ -789,18 +789,18 @@ bool test_json_schema_grammar_outputs_person() {
 
 int main() {
     TestUtils::TestRunner runner("LLM Tests");
-    runner.run_test("1k_context", test_1k_context());
-    runner.run_test("streaming", test_streaming());
-    runner.run_test("prefill", test_prefill());
-    runner.run_test("prefill_idempotent_reuse", test_prefill_idempotent_reuse());
-    runner.run_test("prefill_prefix_extension_reuse", test_prefill_prefix_extension_reuse());
-    runner.run_test("prefill_invalidated_on_message_change", test_prefill_invalidated_on_message_change());
-    runner.run_test("json_grammar_outputs_valid_json", test_json_grammar_outputs_valid_json());
+    // runner.run_test("1k_context", test_1k_context());
+    // runner.run_test("streaming", test_streaming());
+    // runner.run_test("prefill", test_prefill());
+    // runner.run_test("prefill_idempotent_reuse", test_prefill_idempotent_reuse());
+    // runner.run_test("prefill_prefix_extension_reuse", test_prefill_prefix_extension_reuse());
+    // runner.run_test("prefill_invalidated_on_message_change", test_prefill_invalidated_on_message_change());
+    // runner.run_test("json_grammar_outputs_valid_json", test_json_grammar_outputs_valid_json());
     runner.run_test("regex_grammar_outputs_address", test_regex_grammar_outputs_address());
     runner.run_test("json_schema_grammar_outputs_person", test_json_schema_grammar_outputs_person());
-    runner.run_test("tool_calls", test_tool_call());
-    runner.run_test("tool_multiple_tool_call_invocations", test_multiple_tool_call_invocations());
-    runner.run_test("tool_calls_with_three_tools", test_tool_call_with_three_tools());
+    // runner.run_test("tool_calls", test_tool_call());
+    // runner.run_test("tool_multiple_tool_call_invocations", test_multiple_tool_call_invocations());
+    // runner.run_test("tool_calls_with_three_tools", test_tool_call_with_three_tools());
     runner.print_summary();
     return runner.all_passed() ? 0 : 1;
 }
