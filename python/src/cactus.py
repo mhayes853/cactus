@@ -32,6 +32,12 @@ _lib.cactus_complete.argtypes = [
 ]
 _lib.cactus_complete.restype = ctypes.c_int
 
+_lib.cactus_prefill.argtypes = [
+    ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_size_t,
+    ctypes.c_char_p, ctypes.c_char_p
+]
+_lib.cactus_prefill.restype = ctypes.c_int
+
 _lib.cactus_transcribe.argtypes = [
     ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
     ctypes.c_size_t, ctypes.c_char_p, TokenCallback, ctypes.c_void_p,
@@ -270,6 +276,15 @@ def cactus_complete(model, messages_json, options_json, tools_json, callback):
     return buf.value.decode("utf-8", errors="ignore")
 
 
+def cactus_prefill(model, messages_json, options_json, tools_json):
+    """Prefills the KV cache with messages."""
+    buf = ctypes.create_string_buffer(65536)
+    rc = _lib.cactus_prefill(
+        model, _enc(messages_json), buf, len(buf),
+        _enc(options_json), _enc(tools_json)
+    )
+    if rc < 0:
+        raise RuntimeError(_err("Prefill failed"))
 def cactus_detect_language(model, audio_path, options_json, pcm_data):
     """Detects the spoken language in audio. Returns JSON string."""
     buf = ctypes.create_string_buffer(65536)

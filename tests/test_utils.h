@@ -167,6 +167,19 @@ struct Metrics {
     void print_json() const;
 };
 
+struct PrefillMetrics {
+    bool success = false;
+    std::string error;
+    double prefill_tokens = 0.0;
+    double prefill_tps = 0.0;
+    double total_ms = 0.0;
+    double ram_mb = 0.0;
+
+    void parse(const std::string& json);
+    std::string line() const;
+    void print_line() const;
+};
+
 template<typename TestFunc>
 bool run_test(const char* title, const char* model_path, const char* messages,
               const char* options, TestFunc test_logic,

@@ -28,6 +28,32 @@ typedef CactusCompleteNative = Int32 Function(
     Pointer<NativeFunction<TokenCallbackNative>> callback,
     Pointer<Void> userData);
 
+typedef CactusPrefillNative = Int32 Function(
+    CactusModelT model,
+    Pointer<Utf8> messagesJson,
+    Pointer<Utf8> responseBuffer,
+    IntPtr bufferSize,
+    Pointer<Utf8> optionsJson,
+    Pointer<Utf8> toolsJson);
+
+typedef CactusCompleteDart = Int32 Function(
+    CactusModelT model,
+    Pointer<Utf8> messagesJson,
+    Pointer<Utf8> responseBuffer,
+    IntPtr bufferSize,
+    Pointer<Utf8> optionsJson,
+    Pointer<Utf8> toolsJson,
+    Pointer<NativeFunction<TokenCallbackNative>> callback,
+    Pointer<Void> userData);
+
+typedef CactusPrefillDart = Int32 Function(
+    CactusModelT model,
+    Pointer<Utf8> messagesJson,
+    Pointer<Utf8> responseBuffer,
+    IntPtr bufferSize,
+    Pointer<Utf8> optionsJson,
+    Pointer<Utf8> toolsJson);
+
 typedef CactusTokenizeNative = Int32 Function(
     CactusModelT model,
     Pointer<Utf8> text,
@@ -347,6 +373,8 @@ final _cactusStop =
     _lib.lookupFunction<CactusStopNative, CactusStopDart>('cactus_stop');
 final _cactusComplete =
     _lib.lookupFunction<CactusCompleteNative, CactusCompleteDart>('cactus_complete');
+final _cactusPrefill =
+    _lib.lookupFunction<CactusPrefillNative, CactusPrefillDart>('cactus_prefill');
 final _cactusTokenize =
     _lib.lookupFunction<CactusTokenizeNative, CactusTokenizeDart>('cactus_tokenize');
 final _cactusScoreWindow = _lib
@@ -587,6 +615,36 @@ String cactusComplete(
     if (optionsPtr != nullptr) calloc.free(optionsPtr);
     if (toolsPtr != nullptr) calloc.free(toolsPtr);
     nativeCallable?.close();
+  }
+}
+
+/// Prefills the KV cache with messages.
+String cactusPrefill(
+  CactusModelT model,
+  String messagesJson,
+  String? optionsJson,
+  String? toolsJson,
+) {
+  const bufferSize = 65536;
+  final responseBuffer = calloc<Uint8>(bufferSize);
+  final messagesPtr = messagesJson.toNativeUtf8();
+  final optionsPtr = optionsJson?.toNativeUtf8() ?? nullptr;
+  final toolsPtr = toolsJson?.toNativeUtf8() ?? nullptr;
+
+  try {
+    final result = _cactusPrefill(
+      model, messagesPtr, responseBuffer.cast(), bufferSize,
+      optionsPtr, toolsPtr,
+    );
+    if (result < 0) {
+      throw Exception('Prefill failed: ${cactusGetLastError()}');
+    }
+    return responseBuffer.cast<Utf8>().toDartString();
+  } finally {
+    calloc.free(responseBuffer);
+    calloc.free(messagesPtr);
+    if (optionsPtr != nullptr) calloc.free(optionsPtr);
+    if (toolsPtr != nullptr) calloc.free(toolsPtr);
   }
 }
 

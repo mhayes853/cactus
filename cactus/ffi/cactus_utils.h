@@ -67,6 +67,16 @@ struct CactusModelHandle {
     std::unique_ptr<cactus::engine::Model> vad_model;
     std::atomic<bool> should_stop;
     std::vector<uint32_t> processed_tokens;
+    struct ProcessedImage {
+        std::string path;
+        long long last_modified_timestamp = 0;
+
+        bool operator==(const ProcessedImage& other) const {
+            return path == other.path && last_modified_timestamp == other.last_modified_timestamp;
+        }
+    };
+
+    std::vector<std::vector<ProcessedImage>> processed_images;
     std::mutex model_mutex;
     std::string model_name;
     std::unique_ptr<cactus::engine::index::Index> corpus_index;
@@ -259,6 +269,24 @@ struct ToolFunction {
     std::string name;
     std::string description;
     std::unordered_map<std::string, std::string> parameters;
+};
+
+struct InferenceOptions {
+    float temperature = 0.0f;
+    float top_p = 0.0f;
+    float confidence_threshold = 0.7f;
+    size_t top_k = 0;
+    size_t max_tokens = 100;
+    size_t tool_rag_top_k = 2;
+    size_t cloud_timeout_ms = 15000;
+    std::vector<std::string> stop_sequences;
+    bool force_tools = false;
+    bool include_stop_sequences = false;
+    bool use_vad = true;
+    bool telemetry_enabled = true;
+    bool auto_handoff = true;
+    bool handoff_with_images = true;
+    bool enable_thinking_if_supported = true;
 };
 
 } // namespace ffi
@@ -730,135 +758,100 @@ inline void apply_custom_vocabulary_options(cactus::engine::Model* model, const 
     model->set_vocab_bias(build_custom_vocabulary_bias(model->get_tokenizer(), custom_vocabulary, vocabulary_boost));
 }
 
-inline void parse_options_json(const std::string& json,
-                               float& temperature, float& top_p,
-                               size_t& top_k, size_t& max_tokens,
-                               std::vector<std::string>& stop_sequences,
-                               bool& force_tools,
-                               size_t& tool_rag_top_k,
-                               float& confidence_threshold,
-                               bool& include_stop_sequences,
-                               bool& use_vad,
-                               bool& telemetry_enabled,
-                               bool* auto_handoff = nullptr,
-                               size_t* cloud_timeout_ms = nullptr,
-                               bool* handoff_with_images = nullptr,
-                               bool* enable_thinking_if_supported = nullptr) {
-    temperature = 0.0f;
-    top_p = 0.0f;
-    top_k = 0;
-    max_tokens = 100;
-    force_tools = false;
-    tool_rag_top_k = 2;
-    confidence_threshold = 0.7f;
-    include_stop_sequences = false;
-    use_vad = true;
-    telemetry_enabled = true;
-    if (auto_handoff) *auto_handoff = true;
-    if (cloud_timeout_ms) *cloud_timeout_ms = 15000;
-    if (handoff_with_images) *handoff_with_images = true;
-    if (enable_thinking_if_supported) *enable_thinking_if_supported = true;
-    stop_sequences.clear();
+inline InferenceOptions parse_inference_options_json(const std::string& json) {
+    InferenceOptions options;
 
-    if (json.empty()) return;
+    if (json.empty()) return options;
 
     size_t pos = json.find("\"temperature\"");
     if (pos != std::string::npos) {
         pos = json.find(':', pos) + 1;
-        temperature = std::stof(json.substr(pos));
+        options.temperature = std::stof(json.substr(pos));
     }
 
     pos = json.find("\"top_p\"");
     if (pos != std::string::npos) {
         pos = json.find(':', pos) + 1;
-        top_p = std::stof(json.substr(pos));
+        options.top_p = std::stof(json.substr(pos));
     }
 
     pos = json.find("\"top_k\"");
     if (pos != std::string::npos) {
         pos = json.find(':', pos) + 1;
-        top_k = std::stoul(json.substr(pos));
+        options.top_k = std::stoul(json.substr(pos));
     }
 
     pos = json.find("\"max_tokens\"");
     if (pos != std::string::npos) {
         pos = json.find(':', pos) + 1;
-        max_tokens = std::stoul(json.substr(pos));
+        options.max_tokens = std::stoul(json.substr(pos));
     }
 
     pos = json.find("\"force_tools\"");
     if (pos != std::string::npos) {
         pos = json.find(':', pos) + 1;
-        while (pos < json.length() && std::isspace(json[pos])) pos++;
-        force_tools = (json.substr(pos, 4) == "true");
+        while (pos < json.length() && std::isspace(static_cast<unsigned char>(json[pos]))) pos++;
+        options.force_tools = (json.substr(pos, 4) == "true");
     }
 
     pos = json.find("\"tool_rag_top_k\"");
     if (pos != std::string::npos) {
         pos = json.find(':', pos) + 1;
-        tool_rag_top_k = std::stoul(json.substr(pos));
+        options.tool_rag_top_k = std::stoul(json.substr(pos));
     }
 
     pos = json.find("\"confidence_threshold\"");
     if (pos != std::string::npos) {
         pos = json.find(':', pos) + 1;
-        confidence_threshold = std::stof(json.substr(pos));
+        options.confidence_threshold = std::stof(json.substr(pos));
     }
 
     pos = json.find("\"include_stop_sequences\"");
     if (pos != std::string::npos) {
         pos = json.find(':', pos) + 1;
-        while (pos < json.length() && std::isspace(json[pos])) pos++;
-        include_stop_sequences = (json.substr(pos, 4) == "true");
+        while (pos < json.length() && std::isspace(static_cast<unsigned char>(json[pos]))) pos++;
+        options.include_stop_sequences = (json.substr(pos, 4) == "true");
     }
 
     pos = json.find("\"use_vad\"");
     if (pos != std::string::npos) {
         pos = json.find(':', pos) + 1;
-        while (pos < json.length() && std::isspace(json[pos])) pos++;
-        use_vad = (json.substr(pos, 4) == "true");
+        while (pos < json.length() && std::isspace(static_cast<unsigned char>(json[pos]))) pos++;
+        options.use_vad = (json.substr(pos, 4) == "true");
     }
 
     pos = json.find("\"telemetry_enabled\"");
     if (pos != std::string::npos) {
         pos = json.find(':', pos) + 1;
-        while (pos < json.length() && std::isspace(json[pos])) pos++;
-        telemetry_enabled = (json.substr(pos, 4) == "true");
+        while (pos < json.length() && std::isspace(static_cast<unsigned char>(json[pos]))) pos++;
+        options.telemetry_enabled = (json.substr(pos, 4) == "true");
     }
 
-    if (auto_handoff) {
-        pos = json.find("\"auto_handoff\"");
-        if (pos != std::string::npos) {
-            pos = json.find(':', pos) + 1;
-            while (pos < json.length() && std::isspace(json[pos])) pos++;
-            *auto_handoff = (json.substr(pos, 4) == "true");
-        }
+    pos = json.find("\"auto_handoff\"");
+    if (pos != std::string::npos) {
+        pos = json.find(':', pos) + 1;
+        while (pos < json.length() && std::isspace(static_cast<unsigned char>(json[pos]))) pos++;
+        options.auto_handoff = (json.substr(pos, 4) == "true");
     }
 
-    if (cloud_timeout_ms) {
-        pos = json.find("\"cloud_timeout_ms\"");
-        if (pos != std::string::npos) {
-            pos = json.find(':', pos) + 1;
-            *cloud_timeout_ms = std::stoul(json.substr(pos));
-        }
+    pos = json.find("\"cloud_timeout_ms\"");
+    if (pos != std::string::npos) {
+        pos = json.find(':', pos) + 1;
+        options.cloud_timeout_ms = std::stoul(json.substr(pos));
     }
 
-    if (handoff_with_images) {
-        pos = json.find("\"handoff_with_images\"");
-        if (pos != std::string::npos) {
-            pos = json.find(':', pos) + 1;
-            while (pos < json.length() && std::isspace(json[pos])) pos++;
-            *handoff_with_images = (json.substr(pos, 4) == "true");
-        }
+    pos = json.find("\"handoff_with_images\"");
+    if (pos != std::string::npos) {
+        pos = json.find(':', pos) + 1;
+        while (pos < json.length() && std::isspace(static_cast<unsigned char>(json[pos]))) pos++;
+        options.handoff_with_images = (json.substr(pos, 4) == "true");
     }
 
-    if (enable_thinking_if_supported) {
-        pos = json.find("\"enable_thinking_if_supported\"");
-        if (pos != std::string::npos) {
-            pos = json.find(':', pos) + 1;
-            while (pos < json.length() && std::isspace(json[pos])) pos++;
-            *enable_thinking_if_supported = (json.substr(pos, 4) == "true");
-        }
+    pos = json.find("\"enable_thinking_if_supported\"");
+    if (pos != std::string::npos) {
+        pos = json.find(':', pos) + 1;
+        while (pos < json.length() && std::isspace(static_cast<unsigned char>(json[pos]))) pos++;
+        options.enable_thinking_if_supported = (json.substr(pos, 4) == "true");
     }
 
     pos = json.find("\"stop_sequences\"");
@@ -872,12 +865,14 @@ inline void parse_options_json(const std::string& json,
                 size_t seq_start = seq_pos + 1;
                 size_t seq_end = json.find('"', seq_start);
                 if (seq_end != std::string::npos) {
-                    stop_sequences.push_back(json.substr(seq_start, seq_end - seq_start));
+                    options.stop_sequences.push_back(json.substr(seq_start, seq_end - seq_start));
                 }
                 seq_pos = json.find('"', seq_end + 1);
             }
         }
     }
+
+    return options;
 }
 
 static inline std::string trim_lfm2_slice(const std::string& value, size_t begin, size_t end) {

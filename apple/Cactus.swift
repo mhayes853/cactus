@@ -102,6 +102,24 @@ public func cactusComplete(_ model: CactusModelT, _ messagesJson: String, _ opti
     return String(cString: buffer)
 }
 
+public func cactusPrefill(_ model: CactusModelT, _ messagesJson: String, _ optionsJson: String?, _ toolsJson: String?) throws -> String {
+    var buffer = [CChar](repeating: 0, count: _defaultBufferSize)
+
+    let result = buffer.withUnsafeMutableBufferPointer { bufferPtr in
+        cactus_prefill(
+            model,
+            messagesJson,
+            bufferPtr.baseAddress,
+            bufferPtr.count,
+            optionsJson,
+            toolsJson
+        )
+    }
+
+    if result < 0 { throw _err("Prefill failed") }
+    return String(cString: buffer)
+}
+
 public func cactusTokenize(_ model: CactusModelT, _ text: String) throws -> [UInt32] {
     var tokenBuffer = [UInt32](repeating: 0, count: 8192)
     var tokenLen: Int = 0

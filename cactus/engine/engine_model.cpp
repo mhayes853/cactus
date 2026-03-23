@@ -199,6 +199,12 @@ void Model::prefill(const std::vector<uint32_t>& tokens, size_t chunk_size, cons
     process_chunk(final_chunk);
 }
 
+void Model::prefill_with_images(const std::vector<uint32_t>& tokens, const std::vector<std::string>& image_paths,
+                                const std::string& profile_file) {
+    (void)image_paths;
+    prefill(tokens, get_prefill_chunk_size(), profile_file);
+}
+
 uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, float top_p,
                         size_t top_k, const std::string& profile_file, float* out_entropy,
                         cactus::engine::GrammarMatcher* matcher) {

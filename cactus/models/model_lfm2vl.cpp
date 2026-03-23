@@ -429,6 +429,35 @@ void Lfm2VlModel::prefill(const std::vector<uint32_t>& tokens, size_t chunk_size
     language_model_.prefill(tokens, chunk_size, profile_file);
 }
 
+void Lfm2VlModel::prefill_with_images(const std::vector<uint32_t>& tokens, const std::vector<std::string>& image_paths,
+                                      const std::string& profile_file) {
+    if (!initialized_ || !graph_handle_) {
+        throw std::runtime_error("Model not initialized - call init() first");
+    }
+    if (tokens.empty()) {
+        return;
+    }
+    if (image_paths.empty()) {
+        prefill(tokens, get_prefill_chunk_size(), profile_file);
+        return;
+    }
+
+    auto* gb = static_cast<CactusGraph*>(graph_handle_);
+    gb->soft_reset();
+    auto backend = config_.default_backend == Config::Backend::CPU
+        ? ComputeBackend::CPU
+        : ComputeBackend::NPU;
+
+    auto forward_result = forward_images(gb, tokens, image_paths, backend, true);
+    gb->execute(profile_file);
+
+    language_model_.post_execute_updates(gb, forward_result.seq_len);
+    language_model_.update_kv_cache(gb, forward_result.seq_len);
+
+    image_prefill_completed_ = true;
+    last_token_count_ = tokens.size();
+}
+
 Lfm2VlModel::ForwardImageResult Lfm2VlModel::forward_images(
     CactusGraph* gb,
     const std::vector<uint32_t>& tokens,
