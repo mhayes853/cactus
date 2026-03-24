@@ -7,6 +7,7 @@
 #include <cstring>
 #include <future>
 #include <optional>
+#include <stdexcept>
 #include <vector>
 
 using namespace cactus::engine;
@@ -438,6 +439,21 @@ int cactus_complete(
         auto* tokenizer = handle->model->get_tokenizer();
         auto prompt = prepare_prompt(handle, messages_json, options_json, tools_json, true, true);
 
+        Grammar decode_grammar;
+        std::optional<cactus::engine::GrammarMatcher> matcher;
+        if (grammar) {
+            const CactusGrammarHandle* grammar_handle = static_cast<const CactusGrammarHandle*>(grammar);
+            if (grammar_handle->grammar->is_empty()) {
+                handle_error_response("Cannot constrain to empty grammar", response_buffer, buffer_size);
+                return -1;
+            }
+            decode_grammar = Grammar::model_decode_grammar(
+                *grammar_handle->grammar,
+                prompt.thinking_supported
+            );
+            matcher.emplace(&decode_grammar, tokenizer->get_tokenizer_info());
+        }
+
         CACTUS_LOG_DEBUG("complete", "Prompt tokens: " << prompt.tokens.size()
             << ", max_tokens: " << prompt.options.max_tokens);
 
@@ -451,19 +467,6 @@ int cactus_complete(
         std::vector<uint32_t> generated_tokens;
         double time_to_first_token = 0.0;
         float first_token_entropy = 0.0f;
-
-        Grammar decode_grammar;
-        std::optional<cactus::engine::GrammarMatcher> matcher;
-        if (grammar) {
-            const CactusGrammarHandle* grammar_handle = static_cast<const CactusGrammarHandle*>(grammar);
-            decode_grammar = Grammar::model_decode_grammar(
-                *grammar_handle->grammar,
-                prompt.thinking_supported
-            );
-            if (!decode_grammar.is_empty()) {
-                matcher.emplace(&decode_grammar, tokenizer->get_tokenizer_info());
-            }
-        }
 
         uint32_t next_token = generate_first_token(
             handle,
