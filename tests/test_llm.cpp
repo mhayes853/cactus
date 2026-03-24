@@ -696,9 +696,9 @@ bool test_json_schema_grammar_outputs_person() {
     const char* person_schema = R"({
         "type": "object",
         "properties": {
-            "name": {"type": "string"},
+            "name": {"type": "string", "minLength": 1},
             "age": {"type": "integer", "minimum": 0, "maximum": 130},
-            "bio": {"type": "string", "minimum": 1}
+            "bio": {"type": "string", "minLength": 1}
         },
         "required": ["name", "age", "bio"],
         "additionalProperties": false

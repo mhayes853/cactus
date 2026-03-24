@@ -11,6 +11,25 @@
 namespace cactus {
 namespace engine {
 
+TokenizerInfo BPETokenizer::get_tokenizer_info() const {
+    std::vector<uint32_t> stop_token_ids = {eos_token_id_};
+    std::string default_stop = get_default_stop_sequence();
+    if (!default_stop.empty()) {
+        std::vector<uint32_t> encoded = encode(default_stop);
+        if (encoded.size() == 1 && std::find(stop_token_ids.begin(), stop_token_ids.end(), encoded[0]) == stop_token_ids.end()) {
+            stop_token_ids.push_back(encoded[0]);
+        }
+    }
+
+    return TokenizerInfo{
+        id_to_token_,
+        VocabType::BYTE_LEVEL,
+        id_to_token_.size(),
+        stop_token_ids,
+        get_add_prefix_space()
+    };
+}
+
 BPETokenizer::BPETokenizer()
     : vocab_size_(0), unk_token_id_(0), bos_token_id_(1), eos_token_id_(2),
       vocab_mmap_ptr_(nullptr), vocab_mmap_size_(0),

@@ -57,6 +57,7 @@ class Siglip2Preprocessor;
 enum class VocabType {
     RAW,
     BYTE_LEVEL,
+    BYTE_FALLBACK
 };
 
 struct TokenizerInfo {
@@ -371,15 +372,7 @@ public:
     uint32_t get_bos_token() const override { return bos_token_id_; }
     uint32_t get_eos_token() const override { return eos_token_id_; }
     bool is_thinking_supported() const override { return supports_thinking_tokens(special_tokens_); }
-    TokenizerInfo get_tokenizer_info() const override {
-        return TokenizerInfo{
-            id_to_token_,
-            VocabType::BYTE_LEVEL,
-            id_to_token_.size(),
-            {eos_token_id_},
-            get_add_prefix_space()
-        };
-    }
+    TokenizerInfo get_tokenizer_info() const override;
 
 private:
     std::unordered_map<std::string, uint32_t> token_to_id_;
@@ -438,15 +431,7 @@ public:
     uint32_t get_bos_token() const override { return bos_token_id_; }
     uint32_t get_eos_token() const override { return eos_token_id_; }
     bool is_thinking_supported() const override { return supports_thinking_tokens(special_tokens_); }
-    TokenizerInfo get_tokenizer_info() const override {
-        return TokenizerInfo{
-            id_to_token_,
-            VocabType::RAW,
-            id_to_token_.size(),
-            {eos_token_id_},
-            get_add_prefix_space()
-        };
-    }
+    TokenizerInfo get_tokenizer_info() const override;
     bool get_add_prefix_space() const override { return model_type_ == ModelType::BERT; }
 
 private:

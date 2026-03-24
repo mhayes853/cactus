@@ -1,5 +1,7 @@
 #include "engine.h"
+#include <algorithm>
 #include <cassert>
+#include <cctype>
 #include <fstream>
 #include <sstream>
 #include <sys/mman.h>
@@ -37,7 +39,7 @@ void SPTokenizer::cleanup_mmap() {
 bool SPTokenizer::load_vocabulary_with_config(const std::string& vocab_file, const std::string& /*merges_file*/, const std::string& config_file) {
     std::string config_path = config_file.substr(0, config_file.find_last_of("/\\")) + "/config.txt";
     detect_model_type(config_path);
-    
+
     std::ifstream vocab_stream(vocab_file);
     if (!vocab_stream.is_open()) return false;
 
@@ -47,7 +49,7 @@ bool SPTokenizer::load_vocabulary_with_config(const std::string& vocab_file, con
 
     std::string first_line;
     std::getline(vocab_stream, first_line);
-    vocab_stream.seekg(0);  
+    vocab_stream.seekg(0);
 
     bool is_id_token_format = false;
     if (!first_line.empty()) {
@@ -68,7 +70,7 @@ bool SPTokenizer::load_vocabulary_with_config(const std::string& vocab_file, con
                         token = token.substr(1);
                     }
                 }
-                
+
                 if (token.empty()) {
                     auto last_pos = vocab_stream.tellg();
                     while (std::getline(vocab_stream, line)) {
@@ -81,7 +83,7 @@ bool SPTokenizer::load_vocabulary_with_config(const std::string& vocab_file, con
                     vocab_stream.seekg(last_pos);
                 }
             }
-            
+
             if (!token.empty() && id != UINT32_MAX) {
                 token_to_id_[token] = id;
                 if (id >= id_to_token_.size()) {
@@ -97,7 +99,7 @@ bool SPTokenizer::load_vocabulary_with_config(const std::string& vocab_file, con
         std::string line;
         uint32_t id = 0;
 
-        vocab_stream.seekg(0); 
+        vocab_stream.seekg(0);
         while (std::getline(vocab_stream, line)) {
             token_to_id_[line] = id;
             id_to_token_.push_back(line);
@@ -108,26 +110,26 @@ bool SPTokenizer::load_vocabulary_with_config(const std::string& vocab_file, con
     }
 
     vocab_stream.close();
-    
+
     build_trie();
-    
+
     std::ifstream config_stream(config_file);
     if (config_stream.is_open()) {
         std::string config_line;
         while (std::getline(config_stream, config_line)) {
             if (config_line.empty() || config_line[0] == '#') continue;
-            
+
             size_t eq_pos = config_line.find('=');
             if (eq_pos == std::string::npos) continue;
-            
+
             std::string key = config_line.substr(0, eq_pos);
             std::string value = config_line.substr(eq_pos + 1);
-            
+
             key.erase(0, key.find_first_not_of(" \t"));
             key.erase(key.find_last_not_of(" \t") + 1);
             value.erase(0, value.find_first_not_of(" \t"));
             value.erase(value.find_last_not_of(" \t") + 1);
-            
+
             if (key == "eos_token_id") {
                 eos_token_id_ = std::stoul(value);
             } else if (key == "pad_token_id") {
@@ -139,7 +141,7 @@ bool SPTokenizer::load_vocabulary_with_config(const std::string& vocab_file, con
             }
         }
     }
-    
+
     std::string special_tokens_path = config_file.substr(0, config_file.find_last_of("/\\")) + "/special_tokens.json";
     load_special_tokens(special_tokens_path);
 
@@ -153,7 +155,7 @@ void SPTokenizer::build_trie() {
     for (uint32_t id = 0; id < id_to_token_.size(); ++id) {
         const std::string& token = id_to_token_[id];
         if (token.empty()) continue;
-        
+
         std::u32string u32_token;
         size_t pos = 0;
         while (pos < token.length()) {
@@ -192,7 +194,7 @@ void SPTokenizer::build_trie() {
         }
 
         if (u32_token.empty()) continue;
-        
+
         TrieNode* current = trie_root_.get();
         for (char32_t ch : u32_token) {
             if (current->children.find(ch) == current->children.end()) {
@@ -229,7 +231,7 @@ std::string SPTokenizer::postprocess_text(const std::string& text) const {
     std::string result;
     size_t i = 0;
     while (i < text.length()) {
-        if (i + 2 < text.length() && 
+        if (i + 2 < text.length() &&
             static_cast<unsigned char>(text[i]) == 0xE2 &&
             static_cast<unsigned char>(text[i+1]) == 0x96 &&
             static_cast<unsigned char>(text[i+2]) == 0x81) {
@@ -248,7 +250,7 @@ std::string SPTokenizer::postprocess_text(const std::string& text) const {
 
 std::vector<std::pair<std::string, uint32_t>> SPTokenizer::tokenize_with_trie(const std::string& text) const {
     std::vector<std::pair<std::string, uint32_t>> result;
-    
+
     std::u32string u32_text;
     size_t pos = 0;
     while (pos < text.length()) {
@@ -296,7 +298,7 @@ std::vector<std::pair<std::string, uint32_t>> SPTokenizer::tokenize_with_trie(co
         TrieNode* current = trie_root_.get();
         size_t best_match_len = 0;
         int32_t best_token_id = -1;
-        
+
         for (size_t len = 0; pos + len < u32_text.length(); ++len) {
             char32_t ch = u32_text[pos + len];
             if (current->children.find(ch) == current->children.end()) {
@@ -308,10 +310,10 @@ std::vector<std::pair<std::string, uint32_t>> SPTokenizer::tokenize_with_trie(co
                 best_token_id = current->token_id;
             }
         }
-        
+
         if (best_match_len > 0) {
             std::u32string u32_token = u32_text.substr(pos, best_match_len);
-            
+
             std::string token;
             for (char32_t cp : u32_token) {
                 if (cp < 0x80) {
@@ -354,19 +356,19 @@ std::vector<std::pair<std::string, uint32_t>> SPTokenizer::tokenize_with_trie(co
             pos++;
         }
     }
-    
+
     return result;
 }
 
 std::vector<std::string> SPTokenizer::split_with_special_tokens(const std::string& text) const {
     std::vector<std::string> result;
-    
+
     size_t start = 0;
     while (start < text.size()) {
         size_t best_match_pos = text.size();
         size_t best_match_len = 0;
         std::string best_special_token;
-        
+
         for (const auto& [special_token, token_id] : special_tokens_) {
             size_t pos = text.find(special_token, start);
             if (pos != std::string::npos && pos < best_match_pos) {
@@ -375,7 +377,7 @@ std::vector<std::string> SPTokenizer::split_with_special_tokens(const std::strin
                 best_special_token = special_token;
             }
         }
-        
+
         if (best_match_pos < text.size()) {
             if (best_match_pos > start) {
                 std::string before = text.substr(start, best_match_pos - start);
@@ -390,7 +392,7 @@ std::vector<std::string> SPTokenizer::split_with_special_tokens(const std::strin
             break;
         }
     }
-    
+
     return result;
 }
 
@@ -418,55 +420,28 @@ std::vector<uint32_t> SPTokenizer::encode(const std::string& text) const {
     return token_ids;
 }
 
+static bool is_byte_fallback_token(const std::string& token) {
+    return token.size() == 6
+        && token[0] == '<'
+        && token[1] == '0'
+        && token[2] == 'x'
+        && std::isxdigit(static_cast<unsigned char>(token[3]))
+        && std::isxdigit(static_cast<unsigned char>(token[4]))
+        && token[5] == '>';
+}
+
 std::string SPTokenizer::decode(const std::vector<uint32_t>& tokens) const {
     std::string result;
-
-    if (tokens.size() == 1) {
-        uint32_t token_id = tokens[0];
-        if (token_id < id_to_token_.size()) {
-            std::string token = id_to_token_[token_id];
-
-            size_t pos = 0;
-            while (pos < token.length()) {
-                if (pos + 2 < token.length() &&
-                    static_cast<unsigned char>(token[pos]) == 0xE2 &&
-                    static_cast<unsigned char>(token[pos+1]) == 0x96 &&
-                    static_cast<unsigned char>(token[pos+2]) == 0x81) {
-                    result += ' ';
-                    pos += 3;
-                } else {
-                    result += token[pos];
-                    pos++;
-                }
-            }
-        }
-        return result;
-    }
-
-    for (size_t i = 0; i < tokens.size(); i++) {
-        uint32_t token_id = tokens[i];
-        if (token_id < id_to_token_.size()) {
-            std::string token = id_to_token_[token_id];
-
-            size_t pos = 0;
-            while (pos < token.length()) {
-                if (pos + 2 < token.length() &&
-                    static_cast<unsigned char>(token[pos]) == 0xE2 &&
-                    static_cast<unsigned char>(token[pos+1]) == 0x96 &&
-                    static_cast<unsigned char>(token[pos+2]) == 0x81) {
-                    if (!result.empty()) {
-                        result += ' ';
-                    }
-                    pos += 3;
-                } else {
-                    result += token[pos];
-                    pos++;
-                }
-            }
+    for (uint32_t token_id : tokens) {
+        if (token_id >= id_to_token_.size()) continue;
+        const auto token = id_to_token_[token_id];
+        if (is_byte_fallback_token(token)) {
+            result.push_back(std::stoul(token.data() + 3, nullptr, 16));
+        } else {
+            result += token;
         }
     }
-
-    return result;
+    return postprocess_text(result);
 }
 
 void SPTokenizer::load_special_tokens(const std::string& config_file) {
@@ -474,43 +449,43 @@ void SPTokenizer::load_special_tokens(const std::string& config_file) {
     if (!file.is_open()) {
         return;
     }
-    
+
     std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    
+
     size_t pos = content.find("\"special_tokens\"");
     if (pos == std::string::npos) return;
-    
+
     pos = content.find("{", pos);
     if (pos == std::string::npos) return;
-    
+
     size_t end_pos = content.find("}", pos);
     if (end_pos == std::string::npos) return;
-    
+
     std::string special_tokens_section = content.substr(pos + 1, end_pos - pos - 1);
-    
+
     std::istringstream iss(special_tokens_section);
     std::string line;
-    
+
     while (std::getline(iss, line)) {
         size_t colon_pos = line.find(":");
         if (colon_pos == std::string::npos) continue;
-        
+
         std::string id_part = line.substr(0, colon_pos);
         std::string token_part = line.substr(colon_pos + 1);
-        
+
         size_t id_start = id_part.find("\"");
         size_t id_end = id_part.find("\"", id_start + 1);
         if (id_start == std::string::npos || id_end == std::string::npos) continue;
-        
+
         std::string id_str = id_part.substr(id_start + 1, id_end - id_start - 1);
         uint32_t token_id = std::stoul(id_str);
-        
+
         size_t token_start = token_part.find("\"");
         size_t token_end = token_part.rfind("\"");
         if (token_start == std::string::npos || token_end == std::string::npos || token_start >= token_end) continue;
-        
+
         std::string token_content = token_part.substr(token_start + 1, token_end - token_start - 1);
-        
+
         special_tokens_[token_content] = token_id;
     }
 }
@@ -521,11 +496,29 @@ void SPTokenizer::load_chat_template(const std::string& template_file) {
         has_chat_template_ = false;
         return;
     }
-    
+
     chat_template_ = std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     has_chat_template_ = !chat_template_.empty();
 }
 
+TokenizerInfo SPTokenizer::get_tokenizer_info() const {
+    std::vector<uint32_t> stop_token_ids = {eos_token_id_};
+    std::string default_stop = get_default_stop_sequence();
+    if (!default_stop.empty()) {
+        std::vector<uint32_t> encoded = encode(default_stop);
+        if (encoded.size() == 1 && std::find(stop_token_ids.begin(), stop_token_ids.end(), encoded[0]) == stop_token_ids.end()) {
+            stop_token_ids.push_back(encoded[0]);
+        }
+    }
+
+    return TokenizerInfo{
+        id_to_token_,
+        VocabType::BYTE_FALLBACK,
+        id_to_token_.size(),
+        stop_token_ids,
+        get_add_prefix_space()
+    };
+}
 
 } // namespace engine
 } // namespace cactus

@@ -124,6 +124,8 @@ static xgrammar::VocabType to_xgrammar_vocab_type(VocabType vocab_type) {
             return xgrammar::VocabType::RAW;
         case VocabType::BYTE_LEVEL:
             return xgrammar::VocabType::BYTE_LEVEL;
+        case VocabType::BYTE_FALLBACK:
+            return xgrammar::VocabType::BYTE_FALLBACK;
     }
 }
 
