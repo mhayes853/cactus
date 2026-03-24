@@ -298,6 +298,10 @@ struct ChatMessage {
     std::vector<std::string> images;
 };
 
+inline bool supports_thinking_tokens(const std::unordered_map<std::string, uint32_t>& special_tokens) {
+    return special_tokens.find("<think>") != special_tokens.end()
+        && special_tokens.find("</think>") != special_tokens.end();
+}
 
 
 class Tokenizer {
@@ -317,6 +321,7 @@ public:
     virtual TokenizerInfo get_tokenizer_info() const = 0;
     virtual bool get_add_prefix_space() const { return false; }
     virtual bool has_chat_template() const { return has_chat_template_; }
+    virtual bool is_thinking_supported() const { return false; }
     std::string get_default_stop_sequence() const;
 
     virtual bool load_vocabulary_with_config(const std::string& vocab_file, const std::string& merges_file, const std::string& config_file) = 0;
@@ -365,6 +370,7 @@ public:
     uint32_t get_unk_token() const override { return unk_token_id_; }
     uint32_t get_bos_token() const override { return bos_token_id_; }
     uint32_t get_eos_token() const override { return eos_token_id_; }
+    bool is_thinking_supported() const override { return supports_thinking_tokens(special_tokens_); }
     TokenizerInfo get_tokenizer_info() const override {
         return TokenizerInfo{
             id_to_token_,
@@ -431,6 +437,7 @@ public:
     uint32_t get_unk_token() const override { return unk_token_id_; }
     uint32_t get_bos_token() const override { return bos_token_id_; }
     uint32_t get_eos_token() const override { return eos_token_id_; }
+    bool is_thinking_supported() const override { return supports_thinking_tokens(special_tokens_); }
     TokenizerInfo get_tokenizer_info() const override {
         return TokenizerInfo{
             id_to_token_,

@@ -146,6 +146,7 @@ struct EntropyState {
 struct PreparedPrompt {
     InferenceOptions options;
     Config::ModelType model_type = Config::ModelType::QWEN;
+    bool thinking_supported = false;
     std::vector<std::string> image_paths;
     std::vector<ChatMessage> messages;
     std::vector<ToolFunction> tools;
@@ -277,9 +278,8 @@ PreparedPrompt prepare_prompt(
     }
 
     auto* tokenizer = handle->model->get_tokenizer();
-    if (!tokenizer) {
-        throw std::runtime_error("Tokenizer unavailable");
-    }
+    prompt.thinking_supported =
+        prompt.options.enable_thinking_if_supported && tokenizer->is_thinking_supported();
 
     prompt.model_type = handle->model->get_config().model_type;
     std::string formatted_tools;
@@ -294,7 +294,7 @@ PreparedPrompt prepare_prompt(
         prompt.messages,
         add_generation_prompt,
         formatted_tools,
-        prompt.options.enable_thinking_if_supported
+        prompt.thinking_supported
     );
     if (full_prompt.find("ERROR:") == 0) {
         throw std::runtime_error(full_prompt.substr(6));
@@ -458,7 +458,7 @@ int cactus_complete(
             const CactusGrammarHandle* grammar_handle = static_cast<const CactusGrammarHandle*>(grammar);
             decode_grammar = Grammar::model_decode_grammar(
                 *grammar_handle->grammar,
-                prompt.options.enable_thinking_if_supported
+                prompt.thinking_supported
             );
             if (!decode_grammar.is_empty()) {
                 matcher.emplace(&decode_grammar, tokenizer->get_tokenizer_info());
@@ -579,7 +579,7 @@ int cactus_complete(
         parse_function_calls_from_response(response_text, regular_response, function_calls);
 
         std::string thinking_text;
-        if (prompt.options.enable_thinking_if_supported) {
+        if (prompt.thinking_supported) {
             std::string stripped_content;
             strip_thinking_block(regular_response, thinking_text, stripped_content);
             regular_response = stripped_content;
