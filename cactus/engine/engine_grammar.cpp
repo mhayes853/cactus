@@ -1,13 +1,30 @@
 #include "engine.h"
 
 #include <cstdint>
-#include <memory>
-#include <optional>
 #include <stdexcept>
-#include <variant>
 
 namespace cactus {
 namespace engine {
+
+const Grammar Grammar::thinking_grammar = Grammar::gbnf(R"(
+root ::= think?
+think ::= "<think>\n" any_non_closing_think_character* "\n</think>\n\n"
+
+# NB: We need to reject the closing thinking tag otherwise any text is acceptable after the
+# closing tag, which would mean that any concatenated grammar would be rendered useless. (This
+# is because the stuff after the reasoning would technically consititute "any character", and thus
+# be valid under this thinking grammar.)
+any_non_closing_think_character ::= (
+    [^<]
+    | "<" [^/]
+    | "</" [^t]
+    | "</t" [^h]
+    | "</th" [^i]
+    | "</thi" [^n]
+    | "</thin" [^k]
+    | "</think" [^>]
+)
+)");
 
 Grammar::Grammar() : grammar(nullptr) {}
 
@@ -82,6 +99,13 @@ Grammar Grammar::concatenate(const std::vector<Grammar>& grammars) {
         return Grammar();
     }
     return Grammar(xgrammar::Grammar::Concat(handles));
+}
+
+Grammar Grammar::model_decode_grammar(const Grammar& grammar, bool supports_reasoning) {
+    if (grammar.is_empty() || !supports_reasoning) {
+        return grammar;
+    }
+    return Grammar::concatenate({thinking_grammar, grammar});
 }
 
 bool Grammar::is_empty() const {

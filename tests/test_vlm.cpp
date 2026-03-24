@@ -460,10 +460,9 @@ bool test_json_schema_grammar_with_image() {
     int result = cactus_complete(model, messages.c_str(), response, sizeof(response),
                                  g_options, nullptr, stream_callback, &data, grammar);
 
-    std::string output;
-    for (const auto& token : data.tokens) {
-        output += token;
-    }
+    Metrics metrics;
+    metrics.parse(response);
+    const std::string& output = metrics.response;
 
     std::string json_error;
     bool valid_json = is_valid_json_document(output, json_error);
@@ -483,8 +482,6 @@ bool test_json_schema_grammar_with_image() {
     }
 
     std::cout << "\n\n[Results]\n";
-    Metrics metrics;
-    metrics.parse(response);
     std::cout << "├─ Valid JSON: " << (valid_json ? "YES" : "NO") << "\n"
               << "├─ Has shape: " << (has_shape ? "YES" : "NO") << "\n"
               << "├─ Has pose: " << (has_pose ? "YES" : "NO") << "\n";

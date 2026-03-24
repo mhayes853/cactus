@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <future>
-#include <memory>
+#include <optional>
 #include <vector>
 
 using namespace cactus::engine;
@@ -15,8 +15,6 @@ using namespace cactus::ffi;
 static constexpr size_t ROLLING_ENTROPY_WINDOW = 10;
 
 namespace {
-
-const Grammar OPTIONAL_REASONING_GRAMMAR = Grammar::regex(R"((<think>\n[^<]*\n</think>\n\n*)?)");
 
 std::string extract_last_user_query(const std::vector<ChatMessage>& messages) {
     for (auto it = messages.rbegin(); it != messages.rend(); ++it) {
@@ -102,21 +100,6 @@ void trim_stop_suffix(std::vector<uint32_t>& generated_tokens,
             break;
         }
     }
-}
-
-Grammar create_decode_grammar(cactus_grammar_t grammar, Config::ModelType model_type, bool enable_thinking) {
-    if (!grammar) return Grammar();
-
-    const CactusGrammarHandle* grammar_handle = static_cast<const CactusGrammarHandle*>(grammar);
-    const bool is_qwen_family = model_type == Config::ModelType::QWEN
-        || model_type == Config::ModelType::QWEN3P5;
-    auto reasoning_grammar = is_qwen_family && enable_thinking
-        ? OPTIONAL_REASONING_GRAMMAR
-        : Grammar();
-    return Grammar::concatenate({
-        reasoning_grammar,
-        *grammar_handle->grammar
-    });
 }
 
 void reset_cache(CactusModelHandle* handle) {
@@ -469,16 +452,16 @@ int cactus_complete(
         double time_to_first_token = 0.0;
         float first_token_entropy = 0.0f;
 
-        std::unique_ptr<Grammar> decode_grammar;
-        std::unique_ptr<cactus::engine::GrammarMatcher> matcher;
+        Grammar decode_grammar;
+        std::optional<cactus::engine::GrammarMatcher> matcher;
         if (grammar) {
-            decode_grammar = std::make_unique<Grammar>(
-                create_decode_grammar(grammar, prompt.model_type, prompt.options.enable_thinking_if_supported)
+            const CactusGrammarHandle* grammar_handle = static_cast<const CactusGrammarHandle*>(grammar);
+            decode_grammar = Grammar::model_decode_grammar(
+                *grammar_handle->grammar,
+                prompt.options.enable_thinking_if_supported
             );
-            if (!decode_grammar->is_empty()) {
-                matcher = std::make_unique<cactus::engine::GrammarMatcher>(
-                    cactus::engine::GrammarMatcher(decode_grammar.get(), tokenizer->get_tokenizer_info())
-                );
+            if (!decode_grammar.is_empty()) {
+                matcher.emplace(&decode_grammar, tokenizer->get_tokenizer_info());
             }
         }
 
@@ -487,7 +470,7 @@ int cactus_complete(
             prefill_result,
             prompt,
             &first_token_entropy,
-            matcher.get()
+            matcher ? &*matcher : nullptr
         );
 
         handle->processed_tokens = prompt.tokens;
@@ -546,7 +529,7 @@ int cactus_complete(
                 if (handle->should_stop) break;
 
                 float token_entropy = 0.0f;
-                next_token = decode(handle->model, {next_token}, prompt.options, &token_entropy, matcher.get());
+                next_token = decode(handle->model, {next_token}, prompt.options, &token_entropy, matcher ? &*matcher : nullptr);
                 generated_tokens.push_back(next_token);
                 handle->processed_tokens.push_back(next_token);
 

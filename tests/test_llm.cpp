@@ -604,17 +604,14 @@ bool test_json_grammar_outputs_valid_json() {
         int result = cactus_complete(model, messages.c_str(), response, sizeof(response),
                                      g_options, nullptr, stream_callback, &data, grammar);
 
-        std::string output;
-        for (const auto& token : data.tokens) {
-            output += token;
-        }
+        Metrics metrics;
+        metrics.parse(response);
+        const std::string& output = metrics.response;
 
         std::string json_error;
         bool valid_json = is_valid_json_document(output, json_error);
 
         std::cout << "\n\n[Results - Prompt " << (i + 1) << "]\n";
-        Metrics metrics;
-        metrics.parse(response);
         std::cout << "├─ Valid JSON: " << (valid_json ? "YES" : "NO") << "\n";
         if (!valid_json) {
             std::cout << "├─ JSON error: " << json_error << "\n";
@@ -666,17 +663,14 @@ bool test_regex_grammar_outputs_address() {
     int result = cactus_complete(model, messages.c_str(), response, sizeof(response),
                                  g_options, nullptr, stream_callback, &data, grammar);
 
-    std::string output;
-    for (const auto& token : data.tokens) {
-        output += token;
-    }
+    Metrics metrics;
+    metrics.parse(response);
+    const std::string& output = metrics.response;
 
     const std::basic_regex<char> address_pattern(address_regex);
     bool matches_regex = std::regex_match(output, address_pattern);
 
     std::cout << "\n\n[Results]\n";
-    Metrics metrics;
-    metrics.parse(response);
     std::cout << "├─ Regex match: " << (matches_regex ? "YES" : "NO") << "\n";
     if (!matches_regex) {
         std::cout << "├─ Raw output: " << output << "\n";
@@ -704,7 +698,7 @@ bool test_json_schema_grammar_outputs_person() {
         "properties": {
             "name": {"type": "string"},
             "age": {"type": "integer", "minimum": 0, "maximum": 130},
-            "bio": {"type": "string"}
+            "bio": {"type": "string", "minimum": 1}
         },
         "required": ["name", "age", "bio"],
         "additionalProperties": false
@@ -734,10 +728,9 @@ bool test_json_schema_grammar_outputs_person() {
     int result = cactus_complete(model, messages.c_str(), response, sizeof(response),
                                  g_options, nullptr, stream_callback, &data, grammar);
 
-    std::string output;
-    for (const auto& token : data.tokens) {
-        output += token;
-    }
+    Metrics metrics;
+    metrics.parse(response);
+    const std::string& output = metrics.response;
 
     std::string json_error;
     bool valid_json = is_valid_json_document(output, json_error);
@@ -767,8 +760,6 @@ bool test_json_schema_grammar_outputs_person() {
     }
 
     std::cout << "\n\n[Results]\n";
-    Metrics metrics;
-    metrics.parse(response);
     std::cout << "├─ Valid JSON: " << (valid_json ? "YES" : "NO") << "\n"
               << "├─ Has name: " << (has_name ? "YES" : "NO") << "\n"
               << "├─ Has age: " << (has_age ? "YES" : "NO") << "\n"
@@ -789,18 +780,18 @@ bool test_json_schema_grammar_outputs_person() {
 
 int main() {
     TestUtils::TestRunner runner("LLM Tests");
-    // runner.run_test("1k_context", test_1k_context());
-    // runner.run_test("streaming", test_streaming());
-    // runner.run_test("prefill", test_prefill());
-    // runner.run_test("prefill_idempotent_reuse", test_prefill_idempotent_reuse());
-    // runner.run_test("prefill_prefix_extension_reuse", test_prefill_prefix_extension_reuse());
-    // runner.run_test("prefill_invalidated_on_message_change", test_prefill_invalidated_on_message_change());
-    // runner.run_test("json_grammar_outputs_valid_json", test_json_grammar_outputs_valid_json());
+    runner.run_test("1k_context", test_1k_context());
+    runner.run_test("streaming", test_streaming());
+    runner.run_test("prefill", test_prefill());
+    runner.run_test("prefill_idempotent_reuse", test_prefill_idempotent_reuse());
+    runner.run_test("prefill_prefix_extension_reuse", test_prefill_prefix_extension_reuse());
+    runner.run_test("prefill_invalidated_on_message_change", test_prefill_invalidated_on_message_change());
+    runner.run_test("json_grammar_outputs_valid_json", test_json_grammar_outputs_valid_json());
     runner.run_test("regex_grammar_outputs_address", test_regex_grammar_outputs_address());
     runner.run_test("json_schema_grammar_outputs_person", test_json_schema_grammar_outputs_person());
-    // runner.run_test("tool_calls", test_tool_call());
-    // runner.run_test("tool_multiple_tool_call_invocations", test_multiple_tool_call_invocations());
-    // runner.run_test("tool_calls_with_three_tools", test_tool_call_with_three_tools());
+    runner.run_test("tool_calls", test_tool_call());
+    runner.run_test("tool_multiple_tool_call_invocations", test_multiple_tool_call_invocations());
+    runner.run_test("tool_calls_with_three_tools", test_tool_call_with_three_tools());
     runner.print_summary();
     return runner.all_passed() ? 0 : 1;
 }

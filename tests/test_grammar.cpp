@@ -160,6 +160,75 @@ static bool test_json_schema_accepts_expected_text(const GrammarFixture& fixture
         && rejects_text(json_schema, fixture, R"({"age":1})");
 }
 
+static bool test_model_decode_accepts_direct_output_when_reasoning_enabled(const GrammarFixture& fixture) {
+    Grammar user_grammar = Grammar::gbnf("root ::= \"hello\"");
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, true);
+
+    return accepts_complete_text(combined, fixture, "hello");
+}
+
+static bool test_model_decode_accepts_thinking_then_output(const GrammarFixture& fixture) {
+    Grammar user_grammar = Grammar::gbnf("root ::= \"hello\"");
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, true);
+
+    return accepts_complete_text(combined, fixture, "<think>\nreasoning\n</think>\n\nhello");
+}
+
+static bool test_model_decode_accepts_less_than_in_thinking_payload(const GrammarFixture& fixture) {
+    Grammar user_grammar = Grammar::gbnf("root ::= \"hello\"");
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, true);
+
+    return accepts_complete_text(combined, fixture, "<think>\n1 < 2\n</think>\n\nhello");
+}
+
+static bool test_model_decode_rejects_thinking_only_eos(const GrammarFixture& fixture) {
+    Grammar user_grammar = Grammar::gbnf("root ::= \"hello\"");
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, true);
+
+    return rejects_eos_after_text(combined, fixture, "<think>\nreasoning\n</think>\n\n");
+}
+
+static bool test_model_decode_rejects_thinking_when_reasoning_disabled(const GrammarFixture& fixture) {
+    Grammar user_grammar = Grammar::gbnf("root ::= \"hello\"");
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, false);
+
+    return rejects_text(combined, fixture, "<think>\nreasoning\n</think>\n\nhello")
+        && accepts_complete_text(combined, fixture, "hello");
+}
+
+static bool test_model_decode_accepts_thinking_then_json_schema(const GrammarFixture& fixture) {
+    Grammar user_grammar = Grammar::json_schema(
+        R"({"type":"object","properties":{"name":{"type":"string"}},"required":["name"]})"
+    );
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, true);
+
+    return accepts_complete_text(combined, fixture, "<think>\nreasoning\n</think>\n\n{\"name\":\"cactus\"}");
+}
+
+static bool test_model_decode_rejects_invalid_json_schema_after_thinking(const GrammarFixture& fixture) {
+    Grammar user_grammar = Grammar::json_schema(
+        R"({"type":"object","properties":{"name":{"type":"string"}},"required":["name"]})"
+    );
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, true);
+
+    return rejects_eos_after_text(combined, fixture, "<think>\nreasoning\n</think>\n\n{\"name\":1}")
+        && rejects_text(combined, fixture, "<think>\nreasoning\n</think>\n\nthis is some random text");
+}
+
+static bool test_model_decode_rejects_nested_thinking_close_tag(const GrammarFixture& fixture) {
+    Grammar user_grammar = Grammar::gbnf("root ::= \"hello\"");
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, true);
+
+    return rejects_text(combined, fixture, "<think>\nreasoning</think>\n</think>\n\nhello");
+}
+
+static bool test_model_decode_rejects_invalid_close_only_thinking_string(const GrammarFixture& fixture) {
+    Grammar user_grammar = Grammar::gbnf("root ::= \"hello\"");
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, true);
+
+    return rejects_text(combined, fixture, "</think>\nreasoning\n</think>\nhello");
+}
+
 } // anonymous namespace
 
 int main() {
@@ -177,6 +246,15 @@ int main() {
         runner.run_test("unordred_choice", test_unordered_choice(fixture));
         runner.run_test("regex_language", test_regex_accepts_expected_text(fixture));
         runner.run_test("json_schema_language", test_json_schema_accepts_expected_text(fixture));
+        runner.run_test("model_decode_direct_output_reasoning", test_model_decode_accepts_direct_output_when_reasoning_enabled(fixture));
+        runner.run_test("model_decode_thinking_then_output", test_model_decode_accepts_thinking_then_output(fixture));
+        runner.run_test("model_decode_thinking_payload_less_than", test_model_decode_accepts_less_than_in_thinking_payload(fixture));
+        runner.run_test("model_decode_rejects_thinking_only_eos", test_model_decode_rejects_thinking_only_eos(fixture));
+        runner.run_test("model_decode_no_reasoning_prefix", test_model_decode_rejects_thinking_when_reasoning_disabled(fixture));
+        runner.run_test("model_decode_thinking_then_json_schema", test_model_decode_accepts_thinking_then_json_schema(fixture));
+        runner.run_test("model_decode_rejects_invalid_json_schema_after_thinking", test_model_decode_rejects_invalid_json_schema_after_thinking(fixture));
+        runner.run_test("model_decode_invalid_close_only", test_model_decode_rejects_invalid_close_only_thinking_string(fixture));
+        runner.run_test("model_decode_rejects_nested_thinking_close_tag", test_model_decode_rejects_nested_thinking_close_tag(fixture));
     } catch (const std::exception& e) {
         std::cerr << "[✗] Grammar test setup failed: " << e.what() << "\n";
     }

@@ -72,6 +72,8 @@ public:
     Grammar();
     ~Grammar() = default;
 
+    static const Grammar thinking_grammar;
+
     static Grammar gbnf(const std::string& gbnf, const std::string& start_symbol = "root");
     static Grammar json();
     static Grammar json_schema(
@@ -86,6 +88,7 @@ public:
     static Grammar structural_tag(const std::string& structural_tag_json);
     static Grammar unite(const std::vector<Grammar>& grammars);
     static Grammar concatenate(const std::vector<Grammar>& grammars);
+    static Grammar model_decode_grammar(const Grammar& grammar, bool supports_reasoning);
 
     bool is_empty() const;
 
