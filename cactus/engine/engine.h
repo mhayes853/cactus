@@ -114,7 +114,7 @@ public:
     ~GrammarMatcher() = default;
 
     bool accept(uint32_t token_id);
-    bool fill_next_token_bitmask(std::vector<int32_t>& token_bitmask);
+    bool next_bitmask(std::vector<int32_t>& token_bitmask);
 
     xgrammar::GrammarMatcher matcher;
     xgrammar::TokenizerInfo tokenizer_info;

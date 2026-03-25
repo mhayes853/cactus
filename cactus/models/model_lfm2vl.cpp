@@ -581,7 +581,7 @@ uint32_t Lfm2VlModel::decode_with_images(
     
     std::vector<int32_t> bitmask;
     if (matcher) {
-        matcher->fill_next_token_bitmask(bitmask);
+        matcher->next_bitmask(bitmask);
     }
 
     auto logits_node_id = gb->matmul(final_hidden_node, language_model_.output_weight_node_id_, true, backend);

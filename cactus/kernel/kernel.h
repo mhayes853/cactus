@@ -330,12 +330,12 @@ void cactus_bilinear_interpolation_f16(const __fp16* input, __fp16* output, size
 
 void cactus_sample_f32(const float* logits, uint32_t* output, size_t vocab_size,
                        float temperature, float top_p, size_t top_k, size_t random_seed,
-                       const int32_t* token_bitmask = nullptr, size_t token_bitmask_size = 0,
+                       const int32_t* bitmask = nullptr, size_t bitmask_size = 0,
                        const float* bias_values = nullptr, const uint32_t* bias_indices = nullptr,
                        size_t bias_count = 0);
 void cactus_sample_f16(const __fp16* logits, uint32_t* output, size_t vocab_size,
                        float temperature, float top_p, size_t top_k, size_t random_seed,
-                       const int32_t* token_bitmask = nullptr, size_t token_bitmask_size = 0,
+                       const int32_t* bitmask = nullptr, size_t bitmask_size = 0,
                        const float* bias_values = nullptr, const uint32_t* bias_indices = nullptr,
                        size_t bias_count = 0);
 

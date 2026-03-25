@@ -241,7 +241,7 @@ uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, f
 
     std::vector<int32_t> bitmask;
     if (matcher) {
-        matcher->fill_next_token_bitmask(bitmask);
+        matcher->next_bitmask(bitmask);
     }
 
     auto sampled_token_id = sample_token(gb, logits_node_id, temperature, top_p, top_k, nullptr, &bitmask);

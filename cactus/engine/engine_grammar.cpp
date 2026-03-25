@@ -273,7 +273,7 @@ bool GrammarMatcher::accept(uint32_t token_id) {
     return matcher.AcceptToken(token_id);
 }
 
-bool GrammarMatcher::fill_next_token_bitmask(std::vector<int32_t>& token_bitmask) {
+bool GrammarMatcher::next_bitmask(std::vector<int32_t>& token_bitmask) {
     const int32_t bitmask_size = xgrammar::GetBitmaskSize(tokenizer_info.GetVocabSize());
     token_bitmask.resize(bitmask_size);
 
