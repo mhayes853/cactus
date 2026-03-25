@@ -73,8 +73,6 @@ public:
     Grammar();
     ~Grammar() = default;
 
-    static const Grammar thinking_grammar;
-
     static Grammar gbnf(const std::string& gbnf, const std::string& start_symbol = "root");
     static Grammar json();
     static Grammar json_schema(

@@ -6,24 +6,25 @@
 namespace cactus {
 namespace engine {
 
-const Grammar Grammar::thinking_grammar = Grammar::gbnf(R"(
-root ::= think?
-think ::= "<think>\n" any_non_closing_think_character* "\n</think>\n\n"
+// TODO: - The next release of XGrammar should support "optional" in structural tags, which
+// makes this a bit more bearable.
+static const Grammar thinking_grammar = Grammar::gbnf(R"(
+    root ::= think?
+    think ::= "<think>\n" any_non_closing_think_character* "\n</think>\n\n"
 
-# NB: We need to reject the closing thinking tag otherwise any text is acceptable after the
-# closing tag, which would mean that any concatenated grammar would be rendered useless. (This
-# is because the stuff after the reasoning would technically consititute "any character", and thus
-# be valid under this thinking grammar.)
-any_non_closing_think_character ::= (
-    [^<]
-    | "<" [^/]
-    | "</" [^t]
-    | "</t" [^h]
-    | "</th" [^i]
-    | "</thi" [^n]
-    | "</thin" [^k]
-    | "</think" [^>]
-)
+    # NB: We need to reject the closing thinking tag otherwise any text is acceptable after the
+    # closing tag, otherwise unconstrained tokens could be generated and still be considered as
+    # part of the grammar after </think> tags.
+    any_non_closing_think_character ::= (
+        [^<]
+        | "<" [^/]
+        | "</" [^t]
+        | "</t" [^h]
+        | "</th" [^i]
+        | "</thi" [^n]
+        | "</thin" [^k]
+        | "</think" [^>]
+    )
 )");
 
 Grammar::Grammar() : grammar(nullptr) {}
