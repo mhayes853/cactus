@@ -32,6 +32,75 @@ Grammar::Grammar() : grammar(nullptr) {}
 Grammar::Grammar(xgrammar::Grammar raw_grammar)
     : grammar(std::make_shared<xgrammar::Grammar>(std::move(raw_grammar))) {}
 
+static const picojson::object& require_object_field(
+    const picojson::object& object,
+    const std::string& field_name,
+    const char* context
+) {
+    if (!object.count(field_name) || !object.at(field_name).is<picojson::object>()) {
+        throw std::runtime_error(std::string(context) + " must contain an object field '" + field_name + "'");
+    }
+    return object.at(field_name).get<picojson::object>();
+}
+
+static const std::string& require_string_field(
+    const picojson::object& object,
+    const std::string& field_name,
+    const char* context
+) {
+    if (!object.count(field_name) || !object.at(field_name).is<std::string>()) {
+        throw std::runtime_error(std::string(context) + " must contain a string field '" + field_name + "'");
+    }
+    return object.at(field_name).get<std::string>();
+}
+
+// TODO: - Does this belong here?
+std::vector<ToolDefinition> ToolDefinition::parse_tools_json(const std::string& tools_json) {
+    if (tools_json.empty()) {
+        throw std::runtime_error("tools_json must not be empty");
+    }
+
+    picojson::value parsed;
+    std::string parse_error;
+    auto end = picojson::parse(parsed, tools_json.begin(), tools_json.end(), &parse_error);
+    if (!parse_error.empty()) {
+        throw std::runtime_error("failed to parse tools_json: " + parse_error);
+    }
+    if (end != tools_json.end()) {
+        throw std::runtime_error("failed to parse tools_json: trailing content after JSON payload");
+    }
+    if (!parsed.is<picojson::array>()) {
+        throw std::runtime_error("tools_json must be a JSON array");
+    }
+
+    std::vector<ToolDefinition> tools;
+    for (const auto& item : parsed.get<picojson::array>()) {
+        if (!item.is<picojson::object>()) {
+            throw std::runtime_error("each tool entry must be a JSON object");
+        }
+
+        const auto& tool_object = item.get<picojson::object>();
+        const std::string& type = require_string_field(tool_object, "type", "tool entry");
+        if (type != "function") {
+            throw std::runtime_error("tool entry field 'type' must be 'function'");
+        }
+
+        const auto& function_object = require_object_field(tool_object, "function", "tool entry");
+        const std::string& name = require_string_field(function_object, "name", "tool entry function");
+        if (!function_object.count("parameters") || !function_object.at("parameters").is<picojson::object>()) {
+            throw std::runtime_error("tool entry function must contain an object field 'parameters'");
+        }
+
+        tools.push_back(ToolDefinition{name, function_object.at("parameters")});
+    }
+
+    if (tools.empty()) {
+        throw std::runtime_error("tools_json must contain at least one tool entry");
+    }
+
+    return tools;
+}
+
 Grammar Grammar::gbnf(const std::string& gbnf, const std::string& start_symbol) {
     return Grammar(xgrammar::Grammar::FromEBNF(gbnf, start_symbol));
 }
@@ -68,6 +137,53 @@ Grammar Grammar::structural_tag(const std::string& structural_tag_json) {
         return Grammar(std::get<xgrammar::Grammar>(std::move(result)));
     }
     throw std::get<xgrammar::StructuralTagError>(result);
+}
+
+static std::string build_qwen_tool_structural_tag_json(const std::vector<ToolDefinition>& tools) {
+    if (tools.empty()) {
+        throw std::runtime_error("qwen_style_tool_call requires at least one tool definition");
+    }
+
+    picojson::array tags;
+
+    for (size_t i = 0; i < tools.size(); ++i) {
+        const auto& tool = tools[i];
+        if (!tool.arguments_schema.is<picojson::object>()) {
+            throw std::runtime_error("tool '" + tool.name + "' arguments schema must be a JSON object");
+        }
+        if (tool.name.empty()) {
+            throw std::runtime_error("tool definitions must have a non-empty name");
+        }
+
+        picojson::object content;
+        content["type"] = picojson::value("json_schema");
+        content["json_schema"] = tool.arguments_schema;
+
+        picojson::object tag;
+        tag["begin"] = picojson::value(
+            std::string("<tool_call>\n{\"name\": \"") + tool.name + "\", \"arguments\": "
+        );
+        tag["content"] = picojson::value(content);
+        tag["end"] = picojson::value("}\n</tool_call>");
+        tags.push_back(picojson::value(tag));
+    }
+
+    picojson::array triggers;
+    triggers.push_back(picojson::value("<tool_call>"));
+
+    picojson::object format;
+    format["type"] = picojson::value("triggered_tags");
+    format["triggers"] = picojson::value(triggers);
+    format["tags"] = picojson::value(tags);
+
+    picojson::object root;
+    root["type"] = picojson::value("structural_tag");
+    root["format"] = picojson::value(format);
+    return picojson::value(root).serialize();
+}
+
+Grammar Grammar::qwen_style_tool_call(const std::vector<ToolDefinition>& tools) {
+    return Grammar::structural_tag(build_qwen_tool_structural_tag_json(tools));
 }
 
 Grammar Grammar::unite(const std::vector<Grammar>& grammars) {

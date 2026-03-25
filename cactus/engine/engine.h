@@ -20,6 +20,7 @@
 #include <xgrammar/matcher.h>
 #include <xgrammar/object.h>
 #include <xgrammar/tokenizer_info.h>
+#include "../../libs/xgrammar/include/picojson/picojson.h"
 
 #include "../graph/graph.h"
 
@@ -68,6 +69,13 @@ struct TokenizerInfo {
     bool add_prefix_space = false;
 };
 
+struct ToolDefinition {
+    std::string name;
+    picojson::value arguments_schema;
+
+    static std::vector<ToolDefinition> parse_tools_json(const std::string& tools_json);
+};
+
 class Grammar {
 public:
     Grammar();
@@ -85,6 +93,7 @@ public:
     );
     static Grammar regex(const std::string& regex);
     static Grammar structural_tag(const std::string& structural_tag_json);
+    static Grammar qwen_style_tool_call(const std::vector<ToolDefinition>& tools);
     static Grammar unite(const std::vector<Grammar>& grammars);
     static Grammar concatenate(const std::vector<Grammar>& grammars);
     static Grammar model_decode_grammar(const Grammar& grammar, bool supports_reasoning);

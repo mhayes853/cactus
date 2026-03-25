@@ -7,6 +7,7 @@
 
 using cactus::engine::Grammar;
 using cactus::engine::GrammarMatcher;
+using cactus::engine::ToolDefinition;
 using cactus::engine::TokenizerInfo;
 
 namespace {
@@ -196,6 +197,149 @@ static std::string tool_call_structural_tag_json() {
     })";
 }
 
+static std::string qwen_tools_json() {
+    return R"([
+        {
+            "type": "function",
+            "function": {
+                "name": "send_message",
+                "description": "Send a message",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "recipient": {"type": "string"},
+                        "message": {"type": "string"}
+                    },
+                    "required": ["recipient", "message"],
+                    "additionalProperties": false
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Get weather",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {"type": "string"}
+                    },
+                    "required": ["location"],
+                    "additionalProperties": false
+                }
+            }
+        }
+    ])";
+}
+
+static bool test_tool_definition_parse_tools_json() {
+    std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(qwen_tools_json());
+    return tools.size() == 2
+        && tools[0].name == "send_message"
+        && tools[0].arguments_schema.is<picojson::object>()
+        && tools[1].name == "get_weather"
+        && tools[1].arguments_schema.is<picojson::object>();
+}
+
+static bool test_tool_definition_rejects_invalid_tools_json() {
+    bool rejected_missing_type = false;
+    try {
+        ToolDefinition::parse_tools_json(R"([{"function":{"name":"send_message","parameters":{"type":"object"}}}])");
+    } catch (const std::runtime_error&) {
+        rejected_missing_type = true;
+    }
+
+    bool rejected_wrong_type = false;
+    try {
+        ToolDefinition::parse_tools_json(R"([{"type":"not_function","function":{"name":"send_message","parameters":{"type":"object"}}}])");
+    } catch (const std::runtime_error&) {
+        rejected_wrong_type = true;
+    }
+
+    bool rejected_missing_function = false;
+    try {
+        ToolDefinition::parse_tools_json(R"([{"type":"function"}])");
+    } catch (const std::runtime_error&) {
+        rejected_missing_function = true;
+    }
+
+    bool rejected_missing_name = false;
+    try {
+        ToolDefinition::parse_tools_json(R"([{"type":"function","function":{"parameters":{"type":"object"}}}])");
+    } catch (const std::runtime_error&) {
+        rejected_missing_name = true;
+    }
+
+    bool rejected_missing_parameters = false;
+    try {
+        ToolDefinition::parse_tools_json(R"([{"type":"function","function":{"name":"send_message"}}])");
+    } catch (const std::runtime_error&) {
+        rejected_missing_parameters = true;
+    }
+
+    return rejected_missing_type
+        && rejected_wrong_type
+        && rejected_missing_function
+        && rejected_missing_name
+        && rejected_missing_parameters;
+}
+
+static Grammar qwen_style_tool_call_grammar_from_tools_json() {
+    std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(qwen_tools_json());
+    return Grammar::qwen_style_tool_call(tools);
+}
+
+static bool test_qwen_style_tool_call_accepts_single_tool_call(const GrammarFixture& fixture) {
+    Grammar grammar = qwen_style_tool_call_grammar_from_tools_json();
+
+    return accepts_complete_text(
+        grammar,
+        fixture,
+        "<tool_call>\n{\"name\": \"send_message\", \"arguments\": {\"recipient\":\"Blob\",\"message\":\"Hello Blob!\"}}\n</tool_call>"
+    );
+}
+
+static bool test_qwen_style_tool_call_accepts_repeated_tool_calls(const GrammarFixture& fixture) {
+    Grammar grammar = qwen_style_tool_call_grammar_from_tools_json();
+
+    return accepts_complete_text(
+        grammar,
+        fixture,
+        "<tool_call>\n{\"name\": \"send_message\", \"arguments\": {\"recipient\":\"Blob\",\"message\":\"Hello Blob!\"}}\n</tool_call><tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\":\"San Francisco\"}}\n</tool_call>"
+    );
+}
+
+static bool test_qwen_style_tool_call_rejects_unknown_tool(const GrammarFixture& fixture) {
+    Grammar grammar = qwen_style_tool_call_grammar_from_tools_json();
+
+    return rejects_text(
+        grammar,
+        fixture,
+        "<tool_call>\n{\"name\": \"unknown_tool\", \"arguments\": {\"recipient\":\"Blob\",\"message\":\"Hello Blob!\"}}\n</tool_call>"
+    );
+}
+
+static bool test_qwen_style_tool_call_rejects_invalid_arguments(const GrammarFixture& fixture) {
+    Grammar grammar = qwen_style_tool_call_grammar_from_tools_json();
+
+    return rejects_eos_after_text(
+        grammar,
+        fixture,
+        "<tool_call>\n{\"name\": \"send_message\", \"arguments\": {\"recipient\":\"Blob\",\"message\":1}}\n</tool_call>"
+    );
+}
+
+static bool test_qwen_style_tool_call_rejects_malformed_wrapper(const GrammarFixture& fixture) {
+    Grammar grammar = qwen_style_tool_call_grammar_from_tools_json();
+
+    return rejects_eos_after_text(
+        grammar,
+        fixture,
+        "<tool_call>\n{\"name\": \"send_message\", \"arguments\": {\"recipient\":\"Blob\",\"message\":\"Hello Blob!\"}}"
+    );
+}
+
 static bool test_structural_tag_accepts_and_rejects_expected_text(const GrammarFixture& fixture) {
     Grammar grammar = Grammar::structural_tag(tool_call_structural_tag_json());
 
@@ -324,6 +468,8 @@ int main() {
 
     runner.run_test("empty_properties", test_empty_grammar_properties());
     runner.run_test("regex_json_schema_init", test_regex_and_json_schema_construction());
+    runner.run_test("tool_definition_parse_tools_json", test_tool_definition_parse_tools_json());
+    runner.run_test("tool_definition_rejects_invalid_tools_json", test_tool_definition_rejects_invalid_tools_json());
 
     try {
         GrammarFixture fixture;
@@ -335,6 +481,11 @@ int main() {
         runner.run_test("regex_language", test_regex_accepts_expected_text(fixture));
         runner.run_test("json_schema_language", test_json_schema_accepts_expected_text(fixture));
         runner.run_test("structural_tag_language", test_structural_tag_accepts_and_rejects_expected_text(fixture));
+        runner.run_test("qwen_style_tool_call_single", test_qwen_style_tool_call_accepts_single_tool_call(fixture));
+        runner.run_test("qwen_style_tool_call_repeated", test_qwen_style_tool_call_accepts_repeated_tool_calls(fixture));
+        runner.run_test("qwen_style_tool_call_unknown_tool", test_qwen_style_tool_call_rejects_unknown_tool(fixture));
+        runner.run_test("qwen_style_tool_call_invalid_arguments", test_qwen_style_tool_call_rejects_invalid_arguments(fixture));
+        runner.run_test("qwen_style_tool_call_malformed_wrapper", test_qwen_style_tool_call_rejects_malformed_wrapper(fixture));
         runner.run_test("model_decode_direct_output_reasoning", test_model_decode_accepts_direct_output_when_reasoning_enabled(fixture));
         runner.run_test("model_decode_thinking_then_output", test_model_decode_accepts_thinking_then_output(fixture));
         runner.run_test("model_decode_thinking_payload_less_than", test_model_decode_accepts_less_than_in_thinking_payload(fixture));
