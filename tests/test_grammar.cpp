@@ -143,6 +143,94 @@ static bool test_regex_and_json_schema_construction() {
     return !regex.is_empty() && !json_schema.is_empty();
 }
 
+static std::string tool_call_structural_tag_json() {
+    return R"({
+        "type": "structural_tag",
+        "format": {
+            "type": "triggered_tags",
+            "triggers": ["<｜tool▁calls▁begin｜>"],
+            "tags": [
+                {
+                    "begin": "<｜tool▁calls▁begin｜>",
+                    "end": "<｜tool▁calls▁end｜>",
+                    "content": {
+                        "type": "tags_with_separator",
+                        "separator": "\n",
+                        "tags": [
+                            {
+                                "begin": "<｜tool▁call▁begin｜>function<｜tool▁sep｜>function_name_1\n```jsonc\n",
+                                "content": {
+                                    "type": "json_schema",
+                                    "json_schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "city": {"type": "string"}
+                                        },
+                                        "required": ["city"],
+                                        "additionalProperties": false
+                                    }
+                                },
+                                "end": "\n```<｜tool▁call▁end｜>"
+                            },
+                            {
+                                "begin": "<｜tool▁call▁begin｜>function<｜tool▁sep｜>function_name_2\n```jsonc\n",
+                                "content": {
+                                    "type": "json_schema",
+                                    "json_schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "count": {"type": "integer"}
+                                        },
+                                        "required": ["count"],
+                                        "additionalProperties": false
+                                    }
+                                },
+                                "end": "\n```<｜tool▁call▁end｜>"
+                            }
+                        ]
+                    }
+                }
+            ],
+            "stop_after_first": true
+        }
+    })";
+}
+
+static bool test_structural_tag_accepts_and_rejects_expected_text(const GrammarFixture& fixture) {
+    Grammar grammar = Grammar::structural_tag(tool_call_structural_tag_json());
+
+    return accepts_complete_text(
+        grammar,
+        fixture,
+        "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>function_name_1\n```jsonc\n{\"city\":\"Oakland\"}\n```<｜tool▁call▁end｜><｜tool▁calls▁end｜>"
+    )
+        && accepts_complete_text(
+            grammar,
+            fixture,
+            "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>function_name_1\n```jsonc\n{\"city\":\"Oakland\"}\n```<｜tool▁call▁end｜>\n<｜tool▁call▁begin｜>function<｜tool▁sep｜>function_name_2\n```jsonc\n{\"count\":2}\n```<｜tool▁call▁end｜><｜tool▁calls▁end｜>"
+        )
+        && rejects_text(
+            grammar,
+            fixture,
+            "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>function_name_1\n```jsonc\n{\"city\":\"Oakland\"}\n```<｜tool▁calls▁end｜>"
+        )
+        && rejects_text(
+            grammar,
+            fixture,
+            "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>function_name_3\n```jsonc\n{\"city\":\"Oakland\"}\n```<｜tool▁call▁end｜><｜tool▁calls▁end｜>"
+        )
+        && rejects_eos_after_text(
+            grammar,
+            fixture,
+            "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>function_name_1\n```jsonc\n{\"city\":1}\n```<｜tool▁call▁end｜><｜tool▁calls▁end｜>"
+        )
+        && rejects_text(
+            grammar,
+            fixture,
+            "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>function_name_1\n```jsonc\n{\"city\":\"Oakland\"}\n```<｜tool▁call▁end｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>function_name_2\n```jsonc\n{\"count\":2}\n```<｜tool▁call▁end｜><｜tool▁calls▁end｜>"
+        );
+}
+
 static bool test_regex_accepts_expected_text(const GrammarFixture& fixture) {
     Grammar regex = Grammar::regex("(cat|dog)");
 
@@ -246,6 +334,7 @@ int main() {
         runner.run_test("unordred_choice", test_unordered_choice(fixture));
         runner.run_test("regex_language", test_regex_accepts_expected_text(fixture));
         runner.run_test("json_schema_language", test_json_schema_accepts_expected_text(fixture));
+        runner.run_test("structural_tag_language", test_structural_tag_accepts_and_rejects_expected_text(fixture));
         runner.run_test("model_decode_direct_output_reasoning", test_model_decode_accepts_direct_output_when_reasoning_enabled(fixture));
         runner.run_test("model_decode_thinking_then_output", test_model_decode_accepts_thinking_then_output(fixture));
         runner.run_test("model_decode_thinking_payload_less_than", test_model_decode_accepts_less_than_in_thinking_payload(fixture));

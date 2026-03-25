@@ -778,6 +778,65 @@ bool test_json_schema_grammar_outputs_person() {
     return result > 0 && data.token_count > 0 && valid_json && has_name && has_age && age_is_integer && has_bio;
 }
 
+bool test_structural_tag_grammar_outputs_blob() {
+    std::cout << "\n╔══════════════════════════════════════════╗\n"
+              << "║" << std::setw(42) << std::left << " STRUCTURAL TAG GRAMMAR TEST" << "║\n"
+              << "╚══════════════════════════════════════════╝\n";
+
+    cactus_model_t model = cactus_init(g_model_path, nullptr, false);
+    if (!model) {
+        std::cerr << "[✗] Failed to initialize model\n";
+        return false;
+    }
+
+    const char* structural_tag = R"({
+        "type": "structural_tag",
+        "format": {
+            "type": "const_string",
+            "value": "blob"
+        }
+    })";
+    cactus_grammar_t grammar = cactus_grammar_init_structural_tag(structural_tag);
+    if (!grammar) {
+        std::cerr << "[✗] Failed to initialize structural tag grammar\n";
+        cactus_destroy(model);
+        return false;
+    }
+
+    const char* prompt = "What is the name of the person you will output?";
+    std::string messages = R"([
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": ")" + escape_json(prompt) + R"("}
+    ])";
+
+    StreamingData data;
+    data.model = model;
+    char response[4096];
+
+    std::cout << "\n[Prompt]\n";
+    std::cout << "User: " << prompt << "\n";
+    std::cout << "Assistant: ";
+
+    int result = cactus_complete(model, messages.c_str(), response, sizeof(response),
+                                 g_options, nullptr, stream_callback, &data, grammar);
+
+    Metrics metrics;
+    metrics.parse(response);
+    const std::string& output = metrics.response;
+    bool matches_blob = output == "blob";
+
+    std::cout << "\n\n[Results]\n";
+    std::cout << "├─ Output is blob: " << (matches_blob ? "YES" : "NO") << "\n";
+    if (!matches_blob) {
+        std::cout << "├─ Raw output: " << output << "\n";
+    }
+    metrics.print_json();
+
+    cactus_grammar_destroy(grammar);
+    cactus_destroy(model);
+    return result > 0 && data.token_count > 0 && matches_blob;
+}
+
 int main() {
     TestUtils::TestRunner runner("LLM Tests");
     runner.run_test("1k_context", test_1k_context());
@@ -789,6 +848,7 @@ int main() {
     runner.run_test("json_grammar_outputs_valid_json", test_json_grammar_outputs_valid_json());
     runner.run_test("regex_grammar_outputs_address", test_regex_grammar_outputs_address());
     runner.run_test("json_schema_grammar_outputs_person", test_json_schema_grammar_outputs_person());
+    runner.run_test("structural_tag_grammar_outputs_blob", test_structural_tag_grammar_outputs_blob());
     runner.run_test("tool_calls", test_tool_call());
     runner.run_test("tool_multiple_tool_call_invocations", test_multiple_tool_call_invocations());
     runner.run_test("tool_calls_with_three_tools", test_tool_call_with_three_tools());
