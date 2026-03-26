@@ -271,6 +271,7 @@ public:
     );
 
     bool is_empty() const;
+    bool is_universal() const;
 
     const xgrammar::Grammar& raw_value() const;
 
@@ -278,6 +279,7 @@ private:
     explicit Grammar(xgrammar::Grammar raw_grammar);
 
     xgrammar::Grammar grammar;
+    bool is_universal_ = false;
 };
 
 class GrammarMatcher {

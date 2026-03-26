@@ -28,9 +28,10 @@ static const Grammar reasoning_grammar = Grammar::gbnf(R"(
     )
 )");
 
-Grammar::Grammar() : grammar(xgrammar::NullObj{}) {}
+Grammar::Grammar() : grammar(xgrammar::NullObj{}), is_universal_(false) {}
 
-Grammar::Grammar(xgrammar::Grammar raw_grammar) : grammar(raw_grammar) {}
+Grammar::Grammar(xgrammar::Grammar raw_grammar)
+    : grammar(raw_grammar), is_universal_(false) {}
 
 static const picojson::object& require_object_field(
     const picojson::object& object,
@@ -110,12 +111,14 @@ Grammar Grammar::json() {
 }
 
 Grammar Grammar::universal() {
-    return Grammar::structural_tag(R"({
+    static auto grammar = Grammar::structural_tag(R"({
         "type": "structural_tag",
         "format": {
             "type": "any_text"
         }
     })");
+    grammar.is_universal_ = true;
+    return grammar;
 }
 
 Grammar Grammar::json_schema(
@@ -226,32 +229,21 @@ Grammar Grammar::unite(const std::vector<Grammar>& grammars) {
     std::vector<xgrammar::Grammar> handles;
     handles.reserve(grammars.size());
     for (const auto& grammar : grammars) {
-        if (grammar.is_empty()) {
-            continue;
-        }
+        if (grammar.is_empty()) continue;
+        if (grammar.is_universal()) return grammar;
         handles.push_back(grammar.raw_value());
     }
-
-    if (handles.empty()) {
-        return Grammar();
-    }
-    return Grammar(xgrammar::Grammar::Union(handles));
+    return handles.empty() ? Grammar() : Grammar(xgrammar::Grammar::Union(handles));
 }
 
 Grammar Grammar::concatenate(const std::vector<Grammar>& grammars) {
     std::vector<xgrammar::Grammar> handles;
     handles.reserve(grammars.size());
     for (const auto& grammar : grammars) {
-        if (grammar.is_empty()) {
-            continue;
-        }
+        if (grammar.is_empty()) continue;
         handles.push_back(grammar.raw_value());
     }
-
-    if (handles.empty()) {
-        return Grammar();
-    }
-    return Grammar(xgrammar::Grammar::Concat(handles));
+    return handles.empty() ? Grammar() : Grammar(xgrammar::Grammar::Concat(handles));
 }
 
 Grammar Grammar::model_decode_grammar(
@@ -272,6 +264,10 @@ Grammar Grammar::model_decode_grammar(
 
 bool Grammar::is_empty() const {
     return grammar.IsNull();
+}
+
+bool Grammar::is_universal() const {
+    return is_universal_;
 }
 
 const xgrammar::Grammar& Grammar::raw_value() const {
