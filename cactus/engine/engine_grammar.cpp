@@ -2,12 +2,13 @@
 
 #include <cstdint>
 #include <stdexcept>
+#include <vector>
 
 namespace cactus {
 namespace engine {
 
-// TODO: - The next release of XGrammar should support "optional" in structural tags, which
-// makes this a bit more bearable.
+// NB: The next release of XGrammar should support the "optional" type in structural tags, which
+// would make the exclusion of "</think>" simpler.
 static const Grammar thinking_grammar = Grammar::gbnf(R"(
     root ::= think?
     think ::= "<think>\n" any_non_closing_think_character* "\n</think>\n\n"
@@ -182,8 +183,35 @@ static std::string build_qwen_tool_structural_tag_json(const std::vector<ToolDef
     return picojson::value(root).serialize();
 }
 
-Grammar Grammar::qwen_style_tool_call(const std::vector<ToolDefinition>& tools) {
+static Grammar qwen_style_tool_call(const std::vector<ToolDefinition>& tools) {
     return Grammar::structural_tag(build_qwen_tool_structural_tag_json(tools));
+}
+
+static Grammar gemma_style_tool_call(const std::vector<ToolDefinition>& tools) {
+    return Grammar();
+}
+
+static Grammar lfm2_style_tool_call(const std::vector<ToolDefinition>& tools) {
+    return Grammar();
+}
+
+Grammar Grammar::model_tool_call(
+    Config::ModelType model_type,
+    const std::vector<ToolDefinition>& tools
+) {
+    if (tools.empty()) return Grammar();
+    switch (model_type) {
+        case Config::ModelType::QWEN:
+        case Config::ModelType::QWEN3P5:
+        case Config::ModelType::YOUTU:
+            return qwen_style_tool_call(tools);
+        case Config::ModelType::GEMMA:
+            return gemma_style_tool_call(tools);
+        case Config::ModelType::LFM2:
+            return lfm2_style_tool_call(tools);
+        default:
+            return Grammar();
+    }
 }
 
 Grammar Grammar::unite(const std::vector<Grammar>& grammars) {
@@ -218,11 +246,21 @@ Grammar Grammar::concatenate(const std::vector<Grammar>& grammars) {
     return Grammar(xgrammar::Grammar::Concat(handles));
 }
 
-Grammar Grammar::model_decode_grammar(const Grammar& grammar, bool supports_reasoning) {
-    if (grammar.is_empty() || !supports_reasoning) {
-        return grammar;
+Grammar Grammar::model_decode_grammar(
+    const Grammar& grammar,
+    bool supports_reasoning,
+    Config::ModelType model_type,
+    const std::vector<ToolDefinition>& tools
+) {
+    if (grammar.is_empty() && tools.empty()) {
+        return Grammar();
     }
-    return Grammar::concatenate({thinking_grammar, grammar});
+    auto tool_grammar = Grammar::model_tool_call(model_type, tools);
+    auto non_reasoning_grammar = Grammar::unite({grammar, tool_grammar});
+    if (supports_reasoning) {
+        return Grammar::concatenate({thinking_grammar, non_reasoning_grammar});
+    }
+    return non_reasoning_grammar;
 }
 
 bool Grammar::is_empty() const {

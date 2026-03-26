@@ -76,49 +76,6 @@ struct ToolDefinition {
     static std::vector<ToolDefinition> parse_tools_json(const std::string& tools_json);
 };
 
-class Grammar {
-public:
-    Grammar();
-    ~Grammar() = default;
-
-    static Grammar gbnf(const std::string& gbnf, const std::string& start_symbol = "root");
-    static Grammar json();
-    static Grammar json_schema(
-        const std::string& json_schema,
-        bool any_whitespace = true,
-        int indent = 2,
-        std::pair<std::string, std::string> separators = {",", ":"},
-        bool strict_mode = true,
-        int max_whitespace_count = -1
-    );
-    static Grammar regex(const std::string& regex);
-    static Grammar structural_tag(const std::string& structural_tag_json);
-    static Grammar qwen_style_tool_call(const std::vector<ToolDefinition>& tools);
-    static Grammar unite(const std::vector<Grammar>& grammars);
-    static Grammar concatenate(const std::vector<Grammar>& grammars);
-    static Grammar model_decode_grammar(const Grammar& grammar, bool supports_reasoning);
-
-    bool is_empty() const;
-
-    std::shared_ptr<xgrammar::Grammar> handle() const;
-
-private:
-    explicit Grammar(xgrammar::Grammar raw_grammar);
-
-    std::shared_ptr<xgrammar::Grammar> grammar;
-};
-
-class GrammarMatcher {
-public:
-    GrammarMatcher(const Grammar* grammar, const TokenizerInfo& tokenizer_info);
-    ~GrammarMatcher() = default;
-
-    bool accept(uint32_t token_id);
-    bool next_bitmask(std::vector<int32_t>& token_bitmask);
-
-    xgrammar::GrammarMatcher matcher;
-    xgrammar::TokenizerInfo tokenizer_info;
-};
 
 struct Config {
     uint32_t vocab_size = 151936;
@@ -284,6 +241,58 @@ struct Config {
 
     bool from_json(const std::string& json_path);
     std::string to_json() const;
+};
+class Grammar {
+public:
+    Grammar();
+    ~Grammar() = default;
+
+    static Grammar gbnf(const std::string& gbnf, const std::string& start_symbol = "root");
+    static Grammar json();
+    static Grammar json_schema(
+        const std::string& json_schema,
+        bool any_whitespace = true,
+        int indent = 2,
+        std::pair<std::string, std::string> separators = {",", ":"},
+        bool strict_mode = true,
+        int max_whitespace_count = -1
+    );
+    static Grammar regex(const std::string& regex);
+    static Grammar structural_tag(const std::string& structural_tag_json);
+    static Grammar unite(const std::vector<Grammar>& grammars);
+    static Grammar concatenate(const std::vector<Grammar>& grammars);
+    static Grammar model_decode_grammar(
+        const Grammar& grammar,
+        bool supports_reasoning,
+        Config::ModelType model_type,
+        const std::vector<ToolDefinition>& tools
+    );
+
+    static Grammar model_tool_call(
+        Config::ModelType model_type,
+        const std::vector<ToolDefinition>& tools
+    );
+
+    bool is_empty() const;
+
+    std::shared_ptr<xgrammar::Grammar> handle() const;
+
+private:
+    explicit Grammar(xgrammar::Grammar raw_grammar);
+
+    std::shared_ptr<xgrammar::Grammar> grammar;
+};
+
+class GrammarMatcher {
+public:
+    GrammarMatcher(const Grammar* grammar, const TokenizerInfo& tokenizer_info);
+    ~GrammarMatcher() = default;
+
+    bool accept(uint32_t token_id);
+    bool next_bitmask(std::vector<int32_t>& token_bitmask);
+
+    xgrammar::GrammarMatcher matcher;
+    xgrammar::TokenizerInfo tokenizer_info;
 };
 
 

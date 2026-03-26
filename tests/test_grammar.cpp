@@ -5,6 +5,7 @@
 #include <iostream>
 #include <memory>
 
+using cactus::engine::Config;
 using cactus::engine::Grammar;
 using cactus::engine::GrammarMatcher;
 using cactus::engine::ToolDefinition;
@@ -287,7 +288,7 @@ static bool test_tool_definition_rejects_invalid_tools_json() {
 
 static Grammar qwen_style_tool_call_grammar_from_tools_json() {
     std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(qwen_tools_json());
-    return Grammar::qwen_style_tool_call(tools);
+    return Grammar::model_tool_call(Config::ModelType::QWEN, tools);
 }
 
 static bool test_qwen_style_tool_call_accepts_single_tool_call(const GrammarFixture& fixture) {
@@ -394,35 +395,35 @@ static bool test_json_schema_accepts_expected_text(const GrammarFixture& fixture
 
 static bool test_model_decode_accepts_direct_output_when_reasoning_enabled(const GrammarFixture& fixture) {
     Grammar user_grammar = Grammar::gbnf("root ::= \"hello\"");
-    Grammar combined = Grammar::model_decode_grammar(user_grammar, true);
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, true, Config::ModelType::QWEN, {});
 
     return accepts_complete_text(combined, fixture, "hello");
 }
 
 static bool test_model_decode_accepts_thinking_then_output(const GrammarFixture& fixture) {
     Grammar user_grammar = Grammar::gbnf("root ::= \"hello\"");
-    Grammar combined = Grammar::model_decode_grammar(user_grammar, true);
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, true, Config::ModelType::QWEN, {});
 
     return accepts_complete_text(combined, fixture, "<think>\nreasoning\n</think>\n\nhello");
 }
 
 static bool test_model_decode_accepts_less_than_in_thinking_payload(const GrammarFixture& fixture) {
     Grammar user_grammar = Grammar::gbnf("root ::= \"hello\"");
-    Grammar combined = Grammar::model_decode_grammar(user_grammar, true);
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, true, Config::ModelType::QWEN, {});
 
     return accepts_complete_text(combined, fixture, "<think>\n1 < 2\n</think>\n\nhello");
 }
 
 static bool test_model_decode_rejects_thinking_only_eos(const GrammarFixture& fixture) {
     Grammar user_grammar = Grammar::gbnf("root ::= \"hello\"");
-    Grammar combined = Grammar::model_decode_grammar(user_grammar, true);
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, true, Config::ModelType::QWEN, {});
 
     return rejects_eos_after_text(combined, fixture, "<think>\nreasoning\n</think>\n\n");
 }
 
 static bool test_model_decode_rejects_thinking_when_reasoning_disabled(const GrammarFixture& fixture) {
     Grammar user_grammar = Grammar::gbnf("root ::= \"hello\"");
-    Grammar combined = Grammar::model_decode_grammar(user_grammar, false);
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, false, Config::ModelType::QWEN, {});
 
     return rejects_text(combined, fixture, "<think>\nreasoning\n</think>\n\nhello")
         && accepts_complete_text(combined, fixture, "hello");
@@ -432,7 +433,7 @@ static bool test_model_decode_accepts_thinking_then_json_schema(const GrammarFix
     Grammar user_grammar = Grammar::json_schema(
         R"({"type":"object","properties":{"name":{"type":"string"}},"required":["name"]})"
     );
-    Grammar combined = Grammar::model_decode_grammar(user_grammar, true);
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, true, Config::ModelType::QWEN, {});
 
     return accepts_complete_text(combined, fixture, "<think>\nreasoning\n</think>\n\n{\"name\":\"cactus\"}");
 }
@@ -441,7 +442,7 @@ static bool test_model_decode_rejects_invalid_json_schema_after_thinking(const G
     Grammar user_grammar = Grammar::json_schema(
         R"({"type":"object","properties":{"name":{"type":"string"}},"required":["name"]})"
     );
-    Grammar combined = Grammar::model_decode_grammar(user_grammar, true);
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, true, Config::ModelType::QWEN, {});
 
     return rejects_eos_after_text(combined, fixture, "<think>\nreasoning\n</think>\n\n{\"name\":1}")
         && rejects_text(combined, fixture, "<think>\nreasoning\n</think>\n\nthis is some random text");
@@ -449,17 +450,37 @@ static bool test_model_decode_rejects_invalid_json_schema_after_thinking(const G
 
 static bool test_model_decode_rejects_nested_thinking_close_tag(const GrammarFixture& fixture) {
     Grammar user_grammar = Grammar::gbnf("root ::= \"hello\"");
-    Grammar combined = Grammar::model_decode_grammar(user_grammar, true);
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, true, Config::ModelType::QWEN, {});
 
     return rejects_text(combined, fixture, "<think>\nreasoning</think>\n</think>\n\nhello");
 }
 
 static bool test_model_decode_rejects_invalid_close_only_thinking_string(const GrammarFixture& fixture) {
     Grammar user_grammar = Grammar::gbnf("root ::= \"hello\"");
-    Grammar combined = Grammar::model_decode_grammar(user_grammar, true);
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, true, Config::ModelType::QWEN, {});
 
     return rejects_text(combined, fixture, "</think>\nreasoning\n</think>\nhello");
 }
+
+static bool test_model_decode_qwen_with_tools_accepts_tool_call_after_thinking(const GrammarFixture& fixture) {
+    std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(qwen_tools_json());
+    Grammar combined = Grammar::model_decode_grammar(Grammar(), true, Config::ModelType::QWEN, tools);
+
+    return accepts_complete_text(
+        combined,
+        fixture,
+        "<think>\nreasoning\n</think>\n\n<tool_call>\n{\"name\": \"send_message\", \"arguments\": {\"recipient\":\"Blob\",\"message\":\"Hello Blob!\"}}\n</tool_call>"
+    );
+}
+
+static bool test_model_decode_qwen_with_tools_rejects_plain_text(const GrammarFixture& fixture) {
+    Grammar user_grammar = Grammar::gbnf("root ::= \"hello\"");
+    std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(qwen_tools_json());
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, true, Config::ModelType::QWEN, tools);
+
+    return accepts_complete_text(combined, fixture, "hello");
+}
+
 
 } // anonymous namespace
 
@@ -495,6 +516,8 @@ int main() {
         runner.run_test("model_decode_rejects_invalid_json_schema_after_thinking", test_model_decode_rejects_invalid_json_schema_after_thinking(fixture));
         runner.run_test("model_decode_invalid_close_only", test_model_decode_rejects_invalid_close_only_thinking_string(fixture));
         runner.run_test("model_decode_rejects_nested_thinking_close_tag", test_model_decode_rejects_nested_thinking_close_tag(fixture));
+        runner.run_test("model_decode_qwen_with_tools_tool_call_after_thinking", test_model_decode_qwen_with_tools_accepts_tool_call_after_thinking(fixture));
+        runner.run_test("model_decode_qwen_with_tools_rejects_plain_text", test_model_decode_qwen_with_tools_rejects_plain_text(fixture));
     } catch (const std::exception& e) {
         std::cerr << "[✗] Grammar test setup failed: " << e.what() << "\n";
     }

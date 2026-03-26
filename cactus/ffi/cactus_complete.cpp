@@ -449,7 +449,9 @@ int cactus_complete(
             }
             decode_grammar = Grammar::model_decode_grammar(
                 *grammar_handle->grammar,
-                prompt.thinking_supported
+                prompt.thinking_supported,
+                prompt.model_type,
+                {}
             );
             matcher.emplace(&decode_grammar, tokenizer->get_tokenizer_info());
         }
