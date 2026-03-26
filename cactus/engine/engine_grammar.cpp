@@ -9,7 +9,7 @@ namespace engine {
 
 // NB: The next release of XGrammar should support the "optional" type in structural tags, which
 // would make the exclusion of "</think>" simpler.
-static const Grammar thinking_grammar = Grammar::gbnf(R"(
+static const Grammar reasoning_grammar = Grammar::gbnf(R"(
     root ::= think?
     think ::= "<think>\n" any_non_closing_think_character* "\n</think>\n\n"
 
@@ -28,10 +28,9 @@ static const Grammar thinking_grammar = Grammar::gbnf(R"(
     )
 )");
 
-Grammar::Grammar() : grammar(nullptr) {}
+Grammar::Grammar() : grammar(xgrammar::NullObj{}) {}
 
-Grammar::Grammar(xgrammar::Grammar raw_grammar)
-    : grammar(std::make_shared<xgrammar::Grammar>(std::move(raw_grammar))) {}
+Grammar::Grammar(xgrammar::Grammar raw_grammar) : grammar(raw_grammar) {}
 
 static const picojson::object& require_object_field(
     const picojson::object& object,
@@ -183,19 +182,19 @@ static std::string build_qwen_tool_structural_tag_json(const std::vector<ToolDef
     return picojson::value(root).serialize();
 }
 
-static Grammar qwen_style_tool_call(const std::vector<ToolDefinition>& tools) {
+static Grammar qwen_style_tool_call_grammar(const std::vector<ToolDefinition>& tools) {
     return Grammar::structural_tag(build_qwen_tool_structural_tag_json(tools));
 }
 
-static Grammar gemma_style_tool_call(const std::vector<ToolDefinition>& tools) {
+static Grammar gemma_style_tool_call_grammar(const std::vector<ToolDefinition>& tools) {
     return Grammar();
 }
 
-static Grammar lfm2_style_tool_call(const std::vector<ToolDefinition>& tools) {
+static Grammar lfm2_style_tool_call_grammar(const std::vector<ToolDefinition>& tools) {
     return Grammar();
 }
 
-Grammar Grammar::model_tool_call(
+static Grammar model_tool_call_grammar(
     Config::ModelType model_type,
     const std::vector<ToolDefinition>& tools
 ) {
@@ -204,11 +203,11 @@ Grammar Grammar::model_tool_call(
         case Config::ModelType::QWEN:
         case Config::ModelType::QWEN3P5:
         case Config::ModelType::YOUTU:
-            return qwen_style_tool_call(tools);
+            return qwen_style_tool_call_grammar(tools);
         case Config::ModelType::GEMMA:
-            return gemma_style_tool_call(tools);
+            return gemma_style_tool_call_grammar(tools);
         case Config::ModelType::LFM2:
-            return lfm2_style_tool_call(tools);
+            return lfm2_style_tool_call_grammar(tools);
         default:
             return Grammar();
     }
@@ -221,7 +220,7 @@ Grammar Grammar::unite(const std::vector<Grammar>& grammars) {
         if (grammar.is_empty()) {
             continue;
         }
-        handles.push_back(*grammar.handle());
+        handles.push_back(grammar.raw_value());
     }
 
     if (handles.empty()) {
@@ -237,7 +236,7 @@ Grammar Grammar::concatenate(const std::vector<Grammar>& grammars) {
         if (grammar.is_empty()) {
             continue;
         }
-        handles.push_back(*grammar.handle());
+        handles.push_back(grammar.raw_value());
     }
 
     if (handles.empty()) {
@@ -255,19 +254,18 @@ Grammar Grammar::model_decode_grammar(
     if (grammar.is_empty() && tools.empty()) {
         return Grammar();
     }
-    auto tool_grammar = Grammar::model_tool_call(model_type, tools);
-    auto non_reasoning_grammar = Grammar::unite({grammar, tool_grammar});
-    if (supports_reasoning) {
-        return Grammar::concatenate({thinking_grammar, non_reasoning_grammar});
-    }
-    return non_reasoning_grammar;
+    auto tool_grammar = model_tool_call_grammar(model_type, tools);
+    auto content_grammar = Grammar::unite({grammar, tool_grammar});
+    return supports_reasoning
+        ? Grammar::concatenate({reasoning_grammar, content_grammar})
+        : content_grammar;
 }
 
 bool Grammar::is_empty() const {
-    return grammar == nullptr;
+    return grammar.IsNull();
 }
 
-std::shared_ptr<xgrammar::Grammar> Grammar::handle() const {
+const xgrammar::Grammar& Grammar::raw_value() const {
     return grammar;
 }
 
@@ -288,9 +286,8 @@ static xgrammar::VocabType to_xgrammar_vocab_type(VocabType vocab_type) {
 
 GrammarMatcher::GrammarMatcher(const Grammar* grammar, const TokenizerInfo& tokenizer_info)
     : matcher(nullptr), tokenizer_info(nullptr) {
-    auto handle = grammar->handle();
-    if (!handle) {
-        throw std::runtime_error("Grammar handle is null");
+    if (grammar->is_empty()) {
+        throw std::runtime_error("Cannot create GrammarMatcher with empty grammar");
     }
     std::vector<int32_t> stop_token_ids_int32(tokenizer_info.stop_token_ids.begin(), tokenizer_info.stop_token_ids.end());
     xgrammar::TokenizerInfo xgrammar_tokenizer_info{
@@ -302,7 +299,7 @@ GrammarMatcher::GrammarMatcher(const Grammar* grammar, const TokenizerInfo& toke
     };
     auto compiler = xgrammar::GrammarCompiler(xgrammar_tokenizer_info);
 
-    auto compiled_grammar = compiler.CompileGrammar(*handle);
+    auto compiled_grammar = compiler.CompileGrammar(grammar->raw_value());
     matcher = xgrammar::GrammarMatcher(compiled_grammar);
     this->tokenizer_info = xgrammar_tokenizer_info;
 }

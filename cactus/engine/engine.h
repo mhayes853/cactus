@@ -242,6 +242,7 @@ struct Config {
     bool from_json(const std::string& json_path);
     std::string to_json() const;
 };
+
 class Grammar {
 public:
     Grammar();
@@ -268,19 +269,14 @@ public:
         const std::vector<ToolDefinition>& tools
     );
 
-    static Grammar model_tool_call(
-        Config::ModelType model_type,
-        const std::vector<ToolDefinition>& tools
-    );
-
     bool is_empty() const;
 
-    std::shared_ptr<xgrammar::Grammar> handle() const;
+    const xgrammar::Grammar& raw_value() const;
 
 private:
     explicit Grammar(xgrammar::Grammar raw_grammar);
 
-    std::shared_ptr<xgrammar::Grammar> grammar;
+    xgrammar::Grammar grammar;
 };
 
 class GrammarMatcher {
@@ -294,8 +290,6 @@ public:
     xgrammar::GrammarMatcher matcher;
     xgrammar::TokenizerInfo tokenizer_info;
 };
-
-
 
 struct MergeRule {
     std::string first;

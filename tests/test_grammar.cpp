@@ -288,7 +288,7 @@ static bool test_tool_definition_rejects_invalid_tools_json() {
 
 static Grammar qwen_style_tool_call_grammar_from_tools_json() {
     std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(qwen_tools_json());
-    return Grammar::model_tool_call(Config::ModelType::QWEN, tools);
+    return Grammar::model_decode_grammar(Grammar(), false, Config::ModelType::QWEN, tools);
 }
 
 static bool test_qwen_style_tool_call_accepts_single_tool_call(const GrammarFixture& fixture) {
