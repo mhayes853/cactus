@@ -1,4 +1,5 @@
 #include "test_utils.h"
+#include "../cactus/ffi/cactus_utils.h"
 
 #include <cstdlib>
 #include <fstream>
@@ -499,6 +500,23 @@ static bool test_model_decode_qwen_with_tools_rejects_plain_text(const GrammarFi
     return accepts_complete_text(combined, fixture, "hello");
 }
 
+static bool test_grammar_matcher_reset_restores_initial_state(const GrammarFixture& fixture) {
+    Grammar grammar = Grammar::gbnf("root ::= \"hello\"");
+    GrammarMatcher matcher(&grammar, fixture.tokenizer_info);
+
+    if (!accept_text(matcher, fixture, "hello")) {
+        return false;
+    }
+    if (!matcher.accept(fixture.tokenizer->get_eos_token())) {
+        return false;
+    }
+
+    matcher.reset();
+    return rejects_text(grammar, fixture, "goodbye")
+        && accept_text(matcher, fixture, "hello")
+        && matcher.accept(fixture.tokenizer->get_eos_token());
+}
+
 
 } // anonymous namespace
 
@@ -538,6 +556,7 @@ int main() {
         runner.run_test("model_decode_rejects_nested_thinking_close_tag", test_model_decode_rejects_nested_thinking_close_tag(fixture));
         runner.run_test("model_decode_qwen_with_tools_tool_call_after_thinking", test_model_decode_qwen_with_tools_accepts_tool_call_after_thinking(fixture));
         runner.run_test("model_decode_qwen_with_tools_rejects_plain_text", test_model_decode_qwen_with_tools_rejects_plain_text(fixture));
+        runner.run_test("grammar_matcher_reset", test_grammar_matcher_reset_restores_initial_state(fixture));
     } catch (const std::exception& e) {
         std::cerr << "[✗] Grammar test setup failed: " << e.what() << "\n";
     }

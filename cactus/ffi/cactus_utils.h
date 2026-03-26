@@ -63,6 +63,60 @@ struct CactusGrammarHandle {
 };
 
 struct CactusModelHandle {
+    struct GrammarMatcherHandle {
+        std::unique_ptr<cactus::engine::GrammarMatcher> matcher;
+        const CactusGrammarHandle* user_grammar_handle = nullptr;
+        bool thinking_supported = false;
+        std::string tools_json;
+
+        static GrammarMatcherHandle create(
+            const CactusGrammarHandle* user_grammar_handle,
+            bool thinking_supported,
+            std::string tools_json,
+            cactus::engine::Config::ModelType model_type,
+            const cactus::engine::TokenizerInfo& tokenizer_info
+        ) {
+            std::vector<cactus::engine::ToolDefinition> decode_tools;
+            if (!tools_json.empty()) {
+                decode_tools = cactus::engine::ToolDefinition::parse_tools_json(tools_json);
+            }
+
+            cactus::engine::Grammar decode_grammar = cactus::engine::Grammar::model_decode_grammar(
+                user_grammar_handle ? *user_grammar_handle->grammar : cactus::engine::Grammar::universal(),
+                thinking_supported,
+                model_type,
+                decode_tools
+            );
+            if (decode_grammar.is_empty()) {
+                throw std::runtime_error("Cannot constrain generation to empty grammar");
+            }
+
+            GrammarMatcherHandle handle;
+            handle.matcher = std::make_unique<cactus::engine::GrammarMatcher>(&decode_grammar, tokenizer_info);
+            handle.user_grammar_handle = user_grammar_handle;
+            handle.thinking_supported = thinking_supported;
+            handle.tools_json = std::move(tools_json);
+            return handle;
+        }
+
+        bool matches(
+            const CactusGrammarHandle* other_user_grammar_handle,
+            bool other_thinking_supported,
+            const std::string& other_tools_json
+        ) const {
+            return matcher
+                && user_grammar_handle == other_user_grammar_handle
+                && thinking_supported == other_thinking_supported
+                && tools_json == other_tools_json;
+        }
+
+        void reset_matcher() {
+            if (matcher) {
+                matcher->reset();
+            }
+        }
+    };
+
     std::unique_ptr<cactus::engine::Model> model;
     std::unique_ptr<cactus::engine::Model> vad_model;
     std::atomic<bool> should_stop;
@@ -77,6 +131,7 @@ struct CactusModelHandle {
     };
 
     std::vector<std::vector<ProcessedImage>> processed_images;
+    GrammarMatcherHandle grammar_matcher_handle;
     std::mutex model_mutex;
     std::string model_name;
     std::unique_ptr<cactus::engine::index::Index> corpus_index;

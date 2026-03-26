@@ -148,6 +148,7 @@ struct PreparedPrompt {
     InferenceOptions options;
     Config::ModelType model_type = Config::ModelType::QWEN;
     bool thinking_supported = false;
+    std::string tools_json;
     std::vector<std::string> image_paths;
     std::vector<ChatMessage> messages;
     std::vector<ToolFunction> tools;
@@ -274,6 +275,8 @@ PreparedPrompt prepare_prompt(
         }
     }
 
+    prompt.tools_json = serialize_tools_json(prompt.tools);
+
     if (apply_tool_constraints) {
         setup_tool_constraints(handle, prompt.tools, prompt.options.force_tools, prompt.options.temperature);
     }
@@ -288,7 +291,7 @@ PreparedPrompt prepare_prompt(
         prompt.model_type == Config::ModelType::GEMMA3N) {
         formatted_tools = gemma::format_tools(prompt.tools);
     } else {
-        formatted_tools = serialize_tools_json(prompt.tools);
+        formatted_tools = prompt.tools_json;
     }
 
     std::string full_prompt = tokenizer->format_chat_prompt(
@@ -438,23 +441,29 @@ int cactus_complete(
         handle->should_stop = false;
         auto* tokenizer = handle->model->get_tokenizer();
         auto prompt = prepare_prompt(handle, messages_json, options_json, tools_json, true, true);
+        const auto* user_grammar_handle = static_cast<const CactusGrammarHandle*>(grammar);
 
-        std::vector<ToolDefinition> decode_tools;
-        if (!prompt.tools.empty()) {
-            decode_tools = ToolDefinition::parse_tools_json(serialize_tools_json(prompt.tools));
-        }
-
-        Grammar decode_grammar = Grammar::model_decode_grammar(
-            grammar ? *static_cast<const CactusGrammarHandle*>(grammar)->grammar : Grammar::universal(),
+        auto can_reuse_grammar_matcher = handle->grammar_matcher_handle.matches(
+            user_grammar_handle,
             prompt.thinking_supported,
-            prompt.model_type,
-            decode_tools
+            prompt.tools_json
         );
-        if (decode_grammar.is_empty()) {
-            handle_error_response("Cannot constrain to empty grammar", response_buffer, buffer_size);
-            return -1;
+        if (can_reuse_grammar_matcher) {
+            handle->grammar_matcher_handle.reset_matcher();
+        } else {
+            try {
+                handle->grammar_matcher_handle = CactusModelHandle::GrammarMatcherHandle::create(
+                    user_grammar_handle,
+                    prompt.thinking_supported,
+                    prompt.tools_json,
+                    prompt.model_type,
+                    tokenizer->get_tokenizer_info()
+                );
+            } catch (const std::runtime_error& e) {
+                handle_error_response(e.what(), response_buffer, buffer_size);
+                return -1;
+            }
         }
-        GrammarMatcher matcher(&decode_grammar, tokenizer->get_tokenizer_info());
 
         CACTUS_LOG_DEBUG("complete", "Prompt tokens: " << prompt.tokens.size()
             << ", max_tokens: " << prompt.options.max_tokens);
@@ -475,7 +484,7 @@ int cactus_complete(
             prefill_result,
             prompt,
             &first_token_entropy,
-            &matcher
+            handle->grammar_matcher_handle.matcher.get()
         );
 
         handle->processed_tokens = prompt.tokens;
@@ -534,7 +543,13 @@ int cactus_complete(
                 if (handle->should_stop) break;
 
                 float token_entropy = 0.0f;
-                next_token = decode(handle->model, {next_token}, prompt.options, &token_entropy, &matcher);
+                next_token = decode(
+                    handle->model,
+                    {next_token},
+                    prompt.options,
+                    &token_entropy,
+                    handle->grammar_matcher_handle.matcher.get()
+                );
                 generated_tokens.push_back(next_token);
                 handle->processed_tokens.push_back(next_token);
 

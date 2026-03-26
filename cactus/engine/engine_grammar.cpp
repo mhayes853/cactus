@@ -309,6 +309,10 @@ GrammarMatcher::GrammarMatcher(const Grammar* grammar, const TokenizerInfo& toke
     this->tokenizer_info = xgrammar_tokenizer_info;
 }
 
+void GrammarMatcher::reset() {
+    matcher.Reset();
+}
+
 bool GrammarMatcher::accept(uint32_t token_id) {
     return matcher.AcceptToken(token_id);
 }

@@ -287,6 +287,7 @@ public:
     GrammarMatcher(const Grammar* grammar, const TokenizerInfo& tokenizer_info);
     ~GrammarMatcher() = default;
 
+    void reset();
     bool accept(uint32_t token_id);
     bool next_bitmask(std::vector<int32_t>& token_bitmask);
 
