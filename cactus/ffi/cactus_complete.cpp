@@ -439,22 +439,22 @@ int cactus_complete(
         auto* tokenizer = handle->model->get_tokenizer();
         auto prompt = prepare_prompt(handle, messages_json, options_json, tools_json, true, true);
 
-        Grammar decode_grammar;
-        std::optional<cactus::engine::GrammarMatcher> matcher;
-        if (grammar) {
-            const CactusGrammarHandle* grammar_handle = static_cast<const CactusGrammarHandle*>(grammar);
-            if (grammar_handle->grammar->is_empty()) {
-                handle_error_response("Cannot constrain to empty grammar", response_buffer, buffer_size);
-                return -1;
-            }
-            decode_grammar = Grammar::model_decode_grammar(
-                *grammar_handle->grammar,
-                prompt.thinking_supported,
-                prompt.model_type,
-                {}
-            );
-            matcher.emplace(&decode_grammar, tokenizer->get_tokenizer_info());
+        std::vector<ToolDefinition> decode_tools;
+        if (!prompt.tools.empty()) {
+            decode_tools = ToolDefinition::parse_tools_json(serialize_tools_json(prompt.tools));
         }
+
+        Grammar decode_grammar = Grammar::model_decode_grammar(
+            grammar ? *static_cast<const CactusGrammarHandle*>(grammar)->grammar : Grammar::universal(),
+            prompt.thinking_supported,
+            prompt.model_type,
+            decode_tools
+        );
+        if (decode_grammar.is_empty()) {
+            handle_error_response("Cannot constrain to empty grammar", response_buffer, buffer_size);
+            return -1;
+        }
+        GrammarMatcher matcher(&decode_grammar, tokenizer->get_tokenizer_info());
 
         CACTUS_LOG_DEBUG("complete", "Prompt tokens: " << prompt.tokens.size()
             << ", max_tokens: " << prompt.options.max_tokens);
@@ -475,7 +475,7 @@ int cactus_complete(
             prefill_result,
             prompt,
             &first_token_entropy,
-            matcher ? &*matcher : nullptr
+            &matcher
         );
 
         handle->processed_tokens = prompt.tokens;
@@ -534,7 +534,7 @@ int cactus_complete(
                 if (handle->should_stop) break;
 
                 float token_entropy = 0.0f;
-                next_token = decode(handle->model, {next_token}, prompt.options, &token_entropy, matcher ? &*matcher : nullptr);
+                next_token = decode(handle->model, {next_token}, prompt.options, &token_entropy, &matcher);
                 generated_tokens.push_back(next_token);
                 handle->processed_tokens.push_back(next_token);
 

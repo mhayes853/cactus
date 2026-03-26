@@ -225,6 +225,7 @@ CACTUS_FFI_EXPORT void cactus_telemetry_shutdown(void);
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_gbnf(const char* gbnf, const char* start_symbol);
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_json();
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_empty();
+CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_universal();
 
 typedef struct cactus_grammar_json_schema_options_t {
     bool any_whitespace;                    // negates indent and separators if true

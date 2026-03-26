@@ -145,6 +145,13 @@ static bool test_regex_and_json_schema_construction() {
     return !regex.is_empty() && !json_schema.is_empty();
 }
 
+static bool test_universal_grammar_accepts_anything(const GrammarFixture& fixture) {
+    Grammar grammar = Grammar::universal();
+    return accepts_complete_text(grammar, fixture, "")
+        && accepts_complete_text(grammar, fixture, "blob says hello from cactus")
+        && accepts_complete_text(grammar, fixture, "line one\nline two\nline three");
+}
+
 static std::string tool_call_structural_tag_json() {
     return R"({
         "type": "structural_tag",
@@ -394,7 +401,7 @@ static bool test_json_schema_accepts_expected_text(const GrammarFixture& fixture
 }
 
 static bool test_model_decode_accepts_direct_output_when_reasoning_enabled(const GrammarFixture& fixture) {
-    Grammar user_grammar = Grammar::gbnf("root ::= \"hello\"");
+    Grammar user_grammar = Grammar::universal();
     Grammar combined = Grammar::model_decode_grammar(user_grammar, true, Config::ModelType::QWEN, {});
 
     return accepts_complete_text(combined, fixture, "hello");
@@ -501,6 +508,7 @@ int main() {
         runner.run_test("unordred_choice", test_unordered_choice(fixture));
         runner.run_test("regex_language", test_regex_accepts_expected_text(fixture));
         runner.run_test("json_schema_language", test_json_schema_accepts_expected_text(fixture));
+        runner.run_test("universal", test_universal_grammar_accepts_anything(fixture));
         runner.run_test("structural_tag_language", test_structural_tag_accepts_and_rejects_expected_text(fixture));
         runner.run_test("qwen_style_tool_call_single", test_qwen_style_tool_call_accepts_single_tool_call(fixture));
         runner.run_test("qwen_style_tool_call_repeated", test_qwen_style_tool_call_accepts_repeated_tool_calls(fixture));

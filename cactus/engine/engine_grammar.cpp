@@ -109,6 +109,15 @@ Grammar Grammar::json() {
     return Grammar(xgrammar::Grammar::BuiltinJSONGrammar());
 }
 
+Grammar Grammar::universal() {
+    return Grammar::structural_tag(R"({
+        "type": "structural_tag",
+        "format": {
+            "type": "any_text"
+        }
+    })");
+}
+
 Grammar Grammar::json_schema(
     const std::string& json_schema,
     bool any_whitespace,

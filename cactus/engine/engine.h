@@ -250,6 +250,7 @@ public:
 
     static Grammar gbnf(const std::string& gbnf, const std::string& start_symbol = "root");
     static Grammar json();
+    static Grammar universal();
     static Grammar json_schema(
         const std::string& json_schema,
         bool any_whitespace = true,

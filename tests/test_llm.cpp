@@ -543,6 +543,52 @@ bool test_tool_call_with_three_tools() {
         }, tools, -1, "Send a message to John saying hello.");
 }
 
+bool test_tool_call_respects_strict_blob_schema() {
+    const char* messages = R"([
+        {"role": "system", "content": "You are a helpful assistant that can use tools."},
+        {"role": "user", "content": "Call the blob tool now."}
+    ])";
+
+    const char* tools = R"([{
+        "type": "function",
+        "function": {
+            "name": "emit_blob",
+            "description": "Emit the required blob payload",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "payload": {
+                        "type": "string",
+                        "enum": ["blob"]
+                    }
+                },
+                "required": ["payload"],
+                "additionalProperties": false
+            }
+        }
+    }])";
+
+    const char* options_with_force_tools = R"({
+        "max_tokens": 128,
+        "stop_sequences": ["<|im_end|>", "<end_of_turn>"],
+        "enable_thinking_if_supported": false,
+        "force_tools": true
+    })";
+
+    return EngineTestUtils::run_test("STRICT BLOB TOOL TEST", g_model_path, messages, options_with_force_tools,
+        [](int result, const StreamingData&, const std::string& response, const Metrics& m) {
+            bool has_function = response.find("\"function_calls\":[") != std::string::npos;
+            bool has_tool = response.find("emit_blob") != std::string::npos;
+            bool has_blob_payload = response.find("\"payload\":\"blob\"") != std::string::npos
+                || response.find("\"payload\": \"blob\"") != std::string::npos;
+            std::cout << "├─ Function call: " << (has_function ? "YES" : "NO") << "\n"
+                      << "├─ Correct tool: " << (has_tool ? "YES" : "NO") << "\n"
+                      << "├─ Blob payload: " << (has_blob_payload ? "YES" : "NO") << "\n";
+            m.print_json();
+            return result > 0 && has_function && has_tool && has_blob_payload;
+        }, tools, -1, "Call the blob tool now.");
+}
+
 bool test_1k_context() {
     std::string msg = "[{\"role\": \"system\", \"content\": \"/no_think You are helpful. ";
     for (int i = 0; i < 50; i++) {
@@ -852,6 +898,7 @@ int main() {
     runner.run_test("tool_calls", test_tool_call());
     runner.run_test("tool_multiple_tool_call_invocations", test_multiple_tool_call_invocations());
     runner.run_test("tool_calls_with_three_tools", test_tool_call_with_three_tools());
+    runner.run_test("tool_call_respects_strict_blob_schema", test_tool_call_respects_strict_blob_schema());
     runner.print_summary();
     return runner.all_passed() ? 0 : 1;
 }

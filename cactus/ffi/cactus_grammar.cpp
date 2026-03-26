@@ -55,6 +55,10 @@ cactus_grammar_t cactus_grammar_init_empty() {
     return new CactusGrammarHandle{std::make_unique<Grammar>()};
 }
 
+cactus_grammar_t cactus_grammar_init_universal() {
+    return new CactusGrammarHandle{std::make_unique<Grammar>(Grammar::universal())};
+}
+
 cactus_grammar_t cactus_grammar_init_json_schema(
     const char* json_schema,
     cactus_grammar_json_schema_options_t options
