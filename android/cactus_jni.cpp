@@ -122,7 +122,8 @@ Java_com_cactus_CactusJNI_nativeComplete(JNIEnv* env, jobject, jlong handle,
         options,
         tools,
         cb,
-        ctx
+        ctx,
+        nullptr
     );
 
     delete ctx;

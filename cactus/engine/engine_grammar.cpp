@@ -7,26 +7,23 @@
 namespace cactus {
 namespace engine {
 
-// NB: The next release of XGrammar should support the "optional" type in structural tags, which
-// would make the exclusion of "</think>" simpler.
-static const Grammar reasoning_grammar = Grammar::gbnf(R"(
-    root ::= think?
-    think ::= "<think>\n" any_non_closing_think_character* "\n</think>\n\n"
-
-    # NB: We need to reject the closing thinking tag otherwise any text is acceptable after the
-    # closing tag, otherwise unconstrained tokens could be generated and still be considered as
-    # part of the grammar after </think> tags.
-    any_non_closing_think_character ::= (
-        [^<]
-        | "<" [^/]
-        | "</" [^t]
-        | "</t" [^h]
-        | "</th" [^i]
-        | "</thi" [^n]
-        | "</thin" [^k]
-        | "</think" [^>]
-    )
-)");
+static const Grammar& reasoning_grammar() {
+    static const Grammar grammar = Grammar::gbnf(R"(
+        root ::= think?
+        think ::= "<think>\n" any_non_closing_think_character* "\n</think>\n\n"
+        any_non_closing_think_character ::= (
+            [^<]
+            | "<" [^/]
+            | "</" [^t]
+            | "</t" [^h]
+            | "</th" [^i]
+            | "</thi" [^n]
+            | "</thin" [^k]
+            | "</think" [^>]
+        )
+    )");
+    return grammar;
+}
 
 Grammar::Grammar() : grammar(xgrammar::NullObj{}), is_universal_(false) {}
 
@@ -263,7 +260,7 @@ Grammar Grammar::model_decode_grammar(
     auto tool_grammar = model_tool_call_grammar(model_type, tools);
     auto content_grammar = Grammar::unite({grammar, tool_grammar});
     return supports_reasoning
-        ? Grammar::concatenate({reasoning_grammar, content_grammar})
+        ? Grammar::concatenate({reasoning_grammar(), content_grammar})
         : content_grammar;
 }
 

@@ -109,7 +109,22 @@ fn link_native_library(build_dir: &Path) {
 }
 
 fn link_vendored_xgrammar(cactus_src: &Path) {
-    let xgrammar_dir = cactus_src.join("..").join("libs").join("xgrammar").join("macos");
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+    let xgrammar_dir = match (target_os.as_str(), target_arch.as_str()) {
+        ("macos", _) => cactus_src
+            .join("..")
+            .join("libs")
+            .join("xgrammar")
+            .join("macos"),
+        ("linux", "aarch64") => cactus_src
+            .join("..")
+            .join("libs")
+            .join("xgrammar")
+            .join("linux")
+            .join("aarch64"),
+        _ => panic!("unsupported vendored xgrammar target: {target_os} {target_arch}"),
+    };
     let xgrammar_lib = xgrammar_dir.join("libxgrammar.a");
     assert!(
         xgrammar_lib.exists(),

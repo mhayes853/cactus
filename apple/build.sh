@@ -8,6 +8,7 @@ CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-Release}
 BUILD_STATIC=${BUILD_STATIC:-true}
 BUILD_XCFRAMEWORK=${BUILD_XCFRAMEWORK:-true}
 CACTUS_CURL_ROOT=${CACTUS_CURL_ROOT:-"$ROOT_DIR/libs/curl"}
+CACTUS_XGRAMMAR_ROOT=${CACTUS_XGRAMMAR_ROOT:-"$ROOT_DIR/libs/xgrammar"}
 
 if ! command -v cmake &> /dev/null; then
     echo "Error: cmake not found, please install it"
@@ -28,6 +29,7 @@ echo "Using $n_cpu CPU cores"
 echo "Static library: $BUILD_STATIC"
 echo "XCFramework: $BUILD_XCFRAMEWORK"
 echo "Vendored libcurl root: $CACTUS_CURL_ROOT"
+echo "Vendored xgrammar root: $CACTUS_XGRAMMAR_ROOT"
 
 function cp_headers() {
     mkdir -p "$ROOT_DIR/apple/$1/$2/cactus.framework/Headers"
@@ -131,6 +133,7 @@ function build_static_library() {
           -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
           -DBUILD_SHARED_LIBS=OFF \
           -DCACTUS_CURL_ROOT="$CACTUS_CURL_ROOT" \
+          -DCACTUS_XGRAMMAR_ROOT="$CACTUS_XGRAMMAR_ROOT" \
           -S "$APPLE_DIR" \
           -B "$BUILD_DIR" >/dev/null
 
@@ -158,6 +161,7 @@ function build_static_library() {
           -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
           -DBUILD_SHARED_LIBS=OFF \
           -DCACTUS_CURL_ROOT="$CACTUS_CURL_ROOT" \
+          -DCACTUS_XGRAMMAR_ROOT="$CACTUS_XGRAMMAR_ROOT" \
           -S "$APPLE_DIR" \
           -B "$BUILD_DIR_SIM" >/dev/null
 
@@ -181,6 +185,7 @@ function build_framework() {
         -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
         -DBUILD_SHARED_LIBS=ON \
         -DCACTUS_CURL_ROOT="$CACTUS_CURL_ROOT" \
+        -DCACTUS_XGRAMMAR_ROOT="$CACTUS_XGRAMMAR_ROOT" \
         -DCMAKE_XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH=NO \
         -DCMAKE_IOS_INSTALL_COMBINED=YES >/dev/null
 

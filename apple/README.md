@@ -47,6 +47,23 @@ Build scripts auto-detect `libs/curl`. Override with:
 CACTUS_CURL_ROOT=/absolute/path/to/curl cactus build --apple
 ```
 
+### Vendored XGrammar (iOS + macOS)
+
+To bundle XGrammar from this repo, place artifacts under:
+
+- `libs/xgrammar/include/xgrammar/*.h`
+- `libs/xgrammar/include/dlpack/*.h`
+- `libs/xgrammar/include/picojson/picojson.h`
+- `libs/xgrammar/ios/device/libxgrammar.a`
+- `libs/xgrammar/ios/simulator/libxgrammar.a`
+- `libs/xgrammar/macos/libxgrammar.a`
+
+Build scripts auto-detect `libs/xgrammar`. Override with:
+
+```bash
+CACTUS_XGRAMMAR_ROOT=/absolute/path/to/xgrammar cactus build --apple
+```
+
 ## Integration
 
 <!-- --8<-- [start:integration] -->

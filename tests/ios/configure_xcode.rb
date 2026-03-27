@@ -260,7 +260,9 @@ fail_with("Static library not found at: #{static_lib_path}") unless File.exist?(
 puts "Using static library: #{static_lib_path}"
 
 curl_root = ENV['CACTUS_CURL_ROOT']
+xgrammar_root = ENV['CACTUS_XGRAMMAR_ROOT']
 vendored_curl_lib = nil
+vendored_xgrammar_lib = nil
 if curl_root && !curl_root.empty?
   vendored_curl_lib = device_type == 'simulator' ?
     File.join(curl_root, 'ios', 'simulator', 'libcurl.a') :
@@ -270,6 +272,18 @@ if curl_root && !curl_root.empty?
   else
     vendored_curl_lib = nil
     puts "Vendored iOS libcurl not found under CACTUS_CURL_ROOT=#{curl_root}; continuing without explicit curl link"
+  end
+end
+
+if xgrammar_root && !xgrammar_root.empty?
+  vendored_xgrammar_lib = device_type == 'simulator' ?
+    File.join(xgrammar_root, 'ios', 'simulator', 'libxgrammar.a') :
+    File.join(xgrammar_root, 'ios', 'device', 'libxgrammar.a')
+  if File.exist?(vendored_xgrammar_lib)
+    puts "Using vendored iOS xgrammar: #{vendored_xgrammar_lib}"
+  else
+    vendored_xgrammar_lib = nil
+    puts "Vendored iOS xgrammar not found under CACTUS_XGRAMMAR_ROOT=#{xgrammar_root}; continuing without explicit xgrammar link"
   end
 end
 
@@ -297,6 +311,12 @@ target.build_configurations.each do |config|
       config.build_settings['HEADER_SEARCH_PATHS'] << curl_include unless config.build_settings['HEADER_SEARCH_PATHS'].include?(curl_include)
     end
   end
+  if xgrammar_root && !xgrammar_root.empty?
+    xgrammar_include = File.join(xgrammar_root, 'include')
+    if File.exist?(File.join(xgrammar_include, 'xgrammar', 'xgrammar.h'))
+      config.build_settings['HEADER_SEARCH_PATHS'] << xgrammar_include unless config.build_settings['HEADER_SEARCH_PATHS'].include?(xgrammar_include)
+    end
+  end
 
   config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++20'
   config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
@@ -318,6 +338,9 @@ target.build_configurations.each do |config|
   end
   if vendored_curl_lib
     config.build_settings['OTHER_LDFLAGS'] << vendored_curl_lib unless config.build_settings['OTHER_LDFLAGS'].include?(vendored_curl_lib)
+  end
+  if vendored_xgrammar_lib
+    config.build_settings['OTHER_LDFLAGS'] << vendored_xgrammar_lib unless config.build_settings['OTHER_LDFLAGS'].include?(vendored_xgrammar_lib)
   end
 end
 

@@ -17,7 +17,7 @@
 #include <variant>
 #include <vector>
 
-#include <xgrammar/exception.h>
+#include "xgrammar/exception.h"
 
 namespace xgrammar {
 

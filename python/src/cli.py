@@ -648,6 +648,19 @@ def check_libcurl():
     return False
 
 
+def get_vendored_xgrammar_library():
+    system = platform.system()
+    machine = platform.machine().lower()
+
+    if system == 'Darwin':
+        return PROJECT_ROOT / 'libs' / 'xgrammar' / 'macos' / 'libxgrammar.a'
+
+    if system == 'Linux' and machine in {'aarch64', 'arm64'}:
+        return PROJECT_ROOT / 'libs' / 'xgrammar' / 'linux' / 'aarch64' / 'libxgrammar.a'
+
+    return None
+
+
 def cmd_build(args):
     """Build the Cactus library and chat binary."""
     if getattr(args, 'apple', False):
@@ -677,7 +690,7 @@ def cmd_build(args):
     cactus_dir = PROJECT_ROOT / "cactus"
     lib_path = cactus_dir / "build" / "libcactus.a"
     vendored_curl = PROJECT_ROOT / "libs" / "curl" / "macos" / "libcurl.a"
-    vendored_xgrammar = PROJECT_ROOT / "libs" / "xgrammar" / "macos" / "libxgrammar.a"
+    vendored_xgrammar = get_vendored_xgrammar_library()
     vendored_xgrammar_include = PROJECT_ROOT / "libs" / "xgrammar" / "include"
 
     print_color(YELLOW, "Building Cactus library...")
@@ -708,7 +721,7 @@ def cmd_build(args):
             print_color(RED, f"Error: vendored libcurl not found at {vendored_curl}")
             print("Build it first and place it in libs/curl/macos/libcurl.a")
             return 1
-        if not vendored_xgrammar.exists():
+        if vendored_xgrammar is None or not vendored_xgrammar.exists():
             print_color(RED, f"Error: vendored xgrammar not found at {vendored_xgrammar}")
             print("Build it first and place it in libs/xgrammar/macos/libxgrammar.a")
             return 1
@@ -731,6 +744,10 @@ def cmd_build(args):
             "-framework", "CFNetwork",
         ]
     else:
+        if vendored_xgrammar is None or not vendored_xgrammar.exists():
+            print_color(RED, f"Error: vendored xgrammar not found for {platform.system()} {platform.machine()}")
+            print("Build it first and place it in libs/xgrammar/linux/aarch64/libxgrammar.a")
+            return 1
         compiler = "g++"
         cmd = [
             compiler, "-std=c++20", "-O3",
@@ -739,6 +756,7 @@ def cmd_build(args):
             str(chat_cpp),
             str(lib_path),
             "-o", "chat",
+            str(vendored_xgrammar),
             "-lcurl",
             "-pthread"
         ]
@@ -814,6 +832,10 @@ def cmd_build(args):
             if sdl2_available:
                 cmd.extend(sdl2_lib.split())
         else:
+            if vendored_xgrammar is None or not vendored_xgrammar.exists():
+                print_color(RED, f"Error: vendored xgrammar not found for {platform.system()} {platform.machine()}")
+                print("Build it first and place it in libs/xgrammar/linux/aarch64/libxgrammar.a")
+                return 1
             cmd = [
                 compiler, "-std=c++20", "-O3",
                 f"-I{PROJECT_ROOT}",
@@ -825,6 +847,7 @@ def cmd_build(args):
                 str(asr_cpp),
                 str(lib_path),
                 "-o", "asr",
+                str(vendored_xgrammar),
                 "-lcurl",
                 "-pthread"
             ])

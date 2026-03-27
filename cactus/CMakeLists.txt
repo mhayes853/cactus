@@ -50,6 +50,24 @@ function(cactus_require_vendored_xgrammar include_dir library_path platform_labe
     endif()
 endfunction()
 
+function(cactus_configure_vendored_xgrammar)
+    set(CACTUS_XGRAMMAR_INCLUDE_DIR "${CACTUS_XGRAMMAR_ROOT}/include")
+
+    if(APPLE)
+        set(_xgrammar_library "${CACTUS_XGRAMMAR_ROOT}/macos/libxgrammar.a")
+        set(_xgrammar_platform "macOS")
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND (CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64" OR CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64"))
+        set(_xgrammar_library "${CACTUS_XGRAMMAR_ROOT}/linux/aarch64/libxgrammar.a")
+        set(_xgrammar_platform "Linux aarch64")
+    else()
+        message(FATAL_ERROR "Unsupported platform for vendored xgrammar: ${CMAKE_SYSTEM_NAME} ${CMAKE_SYSTEM_PROCESSOR}")
+    endif()
+
+    cactus_require_vendored_xgrammar("${CACTUS_XGRAMMAR_INCLUDE_DIR}" "${_xgrammar_library}" "${_xgrammar_platform}")
+    set(CACTUS_XGRAMMAR_INCLUDE_DIR "${CACTUS_XGRAMMAR_INCLUDE_DIR}" PARENT_SCOPE)
+    set(CACTUS_XGRAMMAR_LIBRARY "${_xgrammar_library}" PARENT_SCOPE)
+endfunction()
+
 if(APPLE)
     set(CMAKE_OSX_ARCHITECTURES "arm64")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -arch arm64 -march=armv8.2-a+fp16+simd+dotprod+i8mm -pthread -Wall -Wextra -pedantic -O3 -Wno-missing-field-initializers")
@@ -65,9 +83,7 @@ if(APPLE)
     set(CACTUS_CURL_INCLUDE_DIR "${CACTUS_CURL_ROOT}/include")
     set(CACTUS_CURL_LIBRARY_MACOS "${CACTUS_CURL_ROOT}/macos/libcurl.a")
     cactus_require_vendored_curl("${CACTUS_CURL_INCLUDE_DIR}" "${CACTUS_CURL_LIBRARY_MACOS}" "macOS")
-    set(CACTUS_XGRAMMAR_INCLUDE_DIR "${CACTUS_XGRAMMAR_ROOT}/include")
-    set(CACTUS_XGRAMMAR_LIBRARY_MACOS "${CACTUS_XGRAMMAR_ROOT}/macos/libxgrammar.a")
-    cactus_require_vendored_xgrammar("${CACTUS_XGRAMMAR_INCLUDE_DIR}" "${CACTUS_XGRAMMAR_LIBRARY_MACOS}" "macOS")
+    cactus_configure_vendored_xgrammar()
     find_library(COREML_FRAMEWORK CoreML REQUIRED)
     find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
     find_library(ACCELERATE_FRAMEWORK Accelerate REQUIRED)
@@ -82,6 +98,7 @@ else()
         __ARM_FEATURE_DOTPROD=1
         __ARM_FEATURE_MATMUL_INT8=1
     )
+    cactus_configure_vendored_xgrammar()
 endif()
 
 file(GLOB ENGINE_SOURCES "engine/*.cpp")
@@ -125,6 +142,9 @@ set(COMMON_INCLUDES
 
 function(configure_cactus_target target_name)
     target_include_directories(${target_name} PUBLIC ${COMMON_INCLUDES})
+    target_include_directories(${target_name} SYSTEM PUBLIC ${CACTUS_XGRAMMAR_INCLUDE_DIR})
+    target_link_libraries(${target_name} PUBLIC ${CACTUS_XGRAMMAR_LIBRARY})
+    target_compile_definitions(${target_name} PRIVATE CACTUS_USE_XGRAMMAR=1)
 
     if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
         target_compile_options(${target_name} PRIVATE -Wno-c99-extensions)
@@ -145,12 +165,9 @@ function(configure_cactus_target target_name)
             ${SYSTEMCONFIGURATION_FRAMEWORK}
             ${CFNETWORK_FRAMEWORK}
             ${CACTUS_CURL_LIBRARY_MACOS}
-            ${CACTUS_XGRAMMAR_LIBRARY_MACOS}
         )
         target_include_directories(${target_name} PUBLIC ${CACTUS_CURL_INCLUDE_DIR})
-        target_include_directories(${target_name} SYSTEM PUBLIC ${CACTUS_XGRAMMAR_INCLUDE_DIR})
         target_compile_definitions(${target_name} PRIVATE CACTUS_USE_CURL=1)
-        target_compile_definitions(${target_name} PRIVATE CACTUS_USE_XGRAMMAR=1)
     elseif(CURL_FOUND)
         target_include_directories(${target_name} PRIVATE ${CURL_INCLUDE_DIRS})
         target_link_libraries(${target_name} PUBLIC ${CURL_LIBRARIES})

@@ -94,6 +94,7 @@ target_link_libraries(cactus ${LOG_LIB} android)
 
 set(CACTUS_CURL_INCLUDE_DIR "${CACTUS_CURL_ROOT}/include")
 set(CACTUS_CURL_LIBRARY_ANDROID "${CACTUS_CURL_ROOT}/android/${ANDROID_ABI}/libcurl.a")
+set(CACTUS_XGRAMMAR_LIBRARY_ANDROID "${CACTUS_XGRAMMAR_ROOT}/android/${ANDROID_ABI}/libxgrammar.a")
 set(CACTUS_MBEDTLS_ROOT "${CMAKE_SOURCE_DIR}/mbedtls/${ANDROID_ABI}")
 if(NOT EXISTS "${CACTUS_MBEDTLS_ROOT}")
     set(CACTUS_MBEDTLS_ROOT "${CMAKE_SOURCE_DIR}/../libs/mbedtls/android/${ANDROID_ABI}")
@@ -122,6 +123,16 @@ if(EXISTS "${CACTUS_CURL_INCLUDE_DIR}/curl/curl.h" AND EXISTS "${CACTUS_CURL_LIB
     target_link_libraries(cactus_static "${CACTUS_MBEDTLS_LIBRARY}" "${CACTUS_MBEDX509_LIBRARY}" "${CACTUS_MBEDCRYPTO_LIBRARY}")
 else()
     message(FATAL_ERROR "Vendored Android libcurl not found. Expected: ${CACTUS_CURL_INCLUDE_DIR}/curl/curl.h and ${CACTUS_CURL_LIBRARY_ANDROID}")
+endif()
+
+if(EXISTS "${CACTUS_XGRAMMAR_INCLUDE_DIR}/xgrammar/xgrammar.h" AND EXISTS "${CACTUS_XGRAMMAR_LIBRARY_ANDROID}")
+    message(STATUS "Using vendored xgrammar for Android: ${CACTUS_XGRAMMAR_LIBRARY_ANDROID}")
+    target_compile_definitions(cactus PRIVATE CACTUS_USE_XGRAMMAR=1)
+    target_compile_definitions(cactus_static PRIVATE CACTUS_USE_XGRAMMAR=1)
+    target_link_libraries(cactus "${CACTUS_XGRAMMAR_LIBRARY_ANDROID}")
+    target_link_libraries(cactus_static "${CACTUS_XGRAMMAR_LIBRARY_ANDROID}")
+else()
+    message(FATAL_ERROR "Vendored Android xgrammar not found. Expected: ${CACTUS_XGRAMMAR_INCLUDE_DIR}/xgrammar/xgrammar.h and ${CACTUS_XGRAMMAR_LIBRARY_ANDROID}")
 endif()
 
 set(COMMON_COMPILE_DEFINITIONS
