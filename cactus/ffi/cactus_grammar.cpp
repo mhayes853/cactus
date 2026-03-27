@@ -29,6 +29,12 @@ static cactus_grammar_t handle_exception(const char* operation, const std::strin
     return nullptr;
 }
 
+static bool handle_bool_exception(const char* operation, const std::string& error) {
+    last_error_message = std::string(operation) + ": " + error;
+    CACTUS_LOG_ERROR("grammar", last_error_message);
+    return false;
+}
+
 } // anonymous namespace
 
 extern "C" {
@@ -136,6 +142,22 @@ cactus_grammar_t cactus_grammar_concatenate(cactus_grammar_t* grammars, size_t n
     } catch (const std::exception& e) {
         return handle_exception("cactus_grammar_concatenate", e.what());
     }
+}
+
+bool cactus_grammar_is_empty(cactus_grammar_t grammar) {
+    if (!grammar) {
+        return handle_bool_exception("cactus_grammar_is_empty", "grammar is null");
+    }
+
+    return static_cast<CactusGrammarHandle*>(grammar)->grammar->is_empty();
+}
+
+bool cactus_grammar_is_universal(cactus_grammar_t grammar) {
+    if (!grammar) {
+        return handle_bool_exception("cactus_grammar_is_universal", "grammar is null");
+    }
+
+    return static_cast<CactusGrammarHandle*>(grammar)->grammar->is_universal();
 }
 
 void cactus_grammar_destroy(cactus_grammar_t grammar) {

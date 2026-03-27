@@ -251,6 +251,8 @@ CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_regex(const char* regex);
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_structural_tag(const char* structural_tag_json);
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_union(cactus_grammar_t* grammars, size_t num_grammars);
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_concatenate(cactus_grammar_t* grammars, size_t num_grammars);
+CACTUS_FFI_EXPORT bool cactus_grammar_is_empty(cactus_grammar_t grammar);
+CACTUS_FFI_EXPORT bool cactus_grammar_is_universal(cactus_grammar_t grammar);
 CACTUS_FFI_EXPORT void cactus_grammar_destroy(cactus_grammar_t grammar);
 
 #ifdef __cplusplus
