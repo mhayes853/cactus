@@ -509,24 +509,36 @@ void cactus_softmax_f16(
 }
 
 void cactus_bitmask_f32(float* logits, size_t vocab_size, const int32_t* bitmask, size_t bitmask_size) {
-    if (!bitmask || bitmask_size == 0) {
-        return;
-    }
+    if (!bitmask || bitmask_size == 0) return;
 
     const float neg_inf = -std::numeric_limits<float>::infinity();
-    for (size_t token_id = 0; token_id < vocab_size; ++token_id) {
-        const size_t word_index = token_id >> 5;
-        if (word_index >= bitmask_size) {
-            logits[token_id] = neg_inf;
-            continue;
-        }
+    const float32x4_t neg_inf_vec = vdupq_n_f32(neg_inf);
+    const uint32x4_t one = vdupq_n_u32(1u);
+    const int32x4_t shifts_lo = {0, -1, -2, -3};
+    const int32x4_t shifts_hi = {-4, -5, -6, -7};
+    const uint8_t* bitmask_bytes = reinterpret_cast<const uint8_t*>(bitmask);
+    const size_t bitmask_bytes_size = bitmask_size * sizeof(int32_t);
 
-        const uint32_t word = static_cast<uint32_t>(bitmask[word_index]);
-        const uint32_t bit_index = static_cast<uint32_t>(token_id & 31);
-        const bool allowed = ((word >> bit_index) & 1u) != 0u;
-        if (!allowed) {
-            logits[token_id] = neg_inf;
-        }
+    size_t i = 0;
+    for (; i + 8 <= vocab_size; i += 8) {
+        const size_t byte_index = i >> 3;
+        const uint32_t bits = byte_index < bitmask_bytes_size ? bitmask_bytes[byte_index] : 0;
+
+        float32x4_t x0 = vld1q_f32(logits + i);
+        float32x4_t x1 = vld1q_f32(logits + i + 4);
+        const uint32x4_t bits_vec = vdupq_n_u32(bits);
+        const uint32x4_t m0 = vceqq_u32(vandq_u32(vshlq_u32(bits_vec, shifts_lo), one), one);
+        const uint32x4_t m1 = vceqq_u32(vandq_u32(vshlq_u32(bits_vec, shifts_hi), one), one);
+
+        vst1q_f32(logits + i, vbslq_f32(m0, x0, neg_inf_vec));
+        vst1q_f32(logits + i + 4, vbslq_f32(m1, x1, neg_inf_vec));
+    }
+
+    for (; i < vocab_size; ++i) {
+        const size_t byte_index = i >> 3;
+        const uint8_t bits = byte_index < bitmask_bytes_size ? bitmask_bytes[byte_index] : 0;
+        const uint8_t bit = (bits >> (i & 7)) & 1;
+        if (!bit) logits[i] = neg_inf;
     }
 }
 
@@ -717,28 +729,12 @@ void cactus_sample_f32(const float* logits, uint32_t* output, size_t vocab_size,
     output[0] = 0;
 }
 
-static uint16_t f16_bitmask_table[256][8];
-static bool did_init_f16_bitmask_table = false;
-
-static void init_f16_bitmask_table() {
-    if (did_init_f16_bitmask_table) return;
-    for (int b = 0; b < 256; ++b) {
-        for (int i = 0; i < 8; ++i) {
-            f16_bitmask_table[b][i] = ((b >> i) & 1) ? 0xFFFF : 0x0000;
-        }
-    }
-    did_init_f16_bitmask_table = true;
-}
-
-
 void cactus_bitmask_f16(__fp16* logits, size_t vocab_size, const int32_t* bitmask, size_t bitmask_size) {
-    if (!bitmask || bitmask_size == 0) {
-        return;
-    }
+    if (!bitmask || bitmask_size == 0) return;
 
-    init_f16_bitmask_table();
-
-    const float16x8_t neg_inf = vreinterpretq_f16_u16(vdupq_n_u16(0xFC00));
+    const float16x8_t neg_inf = vdupq_n_f16((__fp16)-__builtin_inff());
+    const uint16x8_t one = vdupq_n_u16(1u);
+    const int16x8_t shifts = {0, -1, -2, -3, -4, -5, -6, -7};
     const uint8_t* bitmask_bytes = reinterpret_cast<const uint8_t*>(bitmask);
     const size_t bitmask_bytes_size = bitmask_size * sizeof(int32_t);
 
@@ -746,11 +742,11 @@ void cactus_bitmask_f16(__fp16* logits, size_t vocab_size, const int32_t* bitmas
 
     for (; i + 8 <= vocab_size; i += 8) {
         const size_t byte_index = i >> 3;
-        const uint8_t table_index = byte_index < bitmask_bytes_size ? bitmask_bytes[byte_index] : 0;
+        const uint16_t bits = byte_index < bitmask_bytes_size ? bitmask_bytes[byte_index] : 0;
+        const uint16x8_t bits_vec = vdupq_n_u16(bits);
         float16x8_t x = vld1q_f16(logits + i);
-        uint16x8_t m = vld1q_u16(f16_bitmask_table[table_index]);
-        float16x8_t y = vbslq_f16(m, x, neg_inf);
-        vst1q_f16(logits + i, y);
+        const uint16x8_t m = vceqq_u16(vandq_u16(vshlq_u16(bits_vec, shifts), one), one);
+        vst1q_f16(logits + i, vbslq_f16(m, x, neg_inf));
     }
 
     for (; i < vocab_size; ++i) {

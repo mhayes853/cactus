@@ -38,9 +38,9 @@ double time_operation(std::function<void()> operation, int iterations) {
 
 template<typename T>
 void setup_random_data(std::vector<T>& data) {
-    if constexpr (std::is_same_v<T, int8_t>) {
+    if constexpr (std::is_same<T, int8_t>::value) {
         TestUtils::fill_random_int8(data);
-    } else if constexpr (std::is_same_v<T, __fp16>) {
+    } else if constexpr (std::is_same<T, __fp16>::value) {
         TestUtils::fill_random_fp16(data);
     } else {
         TestUtils::fill_random_float(data);
@@ -62,6 +62,32 @@ std::string backend_to_string(ComputeBackend backend) {
 
 double calculate_gflops(size_t ops, double time_ms) {
     return ops / (time_ms * 1e6);
+}
+
+std::vector<int32_t> build_token_bitmask(size_t vocab_size, size_t allow_every) {
+    const size_t bitmask_words = (vocab_size + 31) / 32;
+    std::vector<int32_t> bitmask(bitmask_words, 0);
+
+    for (size_t token_id = 0; token_id < vocab_size; ++token_id) {
+        if (allow_every == 0 || (token_id % allow_every) != 0) {
+            continue;
+        }
+
+        const size_t word_index = token_id >> 5;
+        const uint32_t bit_index = static_cast<uint32_t>(token_id & 31);
+        bitmask[word_index] |= static_cast<int32_t>(1u << bit_index);
+    }
+
+    return bitmask;
+}
+
+template<typename T>
+void run_bitmask_kernel(T* logits, size_t vocab_size, const int32_t* bitmask, size_t bitmask_size) {
+    if constexpr (std::is_same<T, float>::value) {
+        cactus_bitmask_f32(logits, vocab_size, bitmask, bitmask_size);
+    } else {
+        cactus_bitmask_f16(logits, vocab_size, bitmask, bitmask_size);
+    }
 }
 
 void benchmark_streaming_stores(TestUtils::TestRunner& runner, const BenchmarkConfig& config) {
@@ -89,6 +115,43 @@ void benchmark_streaming_stores(TestUtils::TestRunner& runner, const BenchmarkCo
 }
 
 template<typename T>
+void benchmark_bitmask_ops(TestUtils::TestRunner& runner, const BenchmarkConfig& config) {
+    const std::vector<size_t> vocab_sizes = {65536, 256000};
+    const std::vector<std::pair<std::string, size_t>> mask_patterns = {
+        {"50% allowed", 2},
+        {"12.5% allowed", 8},
+    };
+
+    const std::string precision = std::is_same<T, float>::value ? "FP32" : "FP16";
+    const int iterations = std::max(config.iterations * 10, 50);
+
+    for (size_t vocab_size : vocab_sizes) {
+        std::vector<T> source_logits(vocab_size);
+        setup_random_data(source_logits);
+
+        for (const auto& [mask_label, allow_every] : mask_patterns) {
+            std::vector<T> working_logits(source_logits);
+            std::vector<int32_t> bitmask = build_token_bitmask(vocab_size, allow_every);
+
+            double time_ms = time_operation<T>([&]() {
+                run_bitmask_kernel(working_logits.data(), vocab_size, bitmask.data(), bitmask.size());
+            }, iterations);
+
+            const double mtok_per_sec = vocab_size / (time_ms * 1e3);
+            const double gb_per_sec = (vocab_size * sizeof(T) * 2) / (time_ms * 1e6);
+
+            std::ostringstream details;
+            details << std::fixed << std::setprecision(3) << time_ms << "ms, "
+                    << std::setprecision(2) << mtok_per_sec << " M tok/s, "
+                    << std::setprecision(2) << gb_per_sec << " GB/s";
+            runner.log_performance(
+                "Bitmask " + precision + " " + std::to_string(vocab_size / 1000) + "k " + mask_label,
+                details.str());
+        }
+    }
+}
+
+template<typename T>
 void benchmark_binary_elementwise_ops(TestUtils::TestRunner& runner, const BenchmarkConfig& config) {
     const std::vector<std::pair<std::string, std::function<size_t(CactusGraph&, size_t, size_t)>>> ops = {
         {"Add", [](CactusGraph& b, size_t a, size_t c) { return b.add(a, c); }},
@@ -99,30 +162,30 @@ void benchmark_binary_elementwise_ops(TestUtils::TestRunner& runner, const Bench
 
     Precision precision = TestUtils::default_precision<T>();
     std::string prec_str = precision_to_string(precision);
-    
+
     for (const auto& [op_name, op_func] : ops) {
         for (size_t dim : config.dimensions) {
             size_t total_elements = dim * dim;
-            
+
             TestUtils::TestFixture<T> fixture(op_name);
             size_t input_a = fixture.create_input({dim, dim}, precision);
             size_t input_b = fixture.create_input({dim, dim}, precision);
-            
+
             std::vector<T> data_a(total_elements), data_b(total_elements);
             setup_random_data(data_a);
             setup_random_data(data_b);
-            
+
             fixture.set_input_data(input_a, data_a, precision);
             fixture.set_input_data(input_b, data_b, precision);
-            
+
             op_func(fixture.graph(), input_a, input_b);
 
             double time_ms = time_operation<T>([&]() {
                 fixture.execute();
             }, config.iterations);
-            
+
             double gflops = calculate_gflops(total_elements, time_ms);
-            
+
             std::ostringstream details;
             details << std::fixed << std::setprecision(3) << time_ms << "ms, "
                     << std::setprecision(2) << gflops << " GFLOPS";
@@ -299,7 +362,7 @@ void benchmark_matmul_ops(TestUtils::TestRunner& runner, const BenchmarkConfig& 
 }
 
 void benchmark_matmul_int8_grouped(TestUtils::TestRunner& runner, const BenchmarkConfig& config) {
-    const size_t group_size = 64; 
+    const size_t group_size = 64;
 
     std::vector<std::tuple<size_t, size_t, size_t>> shapes = {
         {1, 1024, 1024},
@@ -492,7 +555,7 @@ void benchmark_rms_norm(TestUtils::TestRunner& runner, const BenchmarkConfig& co
                 << std::setprecision(2) << gb_per_sec << " GB/s";
         runner.log_performance("RMSNorm " + std::to_string(dim) + "x" + std::to_string(dim),
                              details.str());
-        
+
         graph.hard_reset();
     }
 }
@@ -581,15 +644,15 @@ void benchmark_attention(TestUtils::TestRunner& runner, const BenchmarkConfig& c
 
 template<typename T>
 void benchmark_attention_hybrid_int8(TestUtils::TestRunner& runner, const BenchmarkConfig& config) {
-    static_assert(std::is_same_v<T, __fp16>, "Hybrid attention benchmark requires FP16");
+    static_assert(std::is_same<T, __fp16>::value, "Hybrid attention benchmark requires FP16");
 
     {
         size_t batch_size = 1;
         size_t num_q_heads = 16;
         size_t num_kv_heads = 8;
         size_t head_dim = 128;
-        size_t new_len = 1;     
-        size_t cache_len = 1024;  
+        size_t new_len = 1;
+        size_t cache_len = 1024;
         constexpr size_t group_size = KV_QUANT_GROUP_SIZE;
 
         size_t q_elements = batch_size * new_len * num_q_heads * head_dim;
@@ -979,6 +1042,13 @@ bool test_streaming_stores_performance(TestUtils::TestRunner& runner) {
     return true;
 }
 
+bool test_bitmask_operations_performance(TestUtils::TestRunner& runner) {
+    BenchmarkConfig config;
+    benchmark_bitmask_ops<float>(runner, config);
+    benchmark_bitmask_ops<__fp16>(runner, config);
+    return true;
+}
+
 bool test_conv1d_operations_performance(TestUtils::TestRunner& runner) {
     BenchmarkConfig config;
     benchmark_conv1d_ops(runner, config);
@@ -1186,6 +1256,7 @@ int main() {
     TestUtils::TestRunner runner("Performance Benchmarks");
 
     runner.run_test("Streaming Stores", test_streaming_stores_performance(runner));
+    runner.run_test("Bitmask Operations", test_bitmask_operations_performance(runner));
     runner.run_test("Conv1D Operations", test_conv1d_operations_performance(runner));
     runner.run_test("Broadcast Operations", test_broadcast_operations_performance(runner));
     runner.run_test("Binary Element-wise Operations", test_binary_elementwise_performance(runner));

@@ -328,6 +328,9 @@ void cactus_conv1d_pointwise_f16_gemm(
 void cactus_bilinear_interpolation_f16(const __fp16* input, __fp16* output, size_t src_height, size_t src_width, size_t embed_dim,
                                        size_t dst_height, size_t dst_width);
 
+void cactus_bitmask_f32(float* logits, size_t vocab_size, const int32_t* bitmask, size_t bitmask_size);
+void cactus_bitmask_f16(__fp16* logits, size_t vocab_size, const int32_t* bitmask, size_t bitmask_size);
+
 void cactus_sample_f32(const float* logits, uint32_t* output, size_t vocab_size,
                        float temperature, float top_p, size_t top_k, size_t random_seed,
                        const int32_t* bitmask = nullptr, size_t bitmask_size = 0,
