@@ -1,5 +1,4 @@
 #include "test_utils.h"
-#include "../cactus/ffi/cactus_utils.h"
 
 #include <cstdlib>
 #include <fstream>

@@ -7,24 +7,6 @@
 namespace cactus {
 namespace engine {
 
-static const Grammar& reasoning_grammar() {
-    static const Grammar grammar = Grammar::gbnf(R"(
-        root ::= think?
-        think ::= "<think>\n" any_non_closing_think_character* "\n</think>\n\n"
-        any_non_closing_think_character ::= (
-            [^<]
-            | "<" [^/]
-            | "</" [^t]
-            | "</t" [^h]
-            | "</th" [^i]
-            | "</thi" [^n]
-            | "</thin" [^k]
-            | "</think" [^>]
-        )
-    )");
-    return grammar;
-}
-
 Grammar::Grammar() : grammar(xgrammar::NullObj{}), is_universal_(false) {}
 
 Grammar::Grammar(xgrammar::Grammar raw_grammar)
@@ -52,7 +34,6 @@ static const std::string& require_string_field(
     return object.at(field_name).get<std::string>();
 }
 
-// TODO: - Does this belong here?
 std::vector<ToolDefinition> ToolDefinition::parse_tools_json(const std::string& tools_json) {
     if (tools_json.empty()) {
         throw std::runtime_error("tools_json must not be empty");
@@ -253,6 +234,25 @@ Grammar Grammar::concatenate(const std::vector<Grammar>& grammars) {
         handles.push_back(grammar.raw_value());
     }
     return handles.empty() ? Grammar() : Grammar(xgrammar::Grammar::Concat(handles));
+}
+
+static Grammar reasoning_grammar() {
+    static const auto grammar = Grammar::structural_tag(R"({
+        "type": "structural_tag",
+        "format": {
+            "type": "optional",
+            "content": {
+                "type": "tag",
+                "begin": "<think>\n",
+                "content": {
+                    "type": "any_text",
+                    "excludes": ["</think>"]
+                },
+                "end": "\n</think>\n\n"
+            }
+        }
+    })");
+    return grammar;
 }
 
 Grammar Grammar::model_decode_grammar(
