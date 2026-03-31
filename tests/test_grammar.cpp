@@ -39,7 +39,7 @@ static bool accept_text(GrammarMatcher& matcher, const GrammarFixture& fixture, 
         return false;
     }
     for (uint32_t token : tokens) {
-        if (!matcher.accept(token)) {
+        if (!matcher.accept(token, false)) {
             return false;
         }
     }
@@ -51,7 +51,7 @@ static bool accepts_complete_text(const Grammar& grammar, const GrammarFixture& 
     if (!accept_text(matcher, fixture, text)) {
         return false;
     }
-    return matcher.accept(fixture.tokenizer->get_eos_token());
+    return matcher.accept(fixture.tokenizer->get_eos_token(), false);
 }
 
 static bool rejects_text(const Grammar& grammar, const GrammarFixture& fixture, const std::string& text) {
@@ -64,7 +64,7 @@ static bool rejects_eos_after_text(const Grammar& grammar, const GrammarFixture&
     if (!accept_text(matcher, fixture, text)) {
         return true;
     }
-    return !matcher.accept(fixture.tokenizer->get_eos_token());
+    return !matcher.accept(fixture.tokenizer->get_eos_token(), false);
 }
 
 static bool test_empty_grammar_properties() {
@@ -532,14 +532,14 @@ static bool test_grammar_matcher_reset_restores_initial_state(const GrammarFixtu
     if (!accept_text(matcher, fixture, "hello")) {
         return false;
     }
-    if (!matcher.accept(fixture.tokenizer->get_eos_token())) {
+    if (!matcher.accept(fixture.tokenizer->get_eos_token(), false)) {
         return false;
     }
 
     matcher.reset();
     return rejects_text(grammar, fixture, "goodbye")
         && accept_text(matcher, fixture, "hello")
-        && matcher.accept(fixture.tokenizer->get_eos_token());
+        && matcher.accept(fixture.tokenizer->get_eos_token(), false);
 }
 
 

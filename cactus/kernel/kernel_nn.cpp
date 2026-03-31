@@ -8,6 +8,7 @@
 #include <cstring>
 #include <limits>
 #include <random>
+#include <iostream>
 
 void cactus_relu_f16(const __fp16* input, __fp16* output, size_t num_elements) {
     for (size_t i = 0; i < num_elements; ++i) {
@@ -521,9 +522,7 @@ void cactus_bitmask_f32(float* logits, size_t vocab_size, const int32_t* bitmask
 
     size_t i = 0;
     for (; i + 8 <= vocab_size; i += 8) {
-        const size_t byte_index = i >> 3;
-        const uint32_t bits = byte_index < bitmask_bytes_size ? bitmask_bytes[byte_index] : 0;
-
+        const uint32_t bits = bitmask_bytes[i >> 3];
         float32x4_t x0 = vld1q_f32(logits + i);
         float32x4_t x1 = vld1q_f32(logits + i + 4);
         const uint32x4_t bits_vec = vdupq_n_u32(bits);
@@ -535,8 +534,7 @@ void cactus_bitmask_f32(float* logits, size_t vocab_size, const int32_t* bitmask
     }
 
     for (; i < vocab_size; ++i) {
-        const size_t byte_index = i >> 3;
-        const uint8_t bits = byte_index < bitmask_bytes_size ? bitmask_bytes[byte_index] : 0;
+        const uint8_t bits = bitmask_bytes[i >> 3];
         const uint8_t bit = (bits >> (i & 7)) & 1;
         if (!bit) logits[i] = neg_inf;
     }
@@ -741,8 +739,7 @@ void cactus_bitmask_f16(__fp16* logits, size_t vocab_size, const int32_t* bitmas
     size_t i = 0;
 
     for (; i + 8 <= vocab_size; i += 8) {
-        const size_t byte_index = i >> 3;
-        const uint16_t bits = byte_index < bitmask_bytes_size ? bitmask_bytes[byte_index] : 0;
+        const uint16_t bits = bitmask_bytes[i >> 3];
         const uint16x8_t bits_vec = vdupq_n_u16(bits);
         float16x8_t x = vld1q_f16(logits + i);
         const uint16x8_t m = vceqq_u16(vandq_u16(vshlq_u16(bits_vec, shifts), one), one);
@@ -750,8 +747,7 @@ void cactus_bitmask_f16(__fp16* logits, size_t vocab_size, const int32_t* bitmas
     }
 
     for (; i < vocab_size; ++i) {
-        const size_t byte_index = i >> 3;
-        const uint8_t bits = byte_index < bitmask_bytes_size ? bitmask_bytes[byte_index] : 0;
+        const uint8_t bits = bitmask_bytes[i >> 3];
         const uint8_t bit = (bits >> (i & 7)) & 1;
         if (!bit) logits[i] = (__fp16)-__builtin_inff();
     }

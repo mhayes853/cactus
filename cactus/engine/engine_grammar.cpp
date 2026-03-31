@@ -315,8 +315,12 @@ void GrammarMatcher::reset() {
     matcher.Reset();
 }
 
-bool GrammarMatcher::accept(uint32_t token_id) {
-    return matcher.AcceptToken(token_id);
+bool GrammarMatcher::accept(uint32_t token_id, bool log_rejection) {
+    const bool accepted = matcher.AcceptToken(token_id);
+    if (!accepted && log_rejection) {
+        CACTUS_LOG_WARN("model decode", "Token id: " << token_id << " was not accepted by grammar matcher.");
+    }
+    return accepted;
 }
 
 bool GrammarMatcher::next_bitmask(std::vector<int32_t>& token_bitmask) {

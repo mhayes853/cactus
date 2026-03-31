@@ -288,7 +288,7 @@ public:
     ~GrammarMatcher() = default;
 
     void reset();
-    bool accept(uint32_t token_id);
+    bool accept(uint32_t token_id, bool log_rejection = true);
     bool next_bitmask(std::vector<int32_t>& token_bitmask);
 
     xgrammar::GrammarMatcher matcher;

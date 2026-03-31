@@ -254,8 +254,8 @@ uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, f
     update_kv_cache(gb, tokens.size());
 
     uint32_t token_id = *static_cast<uint32_t*>(gb->get_output(sampled_token_id));
-    if (matcher && !matcher->accept(token_id)) {
-        CACTUS_LOG_WARN("model decode", "Token id: " + std::to_string(token_id) + " was not accepted by grammar matcher.");
+    if (matcher) {
+        matcher->accept(token_id);
     }
     return token_id;
 }
