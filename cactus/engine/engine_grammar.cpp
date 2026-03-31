@@ -185,9 +185,73 @@ static Grammar gemma_style_tool_call_grammar(const std::vector<ToolDefinition>& 
     return Grammar();
 }
 
+static std::string gbnf_escape_literal(const std::string& value) {
+    std::string escaped;
+    escaped.reserve(value.size());
+    for (char c : value) {
+        if (c == '\\' || c == '"') {
+            escaped.push_back('\\');
+        }
+        escaped.push_back(c);
+    }
+    return escaped;
+}
+
+static std::string lfm2_tool_name_rule(const std::vector<ToolDefinition>& tools) {
+    if (tools.empty()) {
+        throw std::runtime_error("lfm2_style_tool_call requires at least one tool definition");
+    }
+
+    std::string rule = "tool_name ::= ";
+    for (size_t i = 0; i < tools.size(); ++i) {
+        const auto& tool = tools[i];
+        if (tool.name.empty()) {
+            throw std::runtime_error("tool definitions must have a non-empty name");
+        }
+        if (i > 0) {
+            rule += " | ";
+        }
+        rule += "\"" + gbnf_escape_literal(tool.name) + "\"";
+    }
+    return rule;
+}
+
+static std::string lfm2_tool_call_gbnf(const std::vector<ToolDefinition>& tools) {
+    return std::string(R"GRAMMAR(root ::= tool_block+
+tool_block ::= tool_call_start "[" call_list "]" tool_call_end
+call_list ::= call ("," call)*
+call ::= tool_name "(" kwarg_list? ")"
+kwarg_list ::= kwarg ("," kwarg)*
+kwarg ::= ident "=" value
+value ::= string | number | boolean | none | list | dict
+list ::= "[" list_items? "]"
+list_items ::= value ("," value)*
+dict ::= "{" dict_items? "}"
+dict_items ::= dict_item ("," dict_item)*
+dict_item ::= dict_key ":" value
+dict_key ::= string | ident
+boolean ::= "True" | "False" | "true" | "false"
+none ::= "None" | "null"
+number ::= "-"? int frac? exp?
+int ::= "0" | nonzero_digit digit*
+frac ::= "." digit+
+exp ::= ("e" | "E") ("+" | "-")? digit+
+string ::= "\"" string_char* "\""
+string_char ::= unescaped | "\\" escape
+unescaped ::= [^"\\]
+escape ::= "\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t"
+ident ::= ident_start ident_continue*
+ident_start ::= [A-Za-z_]
+ident_continue ::= [A-Za-z0-9_]
+digit ::= [0-9]
+nonzero_digit ::= [1-9]
+tool_call_start ::= "<|tool_call_start|>"
+tool_call_end ::= "<|tool_call_end|>"
+)GRAMMAR") + lfm2_tool_name_rule(tools) + "\n";
+}
+
 static Grammar lfm2_style_tool_call_grammar(const std::vector<ToolDefinition>& tools) {
-    (void)tools;
-    return Grammar();
+    return Grammar::gbnf(lfm2_tool_call_gbnf(tools));
 }
 
 static Grammar model_tool_call_grammar(
@@ -237,21 +301,20 @@ Grammar Grammar::concatenate(const std::vector<Grammar>& grammars) {
 }
 
 static Grammar reasoning_grammar() {
-    static const auto grammar = Grammar::structural_tag(R"({
-        "type": "structural_tag",
-        "format": {
-            "type": "optional",
-            "content": {
-                "type": "tag",
-                "begin": "<think>\n",
-                "content": {
-                    "type": "any_text",
-                    "excludes": ["</think>"]
-                },
-                "end": "\n</think>\n\n"
-            }
-        }
-    })");
+    static const auto grammar = Grammar::gbnf(R"(
+        root ::= think?
+        think ::= "<think>\n" any_non_thinking_character* "\n</think>\n\n"
+        any_non_thinking_character ::= (
+            [^<]
+            | "<" [^/]
+            | "</" [^t]
+            | "</t" [^h]
+            | "</th" [^i]
+            | "</thi" [^n]
+            | "</thin" [^k]
+            | "</think" [^>]
+        )
+    )");
     return grammar;
 }
 

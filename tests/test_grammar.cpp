@@ -241,44 +241,42 @@ static std::string tool_call_structural_tag_json() {
     })";
 }
 
-static std::string qwen_tools_json() {
-    return R"([
-        {
-            "type": "function",
-            "function": {
-                "name": "send_message",
-                "description": "Send a message",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "recipient": {"type": "string"},
-                        "message": {"type": "string"}
-                    },
-                    "required": ["recipient", "message"],
-                    "additionalProperties": false
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_weather",
-                "description": "Get weather",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "location": {"type": "string"}
-                    },
-                    "required": ["location"],
-                    "additionalProperties": false
-                }
+const static std::string tools_json = R"([
+    {
+        "type": "function",
+        "function": {
+            "name": "send_message",
+            "description": "Send a message",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "recipient": {"type": "string"},
+                    "message": {"type": "string"}
+                },
+                "required": ["recipient", "message"],
+                "additionalProperties": false
             }
         }
-    ])";
-}
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get weather",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {"type": "string"}
+                },
+                "required": ["location"],
+                "additionalProperties": false
+            }
+        }
+    }
+])";
 
 static bool test_tool_definition_parse_tools_json() {
-    std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(qwen_tools_json());
+    std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(tools_json);
     return tools.size() == 2
         && tools[0].name == "send_message"
         && tools[0].arguments_schema.is<picojson::object>()
@@ -330,8 +328,13 @@ static bool test_tool_definition_rejects_invalid_tools_json() {
 }
 
 static Grammar qwen_style_tool_call_grammar_from_tools_json() {
-    std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(qwen_tools_json());
+    std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(tools_json);
     return Grammar::model_decode_grammar(Grammar(), true, false, Config::ModelType::QWEN, tools);
+}
+
+static Grammar lfm2_style_tool_call_grammar_from_tools_json() {
+    std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(tools_json);
+    return Grammar::model_decode_grammar(Grammar(), true, false, Config::ModelType::LFM2, tools);
 }
 
 static bool test_qwen_style_tool_call_accepts_single_tool_call(const GrammarFixture& fixture) {
@@ -381,6 +384,66 @@ static bool test_qwen_style_tool_call_rejects_malformed_wrapper(const GrammarFix
         grammar,
         fixture,
         "<tool_call>\n{\"name\": \"send_message\", \"arguments\": {\"recipient\":\"Blob\",\"message\":\"Hello Blob!\"}}"
+    );
+}
+
+static bool test_lfm2_style_tool_call_accepts_single_tool_call(const GrammarFixture& fixture) {
+    Grammar grammar = lfm2_style_tool_call_grammar_from_tools_json();
+
+    return accepts_complete_text(
+        grammar,
+        fixture,
+        "<|tool_call_start|>[send_message(recipient=\"Blob\",message=\"Hello Blob!\")]<|tool_call_end|>"
+    );
+}
+
+static bool test_lfm2_style_tool_call_accepts_repeated_tool_calls(const GrammarFixture& fixture) {
+    Grammar grammar = lfm2_style_tool_call_grammar_from_tools_json();
+
+    return accepts_complete_text(
+        grammar,
+        fixture,
+        "<|tool_call_start|>[send_message(recipient=\"Blob\",message=\"Hello Blob!\"),get_weather(location=\"San Francisco\")]<|tool_call_end|>"
+    );
+}
+
+static bool test_lfm2_style_tool_call_accepts_pythonic_literals(const GrammarFixture& fixture) {
+    Grammar grammar = lfm2_style_tool_call_grammar_from_tools_json();
+
+    return accepts_complete_text(
+        grammar,
+        fixture,
+        "<|tool_call_start|>[send_message(recipient=\"Blob\",message={text:\"Hi\",attempts:2,urgent:True,aliases:[\"A\",\"B\"],metadata:{active:false,score:-1.25e2,note:None}})]<|tool_call_end|>"
+    );
+}
+
+static bool test_lfm2_style_tool_call_rejects_unknown_tool(const GrammarFixture& fixture) {
+    Grammar grammar = lfm2_style_tool_call_grammar_from_tools_json();
+
+    return rejects_text(
+        grammar,
+        fixture,
+        "<|tool_call_start|>[unknown_tool(recipient=\"Blob\")]<|tool_call_end|>"
+    );
+}
+
+static bool test_lfm2_style_tool_call_rejects_malformed_wrapper(const GrammarFixture& fixture) {
+    Grammar grammar = lfm2_style_tool_call_grammar_from_tools_json();
+
+    return rejects_eos_after_text(
+        grammar,
+        fixture,
+        "<|tool_call_start|>[send_message(recipient=\"Blob\",message=\"Hello Blob!\")]"
+    );
+}
+
+static bool test_lfm2_style_tool_call_rejects_malformed_literal(const GrammarFixture& fixture) {
+    Grammar grammar = lfm2_style_tool_call_grammar_from_tools_json();
+
+    return rejects_text(
+        grammar,
+        fixture,
+        "<|tool_call_start|>[send_message(recipient=\"Blob\",message={text:})]<|tool_call_end|>"
     );
 }
 
@@ -506,7 +569,7 @@ static bool test_model_decode_rejects_invalid_close_only_thinking_string(const G
 }
 
 static bool test_model_decode_qwen_with_tools_accepts_tool_call_after_thinking(const GrammarFixture& fixture) {
-    std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(qwen_tools_json());
+    std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(tools_json);
     Grammar combined = Grammar::model_decode_grammar(Grammar(), true, true, Config::ModelType::QWEN, tools);
 
     return accepts_complete_text(
@@ -518,7 +581,7 @@ static bool test_model_decode_qwen_with_tools_accepts_tool_call_after_thinking(c
 
 static bool test_model_decode_qwen_with_tools_allows_plain_text_when_not_forced(const GrammarFixture& fixture) {
     Grammar user_grammar = Grammar::gbnf("root ::= \"hello\"");
-    std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(qwen_tools_json());
+    std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(tools_json);
     Grammar combined = Grammar::model_decode_grammar(user_grammar, false, true, Config::ModelType::QWEN, tools);
 
     return accepts_complete_text(combined, fixture, "hello");
@@ -526,10 +589,21 @@ static bool test_model_decode_qwen_with_tools_allows_plain_text_when_not_forced(
 
 static bool test_model_decode_qwen_with_tools_rejects_plain_text_when_forced(const GrammarFixture& fixture) {
     Grammar user_grammar = Grammar::gbnf("root ::= \"hello\"");
-    std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(qwen_tools_json());
+    std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(tools_json);
     Grammar combined = Grammar::model_decode_grammar(user_grammar, true, true, Config::ModelType::QWEN, tools);
 
     return rejects_eos_after_text(combined, fixture, "hello");
+}
+
+static bool test_model_decode_lfm2_with_tools_accepts_tool_call_after_thinking(const GrammarFixture& fixture) {
+    std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(tools_json);
+    Grammar combined = Grammar::model_decode_grammar(Grammar(), true, true, Config::ModelType::LFM2, tools);
+
+    return accepts_complete_text(
+        combined,
+        fixture,
+        "<think>\nreasoning\n</think>\n\n<|tool_call_start|>[send_message(recipient=\"Blob\",message=\"Hello Blob!\")]<|tool_call_end|>"
+    );
 }
 
 static bool test_grammar_matcher_reset_restores_initial_state(const GrammarFixture& fixture) {
@@ -579,6 +653,12 @@ int main() {
         runner.run_test("qwen_style_tool_call_unknown_tool", test_qwen_style_tool_call_rejects_unknown_tool(fixture));
         runner.run_test("qwen_style_tool_call_invalid_arguments", test_qwen_style_tool_call_rejects_invalid_arguments(fixture));
         runner.run_test("qwen_style_tool_call_malformed_wrapper", test_qwen_style_tool_call_rejects_malformed_wrapper(fixture));
+        runner.run_test("lfm2_style_tool_call_single", test_lfm2_style_tool_call_accepts_single_tool_call(fixture));
+        runner.run_test("lfm2_style_tool_call_repeated", test_lfm2_style_tool_call_accepts_repeated_tool_calls(fixture));
+        runner.run_test("lfm2_style_tool_call_pythonic_literals", test_lfm2_style_tool_call_accepts_pythonic_literals(fixture));
+        runner.run_test("lfm2_style_tool_call_unknown_tool", test_lfm2_style_tool_call_rejects_unknown_tool(fixture));
+        runner.run_test("lfm2_style_tool_call_malformed_wrapper", test_lfm2_style_tool_call_rejects_malformed_wrapper(fixture));
+        runner.run_test("lfm2_style_tool_call_malformed_literal", test_lfm2_style_tool_call_rejects_malformed_literal(fixture));
         runner.run_test("model_decode_direct_output_reasoning", test_model_decode_accepts_direct_output_when_reasoning_enabled(fixture));
         runner.run_test("model_decode_thinking_then_output", test_model_decode_accepts_thinking_then_output(fixture));
         runner.run_test("model_decode_thinking_payload_less_than", test_model_decode_accepts_less_than_in_thinking_payload(fixture));
@@ -591,6 +671,7 @@ int main() {
         runner.run_test("model_decode_qwen_with_tools_tool_call_after_thinking", test_model_decode_qwen_with_tools_accepts_tool_call_after_thinking(fixture));
         runner.run_test("model_decode_qwen_with_tools_allows_plain_text_when_not_forced", test_model_decode_qwen_with_tools_allows_plain_text_when_not_forced(fixture));
         runner.run_test("model_decode_qwen_with_tools_rejects_plain_text_when_forced", test_model_decode_qwen_with_tools_rejects_plain_text_when_forced(fixture));
+        runner.run_test("model_decode_lfm2_with_tools_tool_call_after_thinking", test_model_decode_lfm2_with_tools_accepts_tool_call_after_thinking(fixture));
         runner.run_test("grammar_matcher_reset", test_grammar_matcher_reset_restores_initial_state(fixture));
     } catch (const std::exception& e) {
         std::cerr << "[✗] Grammar test setup failed: " << e.what() << "\n";
