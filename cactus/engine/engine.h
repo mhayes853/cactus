@@ -265,6 +265,7 @@ public:
     static Grammar concatenate(const std::vector<Grammar>& grammars);
     static Grammar model_decode_grammar(
         const Grammar& grammar,
+        bool force_tools,
         bool supports_reasoning,
         Config::ModelType model_type,
         const std::vector<ToolDefinition>& tools

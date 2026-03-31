@@ -45,22 +45,6 @@ void inject_rag_context(CactusModelHandle* handle, std::vector<ChatMessage>& mes
     }
 }
 
-void setup_tool_constraints(CactusModelHandle* handle, const std::vector<ToolFunction>& tools,
-                           bool force_tools, float& temperature) {
-    if (!force_tools || tools.empty()) return;
-
-    std::vector<std::string> function_names;
-    function_names.reserve(tools.size());
-    for (const auto& tool : tools) {
-        function_names.push_back(tool.name);
-    }
-    handle->model->set_tool_constraints(function_names);
-
-    if (temperature == 0.0f) {
-        temperature = 0.01f;
-    }
-}
-
 std::vector<std::vector<uint32_t>> build_stop_sequences(
     Tokenizer* tokenizer,
     const std::vector<std::string>& stop_sequences,
@@ -248,7 +232,6 @@ PreparedPrompt prepare_prompt(
     const char* messages_json,
     const char* options_json,
     const char* tools_json,
-    bool apply_tool_constraints,
     bool add_generation_prompt
 ) {
     if (!handle || !handle->model) {
@@ -276,10 +259,6 @@ PreparedPrompt prepare_prompt(
     }
 
     prompt.tools_json = serialize_tools_json(prompt.tools);
-
-    if (apply_tool_constraints) {
-        setup_tool_constraints(handle, prompt.tools, prompt.options.force_tools, prompt.options.temperature);
-    }
 
     auto* tokenizer = handle->model->get_tokenizer();
     prompt.thinking_supported =
@@ -440,11 +419,12 @@ int cactus_complete(
         auto* handle = static_cast<CactusModelHandle*>(model);
         handle->should_stop = false;
         auto* tokenizer = handle->model->get_tokenizer();
-        auto prompt = prepare_prompt(handle, messages_json, options_json, tools_json, true, true);
+        auto prompt = prepare_prompt(handle, messages_json, options_json, tools_json, true);
         const auto* user_grammar_handle = static_cast<const CactusGrammarHandle*>(grammar);
 
-        auto can_reuse_grammar_matcher = handle->grammar_matcher_handle.matches(
+        auto can_reuse_grammar_matcher = handle->grammar_matcher_handle.can_reuse(
             user_grammar_handle,
+            prompt.options.force_tools,
             prompt.thinking_supported,
             prompt.tools_json
         );
@@ -454,6 +434,7 @@ int cactus_complete(
             try {
                 handle->grammar_matcher_handle = CactusModelHandle::GrammarMatcherHandle::create(
                     user_grammar_handle,
+                    prompt.options.force_tools,
                     prompt.thinking_supported,
                     prompt.tools_json,
                     prompt.model_type,
@@ -526,10 +507,6 @@ int cactus_complete(
         generated_tokens.push_back(next_token);
         handle->processed_tokens.push_back(next_token);
 
-        if (prompt.options.force_tools && !prompt.tools.empty()) {
-            handle->model->update_tool_constraints(next_token);
-        }
-
         EntropyState entropy;
         entropy.add(first_token_entropy);
 
@@ -560,10 +537,6 @@ int cactus_complete(
                     maybe_start_cloud_handoff("", {});
                 }
 
-                if (prompt.options.force_tools && !prompt.tools.empty()) {
-                    handle->model->update_tool_constraints(next_token);
-                }
-
                 if (matches_stop_sequence(generated_tokens, stop_token_sequences)) {
                     trim_stop_suffix(generated_tokens, stop_token_sequences, prompt.options.include_stop_sequences);
                     break;
@@ -579,10 +552,6 @@ int cactus_complete(
         }
 
         confidence = entropy.mean_confidence();
-
-        if (prompt.options.force_tools && !prompt.tools.empty()) {
-            handle->model->clear_tool_constraints();
-        }
 
         auto end_time = std::chrono::high_resolution_clock::now();
         double total_time_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() / 1000.0;
@@ -750,7 +719,7 @@ int cactus_prefill(
         auto start_time = std::chrono::high_resolution_clock::now();
 
         auto* handle = static_cast<CactusModelHandle*>(model);
-        auto prompt = prepare_prompt(handle, messages_json, options_json, tools_json, false, false);
+        auto prompt = prepare_prompt(handle, messages_json, options_json, tools_json, false);
 
         std::vector<uint32_t> context_tokens(prompt.tokens.begin(), prompt.tokens.begin() + prompt.context_token_count);
         auto prefill_result = do_prefill(handle, prompt, context_tokens);

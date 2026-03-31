@@ -154,7 +154,7 @@ int cactus_complete(
 | `top_k` | int | 0 | Top-k sampling |
 | `stop_sequences` | array | [] | Stop generation on these strings |
 | `include_stop_sequences` | bool | false | Include stop sequence tokens in the response |
-| `force_tools` | bool | false | Constrain output to tool call format |
+| `force_tools` | bool | false | Enforce tool-call output via decode grammar; overrides any user grammar |
 | `tool_rag_top_k` | int | 2 | Select top-k relevant tools via Tool RAG (0 = disabled, use all tools) |
 | `confidence_threshold` | float | 0.7 | Minimum confidence for local generation; triggers cloud_handoff when below |
 | `auto_handoff` | bool | true | Automatically attempt cloud handoff when confidence is low |

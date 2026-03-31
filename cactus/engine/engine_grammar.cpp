@@ -148,15 +148,14 @@ Grammar Grammar::structural_tag(const std::string& structural_tag_json) {
     throw std::get<xgrammar::StructuralTagError>(result);
 }
 
-static std::string build_qwen_tool_structural_tag_json(const std::vector<ToolDefinition>& tools) {
+static std::string qwen_tool_structural_tag_json(const std::vector<ToolDefinition>& tools, bool force_tools) {
     if (tools.empty()) {
         throw std::runtime_error("qwen_style_tool_call requires at least one tool definition");
     }
 
     picojson::array tags;
 
-    for (size_t i = 0; i < tools.size(); ++i) {
-        const auto& tool = tools[i];
+    for (const auto& tool : tools) {
         if (!tool.arguments_schema.is<picojson::object>()) {
             throw std::runtime_error("tool '" + tool.name + "' arguments schema must be a JSON object");
         }
@@ -177,13 +176,18 @@ static std::string build_qwen_tool_structural_tag_json(const std::vector<ToolDef
         tags.push_back(picojson::value(tag));
     }
 
-    picojson::array triggers;
-    triggers.push_back(picojson::value("<tool_call>"));
-
     picojson::object format;
-    format["type"] = picojson::value("triggered_tags");
-    format["triggers"] = picojson::value(triggers);
-    format["tags"] = picojson::value(tags);
+    if (force_tools) {
+        format["type"] = picojson::value("tags_with_separator");
+        format["separator"] = picojson::value("");
+        format["tags"] = picojson::value(tags);
+    } else {
+        picojson::array triggers;
+        triggers.push_back(picojson::value("<tool_call>"));
+        format["type"] = picojson::value("triggered_tags");
+        format["triggers"] = picojson::value(triggers);
+        format["tags"] = picojson::value(tags);
+    }
 
     picojson::object root;
     root["type"] = picojson::value("structural_tag");
@@ -191,20 +195,23 @@ static std::string build_qwen_tool_structural_tag_json(const std::vector<ToolDef
     return picojson::value(root).serialize();
 }
 
-static Grammar qwen_style_tool_call_grammar(const std::vector<ToolDefinition>& tools) {
-    return Grammar::structural_tag(build_qwen_tool_structural_tag_json(tools));
+static Grammar qwen_style_tool_call_grammar(const std::vector<ToolDefinition>& tools, bool force_tools) {
+    return Grammar::structural_tag(qwen_tool_structural_tag_json(tools, force_tools));
 }
 
 static Grammar gemma_style_tool_call_grammar(const std::vector<ToolDefinition>& tools) {
+    (void)tools;
     return Grammar();
 }
 
 static Grammar lfm2_style_tool_call_grammar(const std::vector<ToolDefinition>& tools) {
+    (void)tools;
     return Grammar();
 }
 
 static Grammar model_tool_call_grammar(
     Config::ModelType model_type,
+    bool force_tools,
     const std::vector<ToolDefinition>& tools
 ) {
     if (tools.empty()) return Grammar();
@@ -212,7 +219,7 @@ static Grammar model_tool_call_grammar(
         case Config::ModelType::QWEN:
         case Config::ModelType::QWEN3P5:
         case Config::ModelType::YOUTU:
-            return qwen_style_tool_call_grammar(tools);
+            return qwen_style_tool_call_grammar(tools, force_tools);
         case Config::ModelType::GEMMA:
             return gemma_style_tool_call_grammar(tools);
         case Config::ModelType::LFM2:
@@ -250,6 +257,7 @@ Grammar Grammar::concatenate(const std::vector<Grammar>& grammars) {
 
 Grammar Grammar::model_decode_grammar(
     const Grammar& grammar,
+    bool force_tools,
     bool supports_reasoning,
     Config::ModelType model_type,
     const std::vector<ToolDefinition>& tools
@@ -257,8 +265,8 @@ Grammar Grammar::model_decode_grammar(
     if (grammar.is_empty() && tools.empty()) {
         return Grammar();
     }
-    auto tool_grammar = model_tool_call_grammar(model_type, tools);
-    auto content_grammar = Grammar::unite({grammar, tool_grammar});
+    auto tool_grammar = model_tool_call_grammar(model_type, force_tools, tools);
+    auto content_grammar = force_tools ? tool_grammar : Grammar::unite({grammar, tool_grammar});
     return supports_reasoning
         ? Grammar::concatenate({reasoning_grammar(), content_grammar})
         : content_grammar;
