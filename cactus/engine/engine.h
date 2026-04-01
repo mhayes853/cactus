@@ -71,6 +71,7 @@ struct TokenizerInfo {
 
 struct ToolDefinition {
     std::string name;
+    std::string description;
     picojson::value arguments_schema;
 
     static std::vector<ToolDefinition> parse_tools_json(const std::string& tools_json);

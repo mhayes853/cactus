@@ -136,6 +136,7 @@ struct PreparedPrompt {
     std::vector<std::string> image_paths;
     std::vector<ChatMessage> messages;
     std::vector<ToolFunction> tools;
+    std::vector<cactus::engine::ToolDefinition> tool_definitions;
     std::vector<uint32_t> tokens;
     size_t context_token_count = 0;
     std::vector<std::vector<CactusModelHandle::ProcessedImage>> images;
@@ -259,6 +260,9 @@ PreparedPrompt prepare_prompt(
     }
 
     prompt.tools_json = serialize_tools_json(prompt.tools);
+    if (!prompt.tools_json.empty()) {
+        prompt.tool_definitions = cactus::engine::ToolDefinition::parse_tools_json(prompt.tools_json);
+    }
 
     auto* tokenizer = handle->model->get_tokenizer();
     prompt.thinking_supported =
@@ -268,7 +272,7 @@ PreparedPrompt prepare_prompt(
     std::string formatted_tools;
     if (prompt.model_type == Config::ModelType::GEMMA ||
         prompt.model_type == Config::ModelType::GEMMA3N) {
-        formatted_tools = gemma::format_tools(prompt.tools);
+        formatted_tools = gemma::format_tools(prompt.tool_definitions);
     } else {
         formatted_tools = prompt.tools_json;
     }

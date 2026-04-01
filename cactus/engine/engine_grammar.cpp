@@ -13,28 +13,6 @@ Grammar::Grammar() : grammar(xgrammar::NullObj{}), is_universal_(false) {}
 Grammar::Grammar(xgrammar::Grammar raw_grammar)
     : grammar(raw_grammar), is_universal_(false) {}
 
-static const picojson::object& require_object_field(
-    const picojson::object& object,
-    const std::string& field_name,
-    const char* context
-) {
-    if (!object.count(field_name) || !object.at(field_name).is<picojson::object>()) {
-        throw std::runtime_error(std::string(context) + " must contain an object field '" + field_name + "'");
-    }
-    return object.at(field_name).get<picojson::object>();
-}
-
-static const std::string& require_string_field(
-    const picojson::object& object,
-    const std::string& field_name,
-    const char* context
-) {
-    if (!object.count(field_name) || !object.at(field_name).is<std::string>()) {
-        throw std::runtime_error(std::string(context) + " must contain a string field '" + field_name + "'");
-    }
-    return object.at(field_name).get<std::string>();
-}
-
 std::vector<ToolDefinition> ToolDefinition::parse_tools_json(const std::string& tools_json) {
     if (tools_json.empty()) {
         throw std::runtime_error("tools_json must not be empty");
@@ -60,18 +38,33 @@ std::vector<ToolDefinition> ToolDefinition::parse_tools_json(const std::string& 
         }
 
         const auto& tool_object = item.get<picojson::object>();
-        const std::string& type = require_string_field(tool_object, "type", "tool entry");
+        if (!tool_object.count("type") || !tool_object.at("type").is<std::string>()) {
+            throw std::runtime_error("tool entry must contain a 'type' field");
+        }
+        const std::string& type = tool_object.at("type").get<std::string>();
         if (type != "function") {
             throw std::runtime_error("tool entry field 'type' must be 'function'");
         }
 
-        const auto& function_object = require_object_field(tool_object, "function", "tool entry");
-        const std::string& name = require_string_field(function_object, "name", "tool entry function");
+        if (!tool_object.count("function") || !tool_object.at("function").is<picojson::object>()) {
+            throw std::runtime_error("tool entry must contain a 'function' field");
+        }
+        const auto& function_object = tool_object.at("function").get<picojson::object>();
+        if (!function_object.count("name") || !function_object.at("name").is<std::string>()) {
+            throw std::runtime_error("tool entry function must contain a 'name' field");
+        }
+        const std::string& name = function_object.at("name").get<std::string>();
         if (!function_object.count("parameters") || !function_object.at("parameters").is<picojson::object>()) {
-            throw std::runtime_error("tool entry function must contain an object field 'parameters'");
+            throw std::runtime_error("tool entry function must contain a 'parameters' field within the 'function' field");
         }
 
-        tools.push_back(ToolDefinition{name, function_object.at("parameters")});
+        tools.push_back(ToolDefinition{
+            name,
+            function_object.count("description") && function_object.at("description").is<std::string>()
+                ? function_object.at("description").get<std::string>()
+                : "",
+            function_object.at("parameters")
+        });
     }
 
     if (tools.empty()) {

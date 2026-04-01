@@ -1,11 +1,11 @@
 #pragma once
 
-#include <string>
-#include <vector>
+#include "../engine/engine.h"
+
 #include <algorithm>
 #include <cctype>
-#include <map>
-#include <set>
+#include <string>
+#include <vector>
 
 namespace gemma {
 
@@ -19,356 +19,129 @@ inline std::string escape(const std::string& s) {
     return "<escape>" + s + "<escape>";
 }
 
-inline void skip_whitespace(const std::string& json, size_t& pos) {
-    while (pos < json.length() && std::isspace(json[pos])) pos++;
+inline void append_field(std::string& result, bool& first, const std::string& field) {
+    if (!first) result += ",";
+    first = false;
+    result += field;
 }
 
-inline std::string extract_json_string(const std::string& json, size_t& pos) {
-    std::string value;
-    while (pos < json.length() && json[pos] != '"') {
-        if (json[pos] == '\\' && pos + 1 < json.length()) {
-            pos++;
-            if (json[pos] == 'n') value += '\n';
-            else if (json[pos] == 't') value += '\t';
-            else if (json[pos] == 'r') value += '\r';
-            else if (json[pos] == '"') value += '"';
-            else if (json[pos] == '\\') value += '\\';
-            else value += json[pos];
-        } else {
-            value += json[pos];
-        }
-        pos++;
+inline std::string format_literal(const picojson::value& value) {
+    if (value.is<std::string>()) {
+        return escape(value.get<std::string>());
     }
-    if (pos < json.length()) pos++; 
-    return value;
-}
-
-std::string format_argument(const std::string& json, size_t& pos, bool escape_keys);
-std::string format_parameters(const std::string& properties_json, const std::string& /*required_json*/);
-
-inline std::string format_argument(const std::string& json, size_t& pos, bool escape_keys = true) {
-    skip_whitespace(json, pos);
-    if (pos >= json.length()) return "";
-
-    char c = json[pos];
-
-    if (c == '"') {
-        std::string value = extract_json_string(json, pos);
-        return escape(value);
-    } else if (c == '{') {
-        std::string result = "{";
-        pos++; 
-        bool first = true;
-
-        while (pos < json.length()) {
-            skip_whitespace(json, pos);
-            if (pos >= json.length() || json[pos] == '}') { pos++; break; }
-            if (json[pos] == ',') { pos++; continue; }
-
-            if (json[pos] != '"') break;
-            pos++;
-            std::string key = extract_json_string(json, pos);
-
-            skip_whitespace(json, pos);
-            if (pos < json.length() && json[pos] == ':') pos++;
-
-            std::string value = format_argument(json, pos, escape_keys);
-
-            if (!first) result += ",";
-            first = false;
-            if (escape_keys) {
-                result += escape(key) + ":" + value;
-            } else {
-                result += key + ":" + value;
-            }
-        }
-        result += "}";
-        return result;
-    } else if (c == '[') {
+    if (value.is<picojson::array>()) {
         std::string result = "[";
-        pos++; 
         bool first = true;
-
-        while (pos < json.length()) {
-            skip_whitespace(json, pos);
-            if (pos >= json.length() || json[pos] == ']') { pos++; break; }
-            if (json[pos] == ',') { pos++; continue; }
-
-            std::string value = format_argument(json, pos, escape_keys);
-
+        for (const auto& item : value.get<picojson::array>()) {
             if (!first) result += ",";
             first = false;
-            result += value;
+            result += format_literal(item);
         }
         result += "]";
         return result;
-    } else if (json.compare(pos, 4, "true") == 0) {
-        pos += 4;
-        return "true";
-    } else if (json.compare(pos, 5, "false") == 0) {
-        pos += 5;
-        return "false";
-    } else if (json.compare(pos, 4, "null") == 0) {
-        pos += 4;
-        return "null";
-    } else {
-        size_t start = pos;
-        while (pos < json.length() && (std::isdigit(json[pos]) || json[pos] == '.' ||
-               json[pos] == '-' || json[pos] == '+' || json[pos] == 'e' || json[pos] == 'E')) {
-            pos++;
-        }
-        return json.substr(start, pos - start);
     }
+    if (value.is<picojson::object>()) {
+        std::string result = "{";
+        bool first = true;
+        for (const auto& [key, item] : value.get<picojson::object>()) {
+            if (!first) result += ",";
+            first = false;
+            result += escape(key) + ":" + format_literal(item);
+        }
+        result += "}";
+        return result;
+    }
+    return value.serialize();
 }
 
-inline std::map<std::string, std::string> parse_json_object_raw(const std::string& json, size_t& pos) {
-    std::map<std::string, std::string> result;
-    skip_whitespace(json, pos);
-    if (pos >= json.length() || json[pos] != '{') return result;
-    pos++; 
+inline std::string format_required(const picojson::value& required_value) {
+    const auto& required = required_value.get<picojson::array>();
+    std::string result = "[";
+    bool first = true;
+    for (const auto& item : required) {
+        if (!first) result += ",";
+        first = false;
+        result += escape(item.get<std::string>());
+    }
+    result += "]";
+    return result;
+}
 
-    while (pos < json.length()) {
-        skip_whitespace(json, pos);
-        if (pos >= json.length() || json[pos] == '}') { pos++; break; }
-        if (json[pos] == ',') { pos++; continue; }
+inline std::string format_schema_body(const picojson::object& schema);
 
-        if (json[pos] != '"') break;
-        pos++;
-        std::string key = extract_json_string(json, pos);
-
-        skip_whitespace(json, pos);
-        if (pos < json.length() && json[pos] == ':') pos++;
-        skip_whitespace(json, pos);
-
-        size_t value_start = pos;
-        if (json[pos] == '"') {
-            pos++;
-            while (pos < json.length() && json[pos] != '"') {
-                if (json[pos] == '\\') pos++;
-                pos++;
-            }
-            pos++; 
-        } else if (json[pos] == '{') {
-            int depth = 1;
-            pos++;
-            while (pos < json.length() && depth > 0) {
-                if (json[pos] == '{') depth++;
-                else if (json[pos] == '}') depth--;
-                else if (json[pos] == '"') {
-                    pos++;
-                    while (pos < json.length() && json[pos] != '"') {
-                        if (json[pos] == '\\') pos++;
-                        pos++;
-                    }
-                }
-                pos++;
-            }
-        } else if (json[pos] == '[') {
-            int depth = 1;
-            pos++;
-            while (pos < json.length() && depth > 0) {
-                if (json[pos] == '[') depth++;
-                else if (json[pos] == ']') depth--;
-                else if (json[pos] == '"') {
-                    pos++;
-                    while (pos < json.length() && json[pos] != '"') {
-                        if (json[pos] == '\\') pos++;
-                        pos++;
-                    }
-                }
-                pos++;
-            }
-        } else {
-            while (pos < json.length() && json[pos] != ',' && json[pos] != '}') pos++;
-        }
-        result[key] = json.substr(value_start, pos - value_start);
+inline std::string format_schema_properties(const picojson::object& properties) {
+    std::string result;
+    bool first = true;
+    for (const auto& [key, property_value] : properties) {
+        const auto& property = property_value.get<picojson::object>();
+        if (!first) result += ",";
+        first = false;
+        result += key + ":{" + format_schema_body(property) + "}";
     }
     return result;
 }
 
-inline std::string get_json_string_value(const std::string& json, size_t pos) {
-    skip_whitespace(json, pos);
-    if (pos < json.length() && json[pos] == '"') {
-        pos++;
-        return extract_json_string(json, pos);
-    }
-    return "";
-}
-
-inline std::string format_parameters(const std::string& properties_json, const std::string& /*required_json*/) {
-    static const std::set<std::string> standard_keys = {"description", "type", "properties", "required", "nullable"};
-
-    size_t pos = 0;
-    auto properties = parse_json_object_raw(properties_json, pos);
-
+inline std::string format_schema_body(const picojson::object& schema) {
     std::string result;
     bool first = true;
 
-    for (const auto& [key, value_json] : properties) {
-        if (standard_keys.count(key)) continue;
+    if (schema.count("description") && schema.at("description").is<std::string>()) {
+        append_field(result, first, "description:" + escape(schema.at("description").get<std::string>()));
+    }
 
-        if (!first) result += ",";
-        first = false;
+    auto properties_it = schema.find("properties");
+    if (properties_it != schema.end()) {
+        append_field(
+            result,
+            first,
+            "properties:{" + format_schema_properties(properties_it->second.get<picojson::object>()) + "}"
+        );
+    }
 
-        size_t prop_pos = 0;
-        auto prop_obj = parse_json_object_raw(value_json, prop_pos);
+    auto required_it = schema.find("required");
+    if (required_it != schema.end()) {
+        append_field(result, first, "required:" + format_required(required_it->second));
+    }
 
-        result += key + ":{";
+    auto enum_it = schema.find("enum");
+    if (enum_it != schema.end()) {
+        append_field(result, first, "enum:" + format_literal(enum_it->second));
+    }
 
-        if (prop_obj.count("description")) {
-            std::string desc = get_json_string_value(prop_obj["description"], 0);
-            result += "description:" + escape(desc);
+    auto items_it = schema.find("items");
+    if (items_it != schema.end()) {
+        append_field(
+            result,
+            first,
+            "items:{" + format_schema_body(items_it->second.get<picojson::object>()) + "}"
+        );
+    }
+
+    static const std::vector<std::string> reserved_keys = {
+        "description", "type", "properties", "required", "enum", "items", "additionalProperties", "nullable"
+    };
+    for (const auto& [key, value] : schema) {
+        if (std::find(reserved_keys.begin(), reserved_keys.end(), key) != reserved_keys.end()) {
+            continue;
         }
+        append_field(result, first, key + ":" + format_literal(value));
+    }
 
-        std::string type_val;
-        if (prop_obj.count("type")) {
-            type_val = get_json_string_value(prop_obj["type"], 0);
-        }
-
-        if (to_upper(type_val) == "STRING") {
-            if (prop_obj.count("enum")) {
-                size_t enum_pos = 0;
-                std::string enum_formatted = format_argument(prop_obj["enum"], enum_pos, true);
-                result += ",enum:" + enum_formatted;
-            }
-        } else if (to_upper(type_val) == "OBJECT") {
-            if (prop_obj.count("properties")) {
-                std::string nested_required;
-                if (prop_obj.count("required")) {
-                    nested_required = prop_obj["required"];
-                }
-                result += ",properties:{" + format_parameters(prop_obj["properties"], nested_required) + "}";
-            }
-            if (prop_obj.count("required")) {
-                result += ",required:[";
-                size_t req_pos = 0;
-                skip_whitespace(prop_obj["required"], req_pos);
-                if (req_pos < prop_obj["required"].length() && prop_obj["required"][req_pos] == '[') {
-                    req_pos++;
-                    bool req_first = true;
-                    while (req_pos < prop_obj["required"].length()) {
-                        skip_whitespace(prop_obj["required"], req_pos);
-                        if (prop_obj["required"][req_pos] == ']') break;
-                        if (prop_obj["required"][req_pos] == ',') { req_pos++; continue; }
-                        if (prop_obj["required"][req_pos] == '"') {
-                            req_pos++;
-                            std::string req_item = extract_json_string(prop_obj["required"], req_pos);
-                            if (!req_first) result += ",";
-                            req_first = false;
-                            result += escape(req_item);
-                        }
-                    }
-                }
-                result += "]";
-            }
-        } else if (to_upper(type_val) == "ARRAY") {
-            if (prop_obj.count("items")) {
-                result += ",items:{";
-                size_t items_pos = 0;
-                auto items_obj = parse_json_object_raw(prop_obj["items"], items_pos);
-                bool items_first = true;
-
-                for (const auto& [item_key, item_value] : items_obj) {
-                    if (!items_first) result += ",";
-                    items_first = false;
-
-                    if (item_key == "properties") {
-                        std::string items_required;
-                        if (items_obj.count("required")) {
-                            items_required = items_obj["required"];
-                        }
-                        result += "properties:{" + format_parameters(item_value, items_required) + "}";
-                    } else if (item_key == "required") {
-                        result += "required:[";
-                        size_t req_pos = 0;
-                        skip_whitespace(item_value, req_pos);
-                        if (req_pos < item_value.length() && item_value[req_pos] == '[') {
-                            req_pos++;
-                            bool req_first = true;
-                            while (req_pos < item_value.length()) {
-                                skip_whitespace(item_value, req_pos);
-                                if (item_value[req_pos] == ']') break;
-                                if (item_value[req_pos] == ',') { req_pos++; continue; }
-                                if (item_value[req_pos] == '"') {
-                                    req_pos++;
-                                    std::string req_item = extract_json_string(item_value, req_pos);
-                                    if (!req_first) result += ",";
-                                    req_first = false;
-                                    result += escape(req_item);
-                                }
-                            }
-                        }
-                        result += "]";
-                    } else if (item_key == "type") {
-                        std::string item_type = get_json_string_value(item_value, 0);
-                        result += "type:" + escape(to_upper(item_type));
-                    } else {
-                        size_t val_pos = 0;
-                        result += item_key + ":" + format_argument(item_value, val_pos, true);
-                    }
-                }
-                result += "}";
-            }
-        }
-
-        if (!type_val.empty()) {
-            result += ",type:" + escape(to_upper(type_val));
-        }
-
-        result += "}";
+    if (schema.count("type") && schema.at("type").is<std::string>()) {
+        append_field(result, first, "type:" + escape(to_upper(schema.at("type").get<std::string>())));
     }
 
     return result;
 }
 
-inline std::string format_function_declaration(const std::string& name,
-                                                const std::string& description,
-                                                const std::string& params_json) {
-    std::string result = "declaration:" + name + "{";
-    result += "description:" + escape(description);
+inline std::string format_function_declaration(const cactus::engine::ToolDefinition& tool) {
+    std::string result = "declaration:" + tool.name + "{";
+    result += "description:" + escape(tool.description);
 
-    if (!params_json.empty()) {
+    const auto& schema = tool.arguments_schema.get<picojson::object>();
+    if (!schema.empty()) {
         result += ",parameters:{";
-
-        size_t pos = 0;
-        auto params = parse_json_object_raw(params_json, pos);
-
-        if (params.count("properties")) {
-            std::string required_json;
-            if (params.count("required")) {
-                required_json = params["required"];
-            }
-            result += "properties:{" + format_parameters(params["properties"], required_json) + "}";
-        }
-
-        if (params.count("required")) {
-            result += ",required:[";
-            size_t req_pos = 0;
-            skip_whitespace(params["required"], req_pos);
-            if (req_pos < params["required"].length() && params["required"][req_pos] == '[') {
-                req_pos++;
-                bool first = true;
-                while (req_pos < params["required"].length()) {
-                    skip_whitespace(params["required"], req_pos);
-                    if (params["required"][req_pos] == ']') break;
-                    if (params["required"][req_pos] == ',') { req_pos++; continue; }
-                    if (params["required"][req_pos] == '"') {
-                        req_pos++;
-                        std::string item = extract_json_string(params["required"], req_pos);
-                        if (!first) result += ",";
-                        first = false;
-                        result += escape(item);
-                    }
-                }
-            }
-            result += "]";
-        }
-
-        if (params.count("type")) {
-            std::string type_val = get_json_string_value(params["type"], 0);
-            result += ",type:" + escape(to_upper(type_val));
-        }
-
+        result += format_schema_body(schema);
         result += "}";
     }
 
@@ -376,28 +149,20 @@ inline std::string format_function_declaration(const std::string& name,
     return result;
 }
 
-template<typename ToolFunction>
-inline std::string format_tools(const std::vector<ToolFunction>& tools, bool use_pipe_tags = false) {
+inline std::string format_tools(const std::vector<cactus::engine::ToolDefinition>& tools, bool use_pipe_tags = false) {
     if (tools.empty()) return "";
 
     const char* decl_start = use_pipe_tags ? "<|tool>" : "<start_function_declaration>";
-    const char* decl_end   = use_pipe_tags ? "<tool|>" : "<end_function_declaration>";
+    const char* decl_end = use_pipe_tags ? "<tool|>" : "<end_function_declaration>";
 
     std::string result;
     for (const auto& tool : tools) {
         result += decl_start;
-        std::string params_json;
-        auto it = tool.parameters.find("schema");
-        if (it != tool.parameters.end()) {
-            params_json = it->second;
-        }
-
-        result += format_function_declaration(tool.name, tool.description, params_json);
+        result += format_function_declaration(tool);
         result += decl_end;
     }
     return result;
 }
-
 
 inline size_t match_quote_tag(const std::string& s, size_t pos) {
     if (s.compare(pos, 8, "<escape>") == 0) return 8;
@@ -431,17 +196,17 @@ inline std::string args_to_json(const std::string& args_content) {
     if (!args_content.empty() && args_content[0] == '{') pos = 1;
 
     while (pos < args_content.length()) {
-        while (pos < args_content.length() && std::isspace(args_content[pos])) pos++;
+        while (pos < args_content.length() && std::isspace(static_cast<unsigned char>(args_content[pos]))) pos++;
         if (pos >= args_content.length() || args_content[pos] == '}') break;
         if (args_content[pos] == ',') { pos++; continue; }
 
         size_t key_start = pos;
         while (pos < args_content.length() && args_content[pos] != ':') pos++;
         std::string key = args_content.substr(key_start, pos - key_start);
-        if (pos < args_content.length()) pos++; 
+        if (pos < args_content.length()) pos++;
 
         std::string value;
-        while (pos < args_content.length() && std::isspace(args_content[pos])) pos++;
+        while (pos < args_content.length() && std::isspace(static_cast<unsigned char>(args_content[pos]))) pos++;
 
         if (pos < args_content.length()) {
             size_t qtag_len = match_quote_tag(args_content, pos);
@@ -476,7 +241,10 @@ inline std::string args_to_json(const std::string& args_content) {
                 size_t arr_pos = 0;
                 bool first_item = true;
                 while (arr_pos < arr_content.length()) {
-                    while (arr_pos < arr_content.length() && (std::isspace(arr_content[arr_pos]) || arr_content[arr_pos] == ',')) arr_pos++;
+                    while (arr_pos < arr_content.length() &&
+                           (std::isspace(static_cast<unsigned char>(arr_content[arr_pos])) || arr_content[arr_pos] == ',')) {
+                        arr_pos++;
+                    }
                     if (arr_pos >= arr_content.length()) break;
 
                     if (!first_item) value += ",";
@@ -504,7 +272,7 @@ inline std::string args_to_json(const std::string& args_content) {
                     pos++;
                 }
                 value = args_content.substr(val_start, pos - val_start);
-                while (!value.empty() && std::isspace(value.back())) value.pop_back();
+                while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back()))) value.pop_back();
             }
         }
 
@@ -518,7 +286,6 @@ inline std::string args_to_json(const std::string& args_content) {
 }
 
 inline void parse_function_calls(std::string& response, std::vector<std::string>& function_calls) {
-
     const std::string CALL_START = (response.find("<|tool_call>") != std::string::npos)
         ? "<|tool_call>" : "<start_function_call>";
     const std::string CALL_END = (CALL_START == "<|tool_call>")
@@ -562,8 +329,8 @@ inline void parse_function_calls(std::string& response, std::vector<std::string>
             }
         }
 
-        size_t erase_end = (call_end_pos != std::string::npos) ?
-                           call_end_pos + CALL_END.length() : response.length();
+        size_t erase_end = (call_end_pos != std::string::npos)
+            ? call_end_pos + CALL_END.length() : response.length();
         response.erase(pos, erase_end - pos);
     }
 }
