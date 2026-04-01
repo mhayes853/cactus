@@ -129,20 +129,24 @@ bool test_scalar_operation(const std::string& op_name,
 namespace EngineTestUtils {
 
 inline bool is_valid_json_document(const std::string& text, std::string& error) {
-    picojson::value value;
-    auto begin = text.begin();
-    auto end = picojson::parse(value, begin, text.end(), &error);
-    if (!error.empty()) {
-        return false;
-    }
-    while (end != text.end() && std::isspace(static_cast<unsigned char>(*end))) {
-        ++end;
-    }
-    if (end != text.end()) {
-        error = "Trailing characters after JSON document";
-        return false;
-    }
+    try {
+        picojson::value value;
+        auto begin = text.begin();
+        auto end = picojson::parse(value, begin, text.end(), &error);
+        if (!error.empty()) {
+            return false;
+        }
+        while (end != text.end() && std::isspace(static_cast<unsigned char>(*end))) {
+            ++end;
+        }
+        if (end != text.end()) {
+            error = "Trailing characters after JSON document";
+            return false;
+        }
     return true;
+    } catch (...) {
+        return false;
+    }
 }
 
 struct Timer {
