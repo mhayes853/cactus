@@ -239,9 +239,11 @@ uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, f
         logits_node_id = gb->scalar_multiply(logits_node_id, config_.final_logit_softcapping);
     }
 
+    const auto& logits_buffer = gb->get_output_buffer(logits_node_id);
+
     std::vector<int32_t> bitmask;
     if (matcher) {
-        matcher->next_bitmask(bitmask);
+        matcher->next_bitmask(bitmask, logits_buffer.shape.back());
     }
 
     auto sampled_token_id = sample_token(gb, logits_node_id, temperature, top_p, top_k, nullptr, &bitmask);

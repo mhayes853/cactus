@@ -290,7 +290,7 @@ public:
 
     void reset();
     bool accept(uint32_t token_id, bool log_rejection = true);
-    bool next_bitmask(std::vector<int32_t>& token_bitmask);
+    bool next_bitmask(std::vector<int32_t>& token_bitmask, size_t logits_buffer_size);
 
     xgrammar::GrammarMatcher matcher;
     xgrammar::TokenizerInfo tokenizer_info;

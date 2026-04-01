@@ -1,5 +1,6 @@
 #include "engine.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 #include <vector>
@@ -394,13 +395,15 @@ bool GrammarMatcher::accept(uint32_t token_id, bool log_rejection) {
     return accepted;
 }
 
-bool GrammarMatcher::next_bitmask(std::vector<int32_t>& token_bitmask) {
-    const int32_t bitmask_size = xgrammar::GetBitmaskSize(tokenizer_info.GetVocabSize());
-    token_bitmask.resize(bitmask_size);
+bool GrammarMatcher::next_bitmask(std::vector<int32_t>& token_bitmask, size_t logits_buffer_size) {
+    const size_t vocab_size = static_cast<size_t>(tokenizer_info.GetVocabSize());
+    const int32_t vocab_bitmask_size = xgrammar::GetBitmaskSize(static_cast<int>(vocab_size));
+    const size_t logits_bitmask_size = xgrammar::GetBitmaskSize(logits_buffer_size);
+    token_bitmask.assign(logits_bitmask_size, 0);
 
     int64_t bitmask_shape[1];
     int64_t bitmask_strides[1];
-    bitmask_shape[0] = static_cast<int64_t>(token_bitmask.size());
+    bitmask_shape[0] = static_cast<int64_t>(vocab_bitmask_size);
     bitmask_strides[0] = 1;
 
     DLTensor bitmask_tensor;

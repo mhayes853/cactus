@@ -579,12 +579,14 @@ uint32_t Lfm2VlModel::decode_with_images(
         last_token_count_ = tokens.size();
     }
     
+    auto logits_node_id = gb->matmul(final_hidden_node, language_model_.output_weight_node_id_, true, backend);
+    const auto& logits_buffer = gb->get_output_buffer(logits_node_id);
+
     std::vector<int32_t> bitmask;
     if (matcher) {
-        matcher->next_bitmask(bitmask);
+        matcher->next_bitmask(bitmask, logits_buffer.shape.back());
     }
 
-    auto logits_node_id = gb->matmul(final_hidden_node, language_model_.output_weight_node_id_, true, backend);
     auto sampled_token_id = gb->sample(logits_node_id, temperature, top_p, top_k, {}, bitmask);
     if (!profile_file.empty()) {
         gb->execute(profile_file);

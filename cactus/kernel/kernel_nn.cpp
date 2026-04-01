@@ -521,7 +521,7 @@ void cactus_bitmask_f32(float* logits, size_t vocab_size, const int32_t* bitmask
 
     size_t i = 0;
     for (; i + 8 <= vocab_size; i += 8) {
-        const uint32_t bits = bitmask_bytes[i >> 3];
+        const uint32_t bits = bitmask_bytes[i / 8];
         const float32x4_t x0 = vld1q_f32(logits + i);
         const float32x4_t x1 = vld1q_f32(logits + i + 4);
         const uint32x4_t bits_vec = vdupq_n_u32(bits);
@@ -533,7 +533,7 @@ void cactus_bitmask_f32(float* logits, size_t vocab_size, const int32_t* bitmask
     }
 
     for (; i < vocab_size; ++i) {
-        const uint8_t bits = bitmask_bytes[i >> 3];
+        const uint8_t bits = bitmask_bytes[i / 8];
         const uint8_t bit = (bits >> (i & 7)) & 1;
         if (!bit) logits[i] = neg_inf;
     }
@@ -735,9 +735,8 @@ void cactus_bitmask_f16(__fp16* logits, size_t vocab_size, const int32_t* bitmas
     const uint8_t* bitmask_bytes = reinterpret_cast<const uint8_t*>(bitmask);
 
     size_t i = 0;
-
     for (; i + 8 <= vocab_size; i += 8) {
-        const uint16_t bits = bitmask_bytes[i >> 3];
+        const uint16_t bits = bitmask_bytes[i / 8];
         const uint16x8_t bits_vec = vdupq_n_u16(bits);
         const float16x8_t x = vld1q_f16(logits + i);
         const uint16x8_t m = vceqq_u16(vandq_u16(vshlq_u16(bits_vec, shifts), one), one);
@@ -745,7 +744,7 @@ void cactus_bitmask_f16(__fp16* logits, size_t vocab_size, const int32_t* bitmas
     }
 
     for (; i < vocab_size; ++i) {
-        const uint8_t bits = bitmask_bytes[i >> 3];
+        const uint16_t bits = bitmask_bytes[i / 8];
         const uint8_t bit = (bits >> (i & 7)) & 1;
         if (!bit) logits[i] = (__fp16)-__builtin_inff();
     }
