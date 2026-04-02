@@ -2,9 +2,11 @@
 #include "cactus_cloud.h"
 #include "cactus_utils.h"
 #include "telemetry/telemetry.h"
+#include "../../libs/audio/wav.h"
 #include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <future>
 #include <optional>
 #include <stdexcept>
@@ -45,6 +47,23 @@ void inject_rag_context(CactusModelHandle* handle, std::vector<ChatMessage>& mes
     }
 }
 
+void strip_thinking_from_cache(CactusModelHandle* handle,
+                               const std::vector<uint32_t>& generated_tokens,
+                               size_t prompt_len) {
+    const auto& cfg = handle->model->get_config();
+    uint32_t open_id = cfg.channel_open_token_id;
+    uint32_t close_id = cfg.channel_close_token_id;
+    auto ranges = find_channel_token_ranges(generated_tokens, prompt_len,
+                                            open_id, close_id);
+    if (ranges.empty()) return;
+
+    handle->model->remove_thinking_tokens(ranges);
+    for (auto it = ranges.rbegin(); it != ranges.rend(); ++it) {
+        auto start = handle->processed_tokens.begin() + it->first;
+        handle->processed_tokens.erase(start, start + it->second);
+    }
+}
+
 std::vector<std::vector<uint32_t>> build_stop_sequences(
     Tokenizer* tokenizer,
     const std::vector<std::string>& stop_sequences,
@@ -68,6 +87,14 @@ std::vector<std::vector<uint32_t>> build_stop_sequences(
     if ((model_type == Config::ModelType::GEMMA || model_type == Config::ModelType::GEMMA3N) && has_tools) {
         stop_token_sequences.push_back(tokenizer->encode("<end_function_call>"));
         stop_token_sequences.push_back(tokenizer->encode("<start_function_response>"));
+    }
+
+    if (model_type == Config::ModelType::GEMMA4) {
+        stop_token_sequences.push_back(tokenizer->encode("<turn|>"));
+        if (has_tools) {
+            stop_token_sequences.push_back(tokenizer->encode("<tool_call|>"));
+            stop_token_sequences.push_back(tokenizer->encode("<|tool_response>"));
+        }
     }
 
     return stop_token_sequences;
@@ -134,6 +161,7 @@ struct PreparedPrompt {
     bool thinking_supported = false;
     std::string tools_json;
     std::vector<std::string> image_paths;
+    std::vector<std::string> audio_paths;
     std::vector<ChatMessage> messages;
     std::vector<ToolFunction> tools;
     std::vector<cactus::engine::ToolDefinition> tool_definitions;
@@ -141,9 +169,16 @@ struct PreparedPrompt {
     size_t context_token_count = 0;
     std::vector<std::vector<CactusModelHandle::ProcessedImage>> images;
 
+    std::vector<float> audio_features;
+    size_t audio_num_frames = 0;
+
     bool has_images() const {
         return std::any_of(images.begin(), images.end(),
             [](const auto& msg_imgs) { return !msg_imgs.empty(); });
+    }
+
+    bool has_audio() const {
+        return !audio_features.empty();
     }
 };
 
@@ -188,18 +223,6 @@ std::vector<std::vector<CactusModelHandle::ProcessedImage>> images_from_message(
     return message_signatures;
 }
 
-std::vector<std::string> image_paths_from_messages(
-    const std::vector<ChatMessage>& messages,
-    size_t start_message_index
-) {
-    std::vector<std::string> image_paths;
-    for (size_t i = start_message_index; i < messages.size(); ++i) {
-        for (const auto& image_path : messages[i].images) {
-            image_paths.push_back(image_path);
-        }
-    }
-    return image_paths;
-}
 
 bool image_context_prefix_matches(
     const std::vector<std::vector<CactusModelHandle::ProcessedImage>>& prefix,
@@ -233,7 +256,9 @@ PreparedPrompt prepare_prompt(
     const char* messages_json,
     const char* options_json,
     const char* tools_json,
-    bool add_generation_prompt
+    bool add_generation_prompt,
+    const uint8_t* pcm_buffer = nullptr,
+    size_t pcm_buffer_size = 0
 ) {
     if (!handle || !handle->model) {
         throw std::runtime_error("Invalid model handle");
@@ -241,7 +266,7 @@ PreparedPrompt prepare_prompt(
 
     PreparedPrompt prompt;
     prompt.options = parse_inference_options_json(options_json ? options_json : "");
-    prompt.messages = parse_messages_json(messages_json, prompt.image_paths);
+    prompt.messages = parse_messages_json(messages_json, prompt.image_paths, &prompt.audio_paths);
     if (prompt.messages.empty()) {
         throw std::runtime_error("No messages provided");
     }
@@ -269,10 +294,38 @@ PreparedPrompt prepare_prompt(
         prompt.options.enable_thinking_if_supported && tokenizer->is_thinking_supported();
 
     prompt.model_type = handle->model->get_config().model_type;
+
+    if (prompt.model_type == Config::ModelType::GEMMA4) {
+        std::vector<float> audio_samples;
+        if (pcm_buffer != nullptr && pcm_buffer_size > 1) {
+            auto waveform_fp32 = cactus::audio::pcm_buffer_to_float_samples(pcm_buffer, pcm_buffer_size);
+            audio_samples = resample_to_16k_fp32(waveform_fp32, 16000);
+        } else if (!prompt.audio_paths.empty()) {
+            for (auto it = prompt.messages.rbegin(); it != prompt.messages.rend(); ++it) {
+                if (!it->audio.empty()) {
+                    const std::string& audio_path = it->audio.back();
+                    AudioFP32 wav = load_wav(audio_path);
+                    audio_samples = resample_to_16k_fp32(wav.samples, wav.sample_rate);
+                    break;
+                }
+            }
+        }
+        if (!audio_samples.empty()) {
+            auto audio_prep = cactus::audio::preprocess_audio_for_gemma4(audio_samples, handle->model->get_config());
+            prompt.audio_features = std::move(audio_prep.features);
+            prompt.audio_num_frames = audio_prep.num_frames;
+            for (auto it = prompt.messages.rbegin(); it != prompt.messages.rend(); ++it) {
+                if (it->role == "user") {
+                    it->audio_soft_token_count = audio_prep.num_soft_tokens;
+                    break;
+                }
+            }
+        }
+    }
+
     std::string formatted_tools;
-    if (prompt.model_type == Config::ModelType::GEMMA ||
-        prompt.model_type == Config::ModelType::GEMMA3N) {
-        formatted_tools = gemma::format_tools(prompt.tool_definitions);
+    if (Config::is_gemma_family(prompt.model_type)) {
+        formatted_tools = gemma::format_tools(prompt.tool_definitions, prompt.model_type == Config::ModelType::GEMMA4);
     } else {
         formatted_tools = prompt.tools_json;
     }
@@ -398,6 +451,8 @@ int cactus_complete(
     const char* tools_json,
     cactus_token_callback callback,
     void* user_data,
+    const uint8_t* pcm_buffer,
+    size_t pcm_buffer_size,
     cactus_grammar_t grammar
 ) {
     if (!model) {
@@ -420,7 +475,7 @@ int cactus_complete(
         auto* handle = static_cast<CactusModelHandle*>(model);
         handle->should_stop = false;
         auto* tokenizer = handle->model->get_tokenizer();
-        auto prompt = prepare_prompt(handle, messages_json, options_json, tools_json, true);
+        auto prompt = prepare_prompt(handle, messages_json, options_json, tools_json, true, pcm_buffer, pcm_buffer_size);
         const auto* user_grammar_handle = static_cast<const CactusGrammarHandle*>(grammar);
 
         auto can_reuse_grammar_matcher = handle->grammar_matcher_handle.can_reuse(
@@ -451,23 +506,33 @@ int cactus_complete(
             << ", max_tokens: " << prompt.options.max_tokens);
 
         bool has_images = prompt.has_images();
-
-        auto prefill_result = do_prefill(handle, prompt, prompt.tokens);
-        size_t prompt_tokens = prefill_result.prefilled_count + prefill_result.remaining_tokens.size();
+        bool has_audio = prompt.has_audio();
 
         auto stop_token_sequences = build_stop_sequences(tokenizer, prompt.options.stop_sequences, prompt.model_type, !prompt.tools.empty());
 
         std::vector<uint32_t> generated_tokens;
         double time_to_first_token = 0.0;
         float first_token_entropy = 0.0f;
+        uint32_t next_token;
+        size_t prompt_tokens;
 
-        uint32_t next_token = generate_first_token(
-            handle,
-            prefill_result,
-            prompt,
-            &first_token_entropy,
-            handle->grammar_matcher_handle.matcher.get()
-        );
+        if (has_audio) {
+            prompt_tokens = prompt.tokens.size();
+            next_token = handle->model->decode_with_audio(
+                prompt.tokens, prompt.audio_features,
+                prompt.options.temperature, prompt.options.top_p, prompt.options.top_k,
+                "", &first_token_entropy);
+        } else {
+            auto prefill_result = do_prefill(handle, prompt, prompt.tokens);
+            prompt_tokens = prefill_result.prefilled_count + prefill_result.remaining_tokens.size();
+            next_token = generate_first_token(
+                handle,
+                prefill_result,
+                prompt,
+                &first_token_entropy,
+                handle->grammar_matcher_handle.matcher.get()
+            );
+        }
 
         handle->processed_tokens = prompt.tokens;
         handle->processed_images = prompt.images;
@@ -521,15 +586,22 @@ int cactus_complete(
                 if (handle->should_stop) break;
 
                 float token_entropy = 0.0f;
-                next_token = decode(
-                    handle->model,
-                    {next_token},
-                    prompt.options,
-                    &token_entropy,
-                    handle->grammar_matcher_handle.matcher.get()
-                );
-                generated_tokens.push_back(next_token);
+                if (has_audio) {
+                    next_token = handle->model->decode_with_audio(
+                        handle->processed_tokens, prompt.audio_features,
+                        prompt.options.temperature, prompt.options.top_p, prompt.options.top_k,
+                        "", &token_entropy);
+                } else {
+                    next_token = decode(
+                        handle->model,
+                        {next_token},
+                        prompt.options,
+                        &token_entropy,
+                        handle->grammar_matcher_handle.matcher.get()
+                    );
+                }
                 handle->processed_tokens.push_back(next_token);
+                generated_tokens.push_back(next_token);
 
                 entropy.add(token_entropy);
 
@@ -554,6 +626,13 @@ int cactus_complete(
 
         confidence = entropy.mean_confidence();
 
+        if (prompt.model_type == Config::ModelType::GEMMA4 && prompt.options.enable_thinking_if_supported && !generated_tokens.empty()) {
+            strip_thinking_from_cache(handle, generated_tokens, prompt.tokens.size());
+        }
+
+        if (prompt.model_type == Config::ModelType::GEMMA4) {
+            handle->model->compact_kv_cache();
+        }
         auto end_time = std::chrono::high_resolution_clock::now();
         double total_time_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() / 1000.0;
 
@@ -569,10 +648,13 @@ int cactus_complete(
         parse_function_calls_from_response(response_text, regular_response, function_calls);
 
         std::string thinking_text;
-        if (prompt.thinking_supported) {
+        if (prompt.model_type == Config::ModelType::GEMMA4 || prompt.thinking_supported) {
             std::string stripped_content;
             strip_thinking_block(regular_response, thinking_text, stripped_content);
             regular_response = stripped_content;
+            if (!prompt.options.enable_thinking_if_supported) {
+                thinking_text.clear();
+            }
         }
 
         if (confidence < prompt.options.confidence_threshold) {
@@ -690,7 +772,9 @@ int cactus_prefill(
     char* response_buffer,
     size_t buffer_size,
     const char* options_json,
-    const char* tools_json
+    const char* tools_json,
+    const uint8_t* pcm_buffer,
+    size_t pcm_buffer_size
 ) {
     if (!model) {
         std::string error_msg = last_error_message.empty()
@@ -720,7 +804,7 @@ int cactus_prefill(
         auto start_time = std::chrono::high_resolution_clock::now();
 
         auto* handle = static_cast<CactusModelHandle*>(model);
-        auto prompt = prepare_prompt(handle, messages_json, options_json, tools_json, false);
+        auto prompt = prepare_prompt(handle, messages_json, options_json, tools_json, false, pcm_buffer, pcm_buffer_size);
 
         std::vector<uint32_t> context_tokens(prompt.tokens.begin(), prompt.tokens.begin() + prompt.context_token_count);
         auto prefill_result = do_prefill(handle, prompt, context_tokens);

@@ -237,9 +237,8 @@ void compute_matmul_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
             lhs_int8 = lhs_buffer.data_as<int8_t>();
             lhs_scales = lhs_buffer.activation_scales_as_float();
         } else if (lhs_buffer.precision == Precision::FP16) {
-            const __fp16* lhs = lhs_buffer.data_as<__fp16>();
             ensure_quant_buffers(M, K);
-            quantize_activations_fp16_to_int8(lhs, quant_activation_buffer.data(),
+            quantize_activations_fp16_to_int8(lhs_buffer.data_as<__fp16>(), quant_activation_buffer.data(),
                                               quant_scales_buffer.data(), M, K);
             lhs_int8 = quant_activation_buffer.data();
             lhs_scales = quant_scales_buffer.data();
@@ -345,9 +344,10 @@ void compute_moe_layer_node(GraphNode& node, const std::vector<std::unique_ptr<G
     const float routed_scaling_factor = node.params.scalar;
     const bool gated = node.params.moe_gated;
     const Activation activation = node.params.activation;
-    const size_t expected_inputs = gated ? (3 + 3 * num_experts) : (3 + 2 * num_experts);
-    if (node.input_ids.size() != expected_inputs) {
-        throw std::runtime_error("moe_layer expects " + std::to_string(expected_inputs) + " inputs, got " + std::to_string(node.input_ids.size()));
+    const size_t base_inputs = gated ? (3 + 3 * num_experts) : (3 + 2 * num_experts);
+    bool has_per_expert_scale = node.input_ids.size() == base_inputs + 1;
+    if (node.input_ids.size() != base_inputs && node.input_ids.size() != base_inputs + 1) {
+        throw std::runtime_error("moe_layer expects " + std::to_string(base_inputs) + " or " + std::to_string(base_inputs + 1) + " inputs, got " + std::to_string(node.input_ids.size()));
     }
 
     const auto& hidden_buffer = nodes[node_index_map.at(node.input_ids[0])]->output_buffer;
@@ -359,6 +359,15 @@ void compute_moe_layer_node(GraphNode& node, const std::vector<std::unique_ptr<G
     }
     if (topk_idx_buffer.precision != Precision::FP32) {
         throw std::runtime_error("moe_layer expects FP32 topk indices");
+    }
+
+    const __fp16* expert_scales_fp16 = nullptr;
+    if (has_per_expert_scale) {
+        const auto& scale_buffer = nodes[node_index_map.at(node.input_ids[base_inputs])]->output_buffer;
+        if (scale_buffer.precision != Precision::FP16) {
+            throw std::runtime_error("moe_layer expects FP16 per_expert_scale");
+        }
+        expert_scales_fp16 = scale_buffer.data_as<__fp16>();
     }
 
     const size_t token_count = hidden_buffer.shape[0];
@@ -385,7 +394,7 @@ void compute_moe_layer_node(GraphNode& node, const std::vector<std::unique_ptr<G
     size_t* expert_offsets = moe_expert_offsets_buf.data(); 
     size_t* expert_tokens_flat = moe_expert_tokens_buf.data();  
 
-   std::memset(expert_offsets, 0, (num_experts + 1) * sizeof(size_t));
+    std::memset(expert_offsets, 0, (num_experts + 1) * sizeof(size_t));
     for (size_t tok = 0; tok < token_count; ++tok) {
         for (size_t k = 0; k < top_k; ++k) {
             float raw_idx = topk_idx[tok * top_k + k];
@@ -490,6 +499,9 @@ void compute_moe_layer_node(GraphNode& node, const std::vector<std::unique_ptr<G
                 route_weight = expert_prob / routing_denom[tok];
             }
             route_weight *= routed_scaling_factor;
+            if (expert_scales_fp16) {
+                route_weight *= static_cast<float>(expert_scales_fp16[expert_idx]);
+            }
 
             auto* out_row = output + tok * hidden_dim;
             const auto* expert_row = expert_out + i * hidden_dim;
@@ -715,7 +727,7 @@ void compute_attention_node(GraphNode& node, const std::vector<std::unique_ptr<G
                          value_buffer.data_as<__fp16>(), node.output_buffer.data_as<__fp16>(),
                          batch_size, seq_len, kv_seq_len, num_q_heads, num_kv_heads, head_dim, node.params.scale, mask_ptr,
                          node.params.position_offset, node.params.window_size, node.params.is_causal,
-                         node.params.attention_mask_is_additive, mask_per_head, v_head_dim);
+                         node.params.attention_mask_is_additive, mask_per_head, v_head_dim, node.params.logit_cap);
 }
 
 void compute_attention_int8_hybrid_node(GraphNode& node, const std::vector<std::unique_ptr<GraphNode>>& nodes, const std::unordered_map<size_t, size_t>& node_index_map) {
@@ -892,22 +904,36 @@ void compute_conv1d_causal_node(GraphNode& node, const std::vector<std::unique_p
     const size_t C_in  = X.shape[2];
     const size_t W0    = W.shape[0];
     const size_t W1    = W.shape[1];
-    const size_t K     = W.shape[2];
+    const size_t W2    = W.shape[2];
     const size_t dil   = node.params.dilation;
     if (dil < 1) throw std::runtime_error("dilation must be >= 1");
 
     size_t M = 1;
     size_t C_out = 0;
-
-    assert((W1 == 1) && (W0 % C_in == 0) && "Only depthwise causal convolution is supported currently");
+    const bool standard_layout = (W1 == 1);
+    const bool transposed_layout = (W2 == 1);
+    if ((!standard_layout && !transposed_layout) || (W0 % C_in != 0)) {
+        throw std::runtime_error("Only depthwise causal convolution is supported currently");
+    }
+    const size_t K = standard_layout ? W2 : W1;
     M = W0 / C_in;
     C_out = C_in * M;
 
     Y.shape = { N, L, C_out };
     Y.precision = X.precision;
 
+    auto transpose_depthwise_weights_fp16 = [&](const __fp16* src) {
+        std::vector<__fp16> transposed(W0 * K);
+        for (size_t oc = 0; oc < W0; ++oc) {
+            for (size_t k = 0; k < K; ++k) {
+                transposed[oc * K + k] = src[(oc * W1 + k) * W2];
+            }
+        }
+        return transposed;
+    };
+
     if (W.precision == Precision::INT8) {
-        const size_t W_size = W0 * W1 * K;
+        const size_t W_size = W0 * W1 * W2;
         const int8_t* W_int8 = W.data_as<int8_t>();
 
         std::vector<__fp16> W_fp16(W_size);
@@ -932,13 +958,27 @@ void compute_conv1d_causal_node(GraphNode& node, const std::vector<std::unique_p
             }
         }
 
-        cactus_conv1d_causal_depthwise_f16(
-            X.data_as<__fp16>(), W_fp16.data(), Y.data_as<__fp16>(),
-            N, L, C_in, K, dil);
+        if (transposed_layout && !standard_layout) {
+            auto fixed = transpose_depthwise_weights_fp16(W_fp16.data());
+            cactus_conv1d_causal_depthwise_f16(
+                X.data_as<__fp16>(), fixed.data(), Y.data_as<__fp16>(),
+                N, L, C_in, K, dil);
+        } else {
+            cactus_conv1d_causal_depthwise_f16(
+                X.data_as<__fp16>(), W_fp16.data(), Y.data_as<__fp16>(),
+                N, L, C_in, K, dil);
+        }
     } else if (W.precision == Precision::FP16) {
-        cactus_conv1d_causal_depthwise_f16(
-            X.data_as<__fp16>(), W.data_as<__fp16>(), Y.data_as<__fp16>(),
-            N, L, C_in, K, dil);
+        if (transposed_layout && !standard_layout) {
+            auto fixed = transpose_depthwise_weights_fp16(W.data_as<__fp16>());
+            cactus_conv1d_causal_depthwise_f16(
+                X.data_as<__fp16>(), fixed.data(), Y.data_as<__fp16>(),
+                N, L, C_in, K, dil);
+        } else {
+            cactus_conv1d_causal_depthwise_f16(
+                X.data_as<__fp16>(), W.data_as<__fp16>(), Y.data_as<__fp16>(),
+                N, L, C_in, K, dil);
+        }
     } else {
         throw std::runtime_error("Depthwise causal conv supports INT8/FP16 weights");
     }

@@ -327,23 +327,13 @@ static bool test_tool_definition_rejects_invalid_tools_json() {
         && rejected_missing_parameters;
 }
 
-static Grammar qwen_style_tool_call_grammar_from_tools_json() {
+static Grammar tool_call_grammar_from_tools_json(Config::ModelType model_type) {
     std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(tools_json);
-    return Grammar::model_decode_grammar(Grammar(), true, false, Config::ModelType::QWEN, tools);
-}
-
-static Grammar lfm2_style_tool_call_grammar_from_tools_json() {
-    std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(tools_json);
-    return Grammar::model_decode_grammar(Grammar(), true, false, Config::ModelType::LFM2, tools);
-}
-
-static Grammar gemma_style_tool_call_grammar_from_tools_json() {
-    std::vector<ToolDefinition> tools = ToolDefinition::parse_tools_json(tools_json);
-    return Grammar::model_decode_grammar(Grammar(), true, false, Config::ModelType::GEMMA, tools);
+    return Grammar::model_decode_grammar(Grammar(), true, false, model_type, tools);
 }
 
 static bool test_qwen_style_tool_call_accepts_single_tool_call(const GrammarFixture& fixture) {
-    Grammar grammar = qwen_style_tool_call_grammar_from_tools_json();
+    Grammar grammar = tool_call_grammar_from_tools_json(Config::ModelType::QWEN);
 
     return accepts_complete_text(
         grammar,
@@ -353,7 +343,7 @@ static bool test_qwen_style_tool_call_accepts_single_tool_call(const GrammarFixt
 }
 
 static bool test_qwen_style_tool_call_accepts_repeated_tool_calls(const GrammarFixture& fixture) {
-    Grammar grammar = qwen_style_tool_call_grammar_from_tools_json();
+    Grammar grammar = tool_call_grammar_from_tools_json(Config::ModelType::QWEN);
 
     return accepts_complete_text(
         grammar,
@@ -363,7 +353,7 @@ static bool test_qwen_style_tool_call_accepts_repeated_tool_calls(const GrammarF
 }
 
 static bool test_qwen_style_tool_call_rejects_unknown_tool(const GrammarFixture& fixture) {
-    Grammar grammar = qwen_style_tool_call_grammar_from_tools_json();
+    Grammar grammar = tool_call_grammar_from_tools_json(Config::ModelType::QWEN);
 
     return rejects_text(
         grammar,
@@ -373,7 +363,7 @@ static bool test_qwen_style_tool_call_rejects_unknown_tool(const GrammarFixture&
 }
 
 static bool test_qwen_style_tool_call_rejects_invalid_arguments(const GrammarFixture& fixture) {
-    Grammar grammar = qwen_style_tool_call_grammar_from_tools_json();
+    Grammar grammar = tool_call_grammar_from_tools_json(Config::ModelType::QWEN);
 
     return rejects_eos_after_text(
         grammar,
@@ -383,7 +373,7 @@ static bool test_qwen_style_tool_call_rejects_invalid_arguments(const GrammarFix
 }
 
 static bool test_qwen_style_tool_call_rejects_malformed_wrapper(const GrammarFixture& fixture) {
-    Grammar grammar = qwen_style_tool_call_grammar_from_tools_json();
+    Grammar grammar = tool_call_grammar_from_tools_json(Config::ModelType::QWEN);
 
     return rejects_eos_after_text(
         grammar,
@@ -393,7 +383,7 @@ static bool test_qwen_style_tool_call_rejects_malformed_wrapper(const GrammarFix
 }
 
 static bool test_lfm2_style_tool_call_accepts_single_tool_call(const GrammarFixture& fixture) {
-    Grammar grammar = lfm2_style_tool_call_grammar_from_tools_json();
+    Grammar grammar = tool_call_grammar_from_tools_json(Config::ModelType::LFM2);
 
     return accepts_complete_text(
         grammar,
@@ -403,7 +393,7 @@ static bool test_lfm2_style_tool_call_accepts_single_tool_call(const GrammarFixt
 }
 
 static bool test_lfm2_style_tool_call_accepts_repeated_tool_calls(const GrammarFixture& fixture) {
-    Grammar grammar = lfm2_style_tool_call_grammar_from_tools_json();
+    Grammar grammar = tool_call_grammar_from_tools_json(Config::ModelType::LFM2);
 
     return accepts_complete_text(
         grammar,
@@ -413,7 +403,7 @@ static bool test_lfm2_style_tool_call_accepts_repeated_tool_calls(const GrammarF
 }
 
 static bool test_lfm2_style_tool_call_accepts_pythonic_literals(const GrammarFixture& fixture) {
-    Grammar grammar = lfm2_style_tool_call_grammar_from_tools_json();
+    Grammar grammar = tool_call_grammar_from_tools_json(Config::ModelType::LFM2);
 
     return accepts_complete_text(
         grammar,
@@ -423,7 +413,7 @@ static bool test_lfm2_style_tool_call_accepts_pythonic_literals(const GrammarFix
 }
 
 static bool test_lfm2_style_tool_call_rejects_unknown_tool(const GrammarFixture& fixture) {
-    Grammar grammar = lfm2_style_tool_call_grammar_from_tools_json();
+    Grammar grammar = tool_call_grammar_from_tools_json(Config::ModelType::LFM2);
 
     return rejects_text(
         grammar,
@@ -433,7 +423,7 @@ static bool test_lfm2_style_tool_call_rejects_unknown_tool(const GrammarFixture&
 }
 
 static bool test_lfm2_style_tool_call_rejects_malformed_wrapper(const GrammarFixture& fixture) {
-    Grammar grammar = lfm2_style_tool_call_grammar_from_tools_json();
+    Grammar grammar = tool_call_grammar_from_tools_json(Config::ModelType::LFM2);
 
     return rejects_eos_after_text(
         grammar,
@@ -443,7 +433,7 @@ static bool test_lfm2_style_tool_call_rejects_malformed_wrapper(const GrammarFix
 }
 
 static bool test_lfm2_style_tool_call_rejects_malformed_literal(const GrammarFixture& fixture) {
-    Grammar grammar = lfm2_style_tool_call_grammar_from_tools_json();
+    Grammar grammar = tool_call_grammar_from_tools_json(Config::ModelType::LFM2);
 
     return rejects_text(
         grammar,
@@ -453,7 +443,7 @@ static bool test_lfm2_style_tool_call_rejects_malformed_literal(const GrammarFix
 }
 
 static bool test_gemma_style_tool_call_accepts_single_tool_call(const GrammarFixture& fixture) {
-    Grammar grammar = gemma_style_tool_call_grammar_from_tools_json();
+    Grammar grammar = tool_call_grammar_from_tools_json(Config::ModelType::GEMMA);
 
     return accepts_complete_text(
         grammar,
@@ -463,7 +453,7 @@ static bool test_gemma_style_tool_call_accepts_single_tool_call(const GrammarFix
 }
 
 static bool test_gemma_style_tool_call_accepts_single_tool_call_with_pipe_tags(const GrammarFixture& fixture) {
-    Grammar grammar = gemma_style_tool_call_grammar_from_tools_json();
+    Grammar grammar = tool_call_grammar_from_tools_json(Config::ModelType::GEMMA4);
 
     return accepts_complete_text(
         grammar,
@@ -473,7 +463,7 @@ static bool test_gemma_style_tool_call_accepts_single_tool_call_with_pipe_tags(c
 }
 
 static bool test_gemma_style_tool_call_accepts_repeated_tool_calls(const GrammarFixture& fixture) {
-    Grammar grammar = gemma_style_tool_call_grammar_from_tools_json();
+    Grammar grammar = tool_call_grammar_from_tools_json(Config::ModelType::GEMMA);
 
     return accepts_complete_text(
         grammar,
@@ -482,18 +472,8 @@ static bool test_gemma_style_tool_call_accepts_repeated_tool_calls(const Grammar
     );
 }
 
-static bool test_gemma_style_tool_call_accepts_repeated_mixed_wrapper_tool_calls(const GrammarFixture& fixture) {
-    Grammar grammar = gemma_style_tool_call_grammar_from_tools_json();
-
-    return accepts_complete_text(
-        grammar,
-        fixture,
-        "<start_function_call>call:send_message{recipient:<escape>Blob<escape>,message:<escape>Hello Blob!<escape>}<end_function_call><|tool_call>call:get_weather{location:<escape>San Francisco<escape>}<tool_call|>"
-    );
-}
-
 static bool test_gemma_style_tool_call_accepts_mixed_value_types(const GrammarFixture& fixture) {
-    Grammar grammar = gemma_style_tool_call_grammar_from_tools_json();
+    Grammar grammar = tool_call_grammar_from_tools_json(Config::ModelType::GEMMA);
 
     return accepts_complete_text(
         grammar,
@@ -503,7 +483,7 @@ static bool test_gemma_style_tool_call_accepts_mixed_value_types(const GrammarFi
 }
 
 static bool test_gemma_style_tool_call_rejects_unknown_tool(const GrammarFixture& fixture) {
-    Grammar grammar = gemma_style_tool_call_grammar_from_tools_json();
+    Grammar grammar = tool_call_grammar_from_tools_json(Config::ModelType::GEMMA);
 
     return rejects_text(
         grammar,
@@ -513,7 +493,7 @@ static bool test_gemma_style_tool_call_rejects_unknown_tool(const GrammarFixture
 }
 
 static bool test_gemma_style_tool_call_rejects_malformed_wrapper(const GrammarFixture& fixture) {
-    Grammar grammar = gemma_style_tool_call_grammar_from_tools_json();
+    Grammar grammar = tool_call_grammar_from_tools_json(Config::ModelType::GEMMA);
 
     return rejects_eos_after_text(
         grammar,
@@ -523,7 +503,7 @@ static bool test_gemma_style_tool_call_rejects_malformed_wrapper(const GrammarFi
 }
 
 static bool test_gemma_style_tool_call_rejects_malformed_escaped_string(const GrammarFixture& fixture) {
-    Grammar grammar = gemma_style_tool_call_grammar_from_tools_json();
+    Grammar grammar = tool_call_grammar_from_tools_json(Config::ModelType::GEMMA);
 
     return rejects_eos_after_text(
         grammar,
@@ -533,7 +513,7 @@ static bool test_gemma_style_tool_call_rejects_malformed_escaped_string(const Gr
 }
 
 static bool test_gemma_style_tool_call_rejects_malformed_mixed_value_types(const GrammarFixture& fixture) {
-    Grammar grammar = gemma_style_tool_call_grammar_from_tools_json();
+    Grammar grammar = tool_call_grammar_from_tools_json(Config::ModelType::GEMMA);
 
     return rejects_text(
         grammar,
@@ -768,7 +748,6 @@ int main() {
         runner.run_test("gemma_style_tool_call_single", test_gemma_style_tool_call_accepts_single_tool_call(fixture));
         runner.run_test("gemma_style_tool_call_single_pipe_tags", test_gemma_style_tool_call_accepts_single_tool_call_with_pipe_tags(fixture));
         runner.run_test("gemma_style_tool_call_repeated", test_gemma_style_tool_call_accepts_repeated_tool_calls(fixture));
-        runner.run_test("gemma_style_tool_call_repeated_mixed_wrappers", test_gemma_style_tool_call_accepts_repeated_mixed_wrapper_tool_calls(fixture));
         runner.run_test("gemma_style_tool_call_mixed_value_types", test_gemma_style_tool_call_accepts_mixed_value_types(fixture));
         runner.run_test("gemma_style_tool_call_unknown_tool", test_gemma_style_tool_call_rejects_unknown_tool(fixture));
         runner.run_test("gemma_style_tool_call_malformed_wrapper", test_gemma_style_tool_call_rejects_malformed_wrapper(fixture));

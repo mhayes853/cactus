@@ -32,19 +32,161 @@ bool model_uses_bpe_tokenizer(const std::string& merges_file) {
     return false;
 }
 
-} // anonymous namespace
+std::string trim_copy(const std::string& value) {
+    size_t start = value.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) return "";
+    size_t end = value.find_last_not_of(" \t\r\n");
+    return value.substr(start, end - start + 1);
+}
+
+TokenizerRuntimeConfig::TokenizerType parse_tokenizer_type(const std::string& value) {
+    if (value == "bpe") return TokenizerRuntimeConfig::TokenizerType::BPE;
+    if (value == "sentencepiece") return TokenizerRuntimeConfig::TokenizerType::SENTENCEPIECE;
+    return TokenizerRuntimeConfig::TokenizerType::UNKNOWN;
+}
+
+TokenizerRuntimeConfig::VocabFormat parse_vocab_format(const std::string& value) {
+    if (value == "id_tab_token") return TokenizerRuntimeConfig::VocabFormat::ID_TAB_TOKEN;
+    if (value == "line_token") return TokenizerRuntimeConfig::VocabFormat::LINE_TOKEN;
+    return TokenizerRuntimeConfig::VocabFormat::UNKNOWN;
+}
+
+TokenizerRuntimeConfig::Normalizer parse_normalizer(const std::string& value) {
+    if (value == "metaspace") return TokenizerRuntimeConfig::Normalizer::METASPACE;
+    if (value == "byte_level") return TokenizerRuntimeConfig::Normalizer::BYTE_LEVEL;
+    return TokenizerRuntimeConfig::Normalizer::NONE;
+}
+
+TokenizerRuntimeConfig::Decoder parse_decoder(const std::string& value) {
+    if (value == "replace_metaspace") return TokenizerRuntimeConfig::Decoder::REPLACE_METASPACE;
+    if (value == "byte_level") return TokenizerRuntimeConfig::Decoder::BYTE_LEVEL;
+    return TokenizerRuntimeConfig::Decoder::NONE;
+}
+
+}  // namespace
+
+TokenizerRuntimeConfig load_tokenizer_runtime_config(const std::string& config_file) {
+    TokenizerRuntimeConfig config;
+
+    std::ifstream file(config_file);
+    if (!file.is_open()) {
+        return config;
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.empty() || line[0] == '#') continue;
+
+        size_t eq_pos = line.find('=');
+        if (eq_pos == std::string::npos) continue;
+
+        const std::string key = trim_copy(line.substr(0, eq_pos));
+        const std::string value = trim_copy(line.substr(eq_pos + 1));
+
+        if (key == "tokenizer_type") {
+            config.tokenizer_type = parse_tokenizer_type(value);
+        } else if (key == "vocab_format") {
+            config.vocab_format = parse_vocab_format(value);
+        } else if (key == "normalizer") {
+            config.normalizer = parse_normalizer(value);
+        } else if (key == "decoder") {
+            config.decoder = parse_decoder(value);
+        } else if (key == "byte_fallback") {
+            config.byte_fallback = (value == "true" || value == "1");
+        } else if (key == "has_chat_template") {
+            config.has_chat_template = (value == "true" || value == "1");
+        }
+    }
+
+    return config;
+}
+
+void load_special_tokens_map(const std::string& config_file, std::unordered_map<std::string, uint32_t>& special_tokens) {
+    special_tokens.clear();
+
+    std::ifstream file(config_file);
+    if (!file.is_open()) {
+        return;
+    }
+
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+    size_t pos = content.find("\"special_tokens\"");
+    if (pos == std::string::npos) return;
+
+    pos = content.find("{", pos);
+    if (pos == std::string::npos) return;
+
+    size_t end_pos = content.find("}", pos);
+    if (end_pos == std::string::npos) return;
+
+    std::string special_tokens_section = content.substr(pos + 1, end_pos - pos - 1);
+    std::istringstream iss(special_tokens_section);
+    std::string line;
+
+    while (std::getline(iss, line)) {
+        size_t colon_pos = line.find(":");
+        if (colon_pos == std::string::npos) continue;
+
+        std::string id_part = line.substr(0, colon_pos);
+        std::string token_part = line.substr(colon_pos + 1);
+
+        size_t id_start = id_part.find("\"");
+        size_t id_end = id_part.find("\"", id_start + 1);
+        if (id_start == std::string::npos || id_end == std::string::npos) continue;
+
+        uint32_t token_id = static_cast<uint32_t>(std::stoul(id_part.substr(id_start + 1, id_end - id_start - 1)));
+
+        size_t token_start = token_part.find("\"");
+        size_t token_end = token_part.rfind("\"");
+        if (token_start == std::string::npos || token_end == std::string::npos || token_start >= token_end) continue;
+
+        std::string token_content = token_part.substr(token_start + 1, token_end - token_start - 1);
+        special_tokens[token_content] = token_id;
+    }
+}
+
+TokenizerInfo Tokenizer::get_tokenizer_info() const {
+    std::vector<uint32_t> stop_token_ids = {get_eos_token()};
+    std::string default_stop = get_default_stop_sequence();
+    if (!default_stop.empty()) {
+        std::vector<uint32_t> encoded = encode(default_stop);
+        if (encoded.size() == 1 && std::find(stop_token_ids.begin(), stop_token_ids.end(), encoded[0]) == stop_token_ids.end()) {
+            stop_token_ids.push_back(encoded[0]);
+        }
+    }
+
+    VocabType vocab_type = VocabType::RAW;
+
+    const auto has_none = runtime_config_.decoder == TokenizerRuntimeConfig::Decoder::NONE
+        && runtime_config_.normalizer == TokenizerRuntimeConfig::Normalizer::NONE;
+    const auto is_byte_level = runtime_config_.decoder == TokenizerRuntimeConfig::Decoder::BYTE_LEVEL
+        || runtime_config_.normalizer == TokenizerRuntimeConfig::Normalizer::BYTE_LEVEL;
+    if (runtime_config_.byte_fallback) {
+        vocab_type = VocabType::BYTE_FALLBACK;
+    } else if (is_byte_level || has_none) {
+        vocab_type = VocabType::BYTE_LEVEL;
+    }
+
+    const auto& encoded_vocab = get_encoded_vocab();
+    return TokenizerInfo{encoded_vocab, vocab_type, encoded_vocab.size(), stop_token_ids, get_add_prefix_space()};
+}
 
 std::unique_ptr<Tokenizer> create_tokenizer_from_model_dir(const std::string& model_dir) {
     const std::string vocab_file = model_dir + "/vocab.txt";
     const std::string merges_file = model_dir + "/merges.txt";
     const std::string config_file = model_dir + "/tokenizer_config.txt";
 
+    TokenizerRuntimeConfig runtime_config = load_tokenizer_runtime_config(config_file);
+
     std::unique_ptr<Tokenizer> tokenizer;
-    if (model_uses_bpe_tokenizer(merges_file)) {
+    if (runtime_config.tokenizer_type == TokenizerRuntimeConfig::TokenizerType::BPE ||
+        (runtime_config.tokenizer_type == TokenizerRuntimeConfig::TokenizerType::UNKNOWN && model_uses_bpe_tokenizer(merges_file))) {
         tokenizer = std::make_unique<BPETokenizer>();
     } else {
         tokenizer = std::make_unique<SPTokenizer>();
     }
+
     if (!tokenizer->load_vocabulary_with_config(vocab_file, merges_file, config_file)) {
         return nullptr;
     }
@@ -69,6 +211,9 @@ void Tokenizer::detect_model_type(const std::string& config_path) {
                 break;
             } else if (line.find("qwen") != std::string::npos) {
                 model_type_ = ModelType::QWEN;
+                break;
+            } else if (line.find("gemma4") != std::string::npos || line.find("tinyllama") != std::string::npos) {
+                model_type_ = ModelType::GEMMA4;
                 break;
             } else if (line.find("gemma") != std::string::npos) {
                 model_type_ = ModelType::GEMMA;
@@ -137,6 +282,8 @@ std::string Tokenizer::get_default_stop_sequence() const {
     switch (model_type_) {
         case ModelType::GEMMA:
             return "<end_of_turn>";
+        case ModelType::GEMMA4:
+            return "<turn|>";
         case ModelType::QWEN:
         case ModelType::QWEN3P5:
         case ModelType::LFM2:
@@ -151,7 +298,8 @@ std::vector<uint32_t> Tokenizer::apply_chat_template(const std::vector<ChatMessa
     return encode(formatted_prompt);
 }
 
-std::string Tokenizer::format_chat_prompt(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json, bool enable_thinking_if_supported) const {
+std::string Tokenizer::format_chat_prompt(const std::vector<ChatMessage>& messages, bool add_generation_prompt,
+                                          const std::string& tools_json, bool enable_thinking_if_supported) const {
     bool has_images = false;
     for (const auto& msg : messages) {
         if (!msg.images.empty()) {
@@ -162,13 +310,15 @@ std::string Tokenizer::format_chat_prompt(const std::vector<ChatMessage>& messag
     if (model_type_ == ModelType::LFM2 && has_images) {
         return format_lfm2_vl_style(messages, add_generation_prompt, tools_json);
     }
-    
+
     switch (model_type_) {
         case ModelType::QWEN:
         case ModelType::QWEN3P5:
             return format_qwen_style(messages, add_generation_prompt, tools_json, enable_thinking_if_supported);
         case ModelType::GEMMA:
             return format_gemma_style(messages, add_generation_prompt, tools_json);
+        case ModelType::GEMMA4:
+            return format_gemma4_style(messages, add_generation_prompt, tools_json, enable_thinking_if_supported);
         case ModelType::LFM2:
             return format_lfm2_style(messages, add_generation_prompt, tools_json);
         case ModelType::YOUTU:
@@ -298,6 +448,101 @@ std::string Tokenizer::format_lfm2_style(const std::vector<ChatMessage>& message
     return result;
 }
 
+std::string Tokenizer::format_gemma4_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt,
+                                               const std::string& tools_json, bool enable_thinking_if_supported) const {
+    std::string result = "<bos>";
+
+    std::string sys_content;
+    size_t first_msg = 0;
+    if (!messages.empty() && (messages[0].role == "system" || messages[0].role == "developer")) {
+        sys_content = messages[0].content;
+        first_msg = 1;
+    }
+
+    if (enable_thinking_if_supported || !sys_content.empty() || !tools_json.empty()) {
+        result += "<|turn>system\n";
+        if (enable_thinking_if_supported) {
+            result += "<|think|>";
+        }
+        result += sys_content;
+        result += tools_json;
+        result += "<turn|>\n";
+    }
+
+    auto strip_channel = [](const std::string& text) -> std::string {
+        const std::string open_tag = "<|channel>";
+        const std::string close_tag = "<channel|>";
+        std::string out;
+        size_t pos = 0;
+        while (pos < text.size()) {
+            size_t open_pos = text.find(open_tag, pos);
+            if (open_pos == std::string::npos) {
+                out += text.substr(pos);
+                break;
+            }
+            out += text.substr(pos, open_pos - pos);
+            size_t close_pos = text.find(close_tag, open_pos + open_tag.size());
+            if (close_pos == std::string::npos) {
+                break;
+            }
+            pos = close_pos + close_tag.size();
+        }
+        return out;
+    };
+
+    auto compute_soft_tokens = [&](const std::string& image_path) -> size_t {
+        int w = 0, h = 0, c = 0;
+        unsigned char* data = stbi_load(image_path.c_str(), &w, &h, &c, 3);
+        if (!data) return 0;
+        stbi_image_free(data);
+
+        uint32_t p = vision_patch_size_;
+        uint32_t k = vision_pooling_kernel_size_;
+        uint32_t side = k * p;
+        uint32_t max_patches = vision_default_output_length_ * k * k;
+        float factor = std::sqrt(static_cast<float>(max_patches) * p * p /
+                                 (static_cast<float>(h) * w));
+        int th = static_cast<int>(std::floor(factor * h / side)) * side;
+        int tw = static_cast<int>(std::floor(factor * w / side)) * side;
+        if (th == 0) th = side;
+        if (tw == 0) tw = side;
+        return static_cast<size_t>((th / p / k) * (tw / p / k));
+    };
+
+    for (size_t i = first_msg; i < messages.size(); i++) {
+        const auto& msg = messages[i];
+        std::string role = (msg.role == "assistant") ? "model" : msg.role;
+        result += "<|turn>" + role + "\n";
+        if (role == "model") {
+            result += strip_channel(msg.content);
+        } else {
+            for (const auto& image_path : msg.images) {
+                size_t n = compute_soft_tokens(image_path);
+                if (n > 0) {
+                    result += "\n\n<|image>";
+                    for (size_t j = 0; j < n; j++)
+                        result += "<|image|>";
+                    result += "<image|>\n\n";
+                }
+            }
+            result += msg.content;
+            if (msg.audio_soft_token_count > 0) {
+                result += "<|audio>";
+                for (size_t j = 0; j < msg.audio_soft_token_count; j++)
+                    result += "<|audio|>";
+                result += "<audio|>";
+            }
+        }
+        result += "<turn|>\n";
+    }
+
+    if (add_generation_prompt) {
+        result += "<|turn>model\n";
+    }
+
+    return result;
+}
+
 std::string Tokenizer::format_lfm2_vl_style(
     const std::vector<ChatMessage>& messages,
     bool add_generation_prompt,
@@ -308,14 +553,14 @@ std::string Tokenizer::format_lfm2_vl_style(
     }
 
     std::string result = "<|startoftext|>";
-    
+
     for (const auto& msg : messages) {
         result += "<|im_start|>" + msg.role + "\n";
         result += msg.content;
         for (const auto& image_path : msg.images) {
             int width = 0, height = 0, channels = 0;
             unsigned char* img_data = stbi_load(image_path.c_str(), &width, &height, &channels, 0);
-            
+
             if (img_data) {
                 Siglip2Preprocessor preprocessor;
                 auto shape_result = preprocessor.compute_spatial_shapes(height, width);
@@ -325,26 +570,26 @@ std::string Tokenizer::format_lfm2_vl_style(
                 int grid_cols = shape_result.grid_cols;
                 int num_tiles = grid_rows * grid_cols;
                 result += "<|image_start|>";
-                
+
                 if (num_tiles > 1) {
                     for (int tile_idx = 0; tile_idx < num_tiles; ++tile_idx) {
                         int row = tile_idx / grid_cols;
                         int col = tile_idx % grid_cols;
-                        
+
                         result += "<|img_row_" + std::to_string(row + 1) + "_col_" + std::to_string(col + 1) + "|>";
                         auto [tile_height, tile_width] = shape_result.shapes[tile_idx];
                         int tile_tokens = (tile_height * tile_width) / (downsample_factor * downsample_factor);
-                        
+
                         for (int t = 0; t < tile_tokens; ++t) {
                             result += "<image>";
                         }
                     }
                     if (use_thumbnail && static_cast<size_t>(num_tiles) < shape_result.shapes.size()) {
                         result += "<|img_thumbnail|>";
-                        
+
                         auto [thumb_height, thumb_width] = shape_result.shapes[num_tiles];
                         int thumbnail_tokens = (thumb_height * thumb_width) / (downsample_factor * downsample_factor);
-                        
+
                         for (int t = 0; t < thumbnail_tokens; ++t) {
                             result += "<image>";
                         }
@@ -352,20 +597,20 @@ std::string Tokenizer::format_lfm2_vl_style(
                 } else if (num_tiles == 1) {
                     auto [thumb_height, thumb_width] = shape_result.shapes[0];
                     int thumbnail_tokens = (thumb_height * thumb_width) / (downsample_factor * downsample_factor);
-                    
+
                     for (int t = 0; t < thumbnail_tokens; ++t) {
                         result += "<image>";
                     }
                 }
-                
+
                 result += "<|image_end|>";
-                
+
                 stbi_image_free(img_data);
             } else {
                 result += "<image>";
             }
         }
-        
+
         result += "<|im_end|>\n";
     }
 
@@ -393,7 +638,7 @@ std::string Tokenizer::format_gemma_style(const std::vector<ChatMessage>& messag
         if (!system_content.empty()) {
             result += system_content;
             if (!tools_json.empty()) {
-                result += "\n"; 
+                result += "\n";
             }
         }
         if (!tools_json.empty()) {
@@ -415,7 +660,7 @@ std::string Tokenizer::format_gemma_style(const std::vector<ChatMessage>& messag
             std::string func_name = msg.name.empty() ? "tool" : msg.name;
             result += "<start_function_response>response:" + func_name + "{" + msg.content + "}<end_function_response>";
             prev_message_type = "tool_response";
-            
+
         } else if (msg.role == "user") {
             if (prev_message_type == "tool_response") {
                 result += "<end_of_turn>\n";
@@ -424,7 +669,7 @@ std::string Tokenizer::format_gemma_style(const std::vector<ChatMessage>& messag
             result += msg.content;
             result += "<end_of_turn>\n";
             prev_message_type = "content";
-            
+
         } else if (msg.role == "assistant" || msg.role == "model") {
             if (prev_message_type == "tool_response") {
                 result += "<end_of_turn>\n";

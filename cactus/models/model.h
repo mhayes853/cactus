@@ -1633,3 +1633,5 @@ private:
 
 }
 }
+
+#include "gemma4/model_gemma4.h"

@@ -37,6 +37,7 @@ void SPTokenizer::cleanup_mmap() {
 }
 
 bool SPTokenizer::load_vocabulary_with_config(const std::string& vocab_file, const std::string& /*merges_file*/, const std::string& config_file) {
+    runtime_config_ = load_tokenizer_runtime_config(config_file);
     std::string config_path = config_file.substr(0, config_file.find_last_of("/\\")) + "/config.txt";
     detect_model_type(config_path);
 
@@ -445,49 +446,7 @@ std::string SPTokenizer::decode(const std::vector<uint32_t>& tokens) const {
 }
 
 void SPTokenizer::load_special_tokens(const std::string& config_file) {
-    std::ifstream file(config_file);
-    if (!file.is_open()) {
-        return;
-    }
-
-    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-
-    size_t pos = content.find("\"special_tokens\"");
-    if (pos == std::string::npos) return;
-
-    pos = content.find("{", pos);
-    if (pos == std::string::npos) return;
-
-    size_t end_pos = content.find("}", pos);
-    if (end_pos == std::string::npos) return;
-
-    std::string special_tokens_section = content.substr(pos + 1, end_pos - pos - 1);
-
-    std::istringstream iss(special_tokens_section);
-    std::string line;
-
-    while (std::getline(iss, line)) {
-        size_t colon_pos = line.find(":");
-        if (colon_pos == std::string::npos) continue;
-
-        std::string id_part = line.substr(0, colon_pos);
-        std::string token_part = line.substr(colon_pos + 1);
-
-        size_t id_start = id_part.find("\"");
-        size_t id_end = id_part.find("\"", id_start + 1);
-        if (id_start == std::string::npos || id_end == std::string::npos) continue;
-
-        std::string id_str = id_part.substr(id_start + 1, id_end - id_start - 1);
-        uint32_t token_id = std::stoul(id_str);
-
-        size_t token_start = token_part.find("\"");
-        size_t token_end = token_part.rfind("\"");
-        if (token_start == std::string::npos || token_end == std::string::npos || token_start >= token_end) continue;
-
-        std::string token_content = token_part.substr(token_start + 1, token_end - token_start - 1);
-
-        special_tokens_[token_content] = token_id;
-    }
+    load_special_tokens_map(config_file, special_tokens_);
 }
 
 void SPTokenizer::load_chat_template(const std::string& template_file) {
@@ -499,25 +458,6 @@ void SPTokenizer::load_chat_template(const std::string& template_file) {
 
     chat_template_ = std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     has_chat_template_ = !chat_template_.empty();
-}
-
-TokenizerInfo SPTokenizer::get_tokenizer_info() const {
-    std::vector<uint32_t> stop_token_ids = {eos_token_id_};
-    std::string default_stop = get_default_stop_sequence();
-    if (!default_stop.empty()) {
-        std::vector<uint32_t> encoded = encode(default_stop);
-        if (encoded.size() == 1 && std::find(stop_token_ids.begin(), stop_token_ids.end(), encoded[0]) == stop_token_ids.end()) {
-            stop_token_ids.push_back(encoded[0]);
-        }
-    }
-
-    return TokenizerInfo{
-        id_to_token_,
-        VocabType::BYTE_FALLBACK,
-        id_to_token_.size(),
-        stop_token_ids,
-        get_add_prefix_space()
-    };
 }
 
 } // namespace engine

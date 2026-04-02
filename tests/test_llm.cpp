@@ -56,7 +56,7 @@ bool test_streaming() {
     std::cout << "Assistant: ";
 
     int result1 = cactus_complete(model, messages1, response1, sizeof(response1),
-                                 g_options, nullptr, stream_callback, &data1, nullptr);
+                                 g_options, nullptr, stream_callback, &data1, nullptr, 0, nullptr);
 
     std::cout << "\n\n[Results - Turn 1]\n";
     Metrics metrics1;
@@ -92,7 +92,7 @@ bool test_streaming() {
     std::cout << "Assistant: ";
 
     int result2 = cactus_complete(model, messages2_str.c_str(), response2, sizeof(response2),
-                                 g_options, nullptr, stream_callback, &data2, nullptr);
+                                 g_options, nullptr, stream_callback, &data2, nullptr, 0, nullptr);
 
     std::cout << "\n\n[Results - Turn 2]\n";
     Metrics metrics2;
@@ -137,13 +137,13 @@ bool test_prefill_idempotent_reuse() {
     }])";
 
     char prefill_response1[2048] = {0};
-    int prefill_result1 = cactus_prefill(model, messages, prefill_response1, sizeof(prefill_response1), nullptr, tools);
+    int prefill_result1 = cactus_prefill(model, messages, prefill_response1, sizeof(prefill_response1), nullptr, tools, nullptr, 0);
 
     PrefillMetrics prefill_metrics1;
     prefill_metrics1.parse(prefill_response1);
 
     char prefill_response2[2048] = {0};
-    int prefill_result2 = cactus_prefill(model, messages, prefill_response2, sizeof(prefill_response2), nullptr, tools);
+    int prefill_result2 = cactus_prefill(model, messages, prefill_response2, sizeof(prefill_response2), nullptr, tools, nullptr, 0);
 
     PrefillMetrics prefill_metrics2;
     prefill_metrics2.parse(prefill_response2);
@@ -206,19 +206,19 @@ bool test_prefill_prefix_extension_reuse() {
     }])";
 
     char prefill_response1[2048] = {0};
-    int prefill_result1 = cactus_prefill(model, messages_base, prefill_response1, sizeof(prefill_response1), nullptr, tools);
+    int prefill_result1 = cactus_prefill(model, messages_base, prefill_response1, sizeof(prefill_response1), nullptr, tools, nullptr, 0);
     PrefillMetrics prefill_metrics1;
     prefill_metrics1.parse(prefill_response1);
 
     char prefill_response2[2048] = {0};
-    int prefill_result2 = cactus_prefill(model, messages_extended, prefill_response2, sizeof(prefill_response2), nullptr, tools);
+    int prefill_result2 = cactus_prefill(model, messages_extended, prefill_response2, sizeof(prefill_response2), nullptr, tools, nullptr, 0);
     PrefillMetrics prefill_metrics2;
     prefill_metrics2.parse(prefill_response2);
 
     cactus_reset(model);
 
     char prefill_response3[2048] = {0};
-    int prefill_result3 = cactus_prefill(model, messages_extended, prefill_response3, sizeof(prefill_response3), nullptr, tools);
+    int prefill_result3 = cactus_prefill(model, messages_extended, prefill_response3, sizeof(prefill_response3), nullptr, tools, nullptr, 0);
     PrefillMetrics prefill_metrics3;
     prefill_metrics3.parse(prefill_response3);
 
@@ -275,13 +275,13 @@ bool test_prefill_invalidated_on_message_change() {
     })";
 
     char prefill_response[2048] = {0};
-    int prefill_result = cactus_prefill(model, prefill_messages, prefill_response, sizeof(prefill_response), nullptr, nullptr);
+    int prefill_result = cactus_prefill(model, prefill_messages, prefill_response, sizeof(prefill_response), nullptr, nullptr, nullptr, 0);
     PrefillMetrics prefill_metrics;
     prefill_metrics.parse(prefill_response);
 
     char complete_response_warm[4096] = {0};
     int complete_result_warm = cactus_complete(model, complete_messages, complete_response_warm, sizeof(complete_response_warm),
-                                               options, nullptr, nullptr, nullptr, nullptr);
+                                               options, nullptr, nullptr, nullptr, nullptr, 0, nullptr);
     Metrics warm_metrics;
     warm_metrics.parse(complete_response_warm);
 
@@ -289,7 +289,7 @@ bool test_prefill_invalidated_on_message_change() {
 
     char complete_response_cold[4096] = {0};
     int complete_result_cold = cactus_complete(model, complete_messages, complete_response_cold, sizeof(complete_response_cold),
-                                               options, nullptr, nullptr, nullptr, nullptr);
+                                               options, nullptr, nullptr, nullptr, nullptr, 0, nullptr);
     Metrics cold_metrics;
     cold_metrics.parse(complete_response_cold);
 
@@ -342,13 +342,13 @@ bool test_prefill() {
     })";
 
     char prefill_response[2048] = {0};
-    int prefill_result = cactus_prefill(model, prefill_messages, prefill_response, sizeof(prefill_response), nullptr, nullptr);
+    int prefill_result = cactus_prefill(model, prefill_messages, prefill_response, sizeof(prefill_response), nullptr, nullptr, nullptr, 0);
     PrefillMetrics prefill_metrics;
     prefill_metrics.parse(prefill_response);
 
     char complete_response_warm[4096] = {0};
     int complete_result_warm = cactus_complete(model, complete_messages, complete_response_warm, sizeof(complete_response_warm),
-                                               options, nullptr, nullptr, nullptr, nullptr);
+                                               options, nullptr, nullptr, nullptr, nullptr, 0, nullptr);
     Metrics warm_metrics;
     warm_metrics.parse(complete_response_warm);
 
@@ -356,7 +356,7 @@ bool test_prefill() {
 
     char complete_response_cold[4096] = {0};
     int complete_result_cold = cactus_complete(model, complete_messages, complete_response_cold, sizeof(complete_response_cold),
-                                               options, nullptr, nullptr, nullptr, nullptr);
+                                               options, nullptr, nullptr, nullptr, nullptr, 0, nullptr);
     Metrics cold_metrics;
     cold_metrics.parse(complete_response_cold);
 
@@ -648,7 +648,7 @@ bool test_json_grammar_outputs_valid_json() {
         std::cout << "Assistant: ";
 
         int result = cactus_complete(model, messages.c_str(), response, sizeof(response),
-                                     g_options, nullptr, stream_callback, &data, grammar);
+                                     g_options, nullptr, stream_callback, &data, nullptr, 0, grammar);
 
         Metrics metrics;
         metrics.parse(response);
@@ -707,7 +707,7 @@ bool test_regex_grammar_outputs_address() {
     std::cout << "Assistant: ";
 
     int result = cactus_complete(model, messages.c_str(), response, sizeof(response),
-                                 g_options, nullptr, stream_callback, &data, grammar);
+                                 g_options, nullptr, stream_callback, &data, nullptr, 0, grammar);
 
     Metrics metrics;
     metrics.parse(response);
@@ -772,7 +772,7 @@ bool test_json_schema_grammar_outputs_person() {
     std::cout << "Assistant: ";
 
     int result = cactus_complete(model, messages.c_str(), response, sizeof(response),
-                                 g_options, nullptr, stream_callback, &data, grammar);
+                                 g_options, nullptr, stream_callback, &data, nullptr, 0, grammar);
 
     Metrics metrics;
     metrics.parse(response);
@@ -864,7 +864,7 @@ bool test_structural_tag_grammar_outputs_blob() {
     std::cout << "Assistant: ";
 
     int result = cactus_complete(model, messages.c_str(), response, sizeof(response),
-                                 g_options, nullptr, stream_callback, &data, grammar);
+                                 g_options, nullptr, stream_callback, &data, nullptr, 0, grammar);
 
     Metrics metrics;
     metrics.parse(response);

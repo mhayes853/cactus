@@ -8,7 +8,6 @@ import subprocess
 import shutil
 import platform
 from pathlib import Path
-from pathlib import PurePosixPath
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
@@ -45,7 +44,7 @@ def _resolve_project_root() -> Path:
 
 
 PROJECT_ROOT = _resolve_project_root()
-DEFAULT_MODEL_ID = "LiquidAI/LFM2.5-1.2B-Instruct"
+DEFAULT_MODEL_ID = "google/gemma-4-E2B-it"
 DEFAULT_TEST_TRANSCRIBE_MODEL_ID = "nvidia/parakeet-tdt-0.6b-v3"
 DEFAULT_TEST_WHISPER_MODEL_ID = "openai/whisper-small"
 DEFAULT_TEST_DIARIZE_MODEL_ID = "pyannote/segmentation-3.0"
@@ -129,30 +128,7 @@ def ensure_vad_weights(model_id, weights_dir, precision='INT8'):
         print("Transcription may fail without VAD. Try: cactus download snakers4/silero-vad")
 
 
-def _normalize_weights_variant(weights_variant):
-    variant = str(weights_variant or "auto").strip().lower()
-    if variant not in WEIGHTS_VARIANT_CHOICES:
-        return "auto"
-    return variant
-
-
-def _is_apple_parakeet_model(model_id, weights_variant="auto"):
-    if platform.system() != "Darwin":
-        return False
-    if _normalize_weights_variant(weights_variant) == "standard":
-        return False
-    return "parakeet" in str(model_id).lower()
-
-
-def _is_parakeet_encoder_weight_file_name(file_name):
-    is_layer_encoder_file = re.match(r"^layer_\d+_", file_name) is not None
-    return (
-        (file_name.startswith("subsampling_") or is_layer_encoder_file)
-        and (file_name.endswith(".weights") or file_name.endswith(".bias"))
-    )
-
-
-def download_from_hf(model_id, weights_dir, precision, weights_variant="auto"):
+def download_from_hf(model_id, weights_dir, precision):
     """Download pre-converted model from Cactus-Compute HuggingFace."""
     return _download_from_hf_impl(model_id, weights_dir, precision)
 
@@ -165,7 +141,6 @@ def cmd_download(args):
     weights_dir = get_weights_dir(model_id)
     reconvert = getattr(args, 'reconvert', False)
     precision = getattr(args, 'precision', 'INT4')
-    weights_variant = _normalize_weights_variant(getattr(args, 'weights_variant', 'auto'))
 
     if reconvert and weights_dir.exists():
         print_color(YELLOW, f"Removing cached weights for reconversion...")
@@ -181,7 +156,7 @@ def cmd_download(args):
     print("=" * 45)
 
     if not reconvert and not is_local:
-        if download_from_hf(model_id, weights_dir, precision, weights_variant=weights_variant):
+        if download_from_hf(model_id, weights_dir, precision):
             ensure_vad_weights(model_id, weights_dir, precision)
             return 0
 
@@ -262,7 +237,7 @@ def cmd_download(args):
             except Exception:
                 self.eos_token_id = self.pad_token_id
 
-    def _load_raw_hf_state_dict(repo_id):
+    def _load_raw_hf_state_dict(repo_id, cast_to_bf16=True):
         from safetensors.torch import load_file as load_safetensors_file
 
         if Path(repo_id).is_dir():
@@ -299,9 +274,11 @@ def cmd_download(args):
         if not shard_files:
             raise RuntimeError("No checkpoint shard files found in HuggingFace snapshot.")
 
+        print(f"  Found {len(shard_files)} checkpoint shard file(s)")
         merged_state_dict = {}
-        for shard_name in shard_files:
+        for idx, shard_name in enumerate(shard_files, 1):
             shard_path = snapshot_path / shard_name
+            print(f"  Loading shard {idx}/{len(shard_files)}: {shard_name}")
             if shard_name.endswith(".safetensors"):
                 shard_state = load_safetensors_file(str(shard_path), device="cpu")
             elif shard_name.endswith(".bin"):
@@ -310,9 +287,21 @@ def cmd_download(args):
                 continue
             merged_state_dict.update(shard_state)
 
-        for k, v in merged_state_dict.items():
-            if v.is_floating_point() and v.dtype != torch.bfloat16:
-                merged_state_dict[k] = v.to(torch.bfloat16)
+        if cast_to_bf16:
+            fp_keys = [
+                k for k, v in merged_state_dict.items()
+                if hasattr(v, "is_floating_point") and v.is_floating_point() and v.dtype != torch.bfloat16
+            ]
+            total_fp = len(fp_keys)
+            if total_fp > 0:
+                print(f"  Normalizing {total_fp} floating tensors to bfloat16...")
+            for i, k in enumerate(fp_keys, 1):
+                merged_state_dict[k] = merged_state_dict[k].to(torch.bfloat16)
+                if i % 200 == 0 or i == total_fp:
+                    print(f"    dtype normalize progress: {i}/{total_fp}")
+        else:
+            print("  Keeping checkpoint dtypes as-is (Gemma4 fast path)")
+
 
         return merged_state_dict
 
@@ -539,12 +528,20 @@ def cmd_download(args):
                 else:
                     raise
 
-            if model_type == 'lfm2_moe' or model_type.startswith('qwen3_5') or model_type == 'youtu':
+            if (
+                model_type == 'lfm2_moe'
+                or model_type.startswith('qwen3_5')
+                or model_type == 'youtu'
+                or 'gemma4' in model_type
+            ):
                 if model_type == 'lfm2_moe':
                     print("  Note: Loading raw checkpoint tensors for lfm2_moe conversion...")
+                elif 'gemma4' in model_type:
+                    print(f"  Note: Loading raw checkpoint tensors for {model_type} conversion...")
                 else:
                     print(f"  Note: Loading raw checkpoint tensors for {model_type} conversion...")
-                raw_state_dict = _load_raw_hf_state_dict(model_id)
+                cast_to_bf16 = ('gemma4' not in model_type)
+                raw_state_dict = _load_raw_hf_state_dict(model_id, cast_to_bf16=cast_to_bf16)
 
                 class _RawModelWrapper:
                     def __init__(self, state_dict, config):
@@ -561,13 +558,7 @@ def cmd_download(args):
                 except ValueError:
                     model = AutoModel.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, dtype=torch.bfloat16, token=token)
 
-        config = convert_hf_model_weights(
-            model,
-            weights_dir,
-            precision,
-            args,
-            skip_parakeet_encoder_weights=_is_apple_parakeet_model(model_id, weights_variant),
-        )
+        config = convert_hf_model_weights(model, weights_dir, precision, args)
         del model
 
         model_name_lower = model_name.lower()
@@ -1030,12 +1021,24 @@ def cmd_run(args):
     print_color(GREEN, f"Starting Cactus Chat with model: {model_id}")
     print()
 
+    audio_path = getattr(args, 'audio', None)
+    if audio_path:
+        audio_path = str(Path(audio_path).resolve())
+        if not Path(audio_path).exists():
+            print_color(RED, f"Error: Audio file not found: {audio_path}")
+            return 1
+
     cmd_args = [str(chat_binary), str(weights_dir)]
     if image_path:
         cmd_args.extend(['--image', image_path])
+    if audio_path:
+        cmd_args.extend(['--audio', audio_path])
     system_prompt = getattr(args, 'system', None)
     if system_prompt:
         cmd_args.extend(['--system', system_prompt])
+    prompt = getattr(args, 'prompt', None)
+    if prompt:
+        cmd_args.extend(['--prompt', prompt])
     if getattr(args, 'no_thinking', False):
         cmd_args.append('--no-thinking')
 
@@ -1328,7 +1331,6 @@ def cmd_eval(args):
     dlargs.cache_dir = getattr(args, 'cache_dir', None)
     dlargs.token = getattr(args, 'token', None)
     dlargs.reconvert = getattr(args, 'reconvert', False)
-    dlargs.weights_variant = getattr(args, 'weights_variant', 'auto')
 
     download_result = cmd_download(dlargs)
     if download_result != 0:
@@ -1465,7 +1467,6 @@ def cmd_test(args):
                 dl_args.precision = 'FP16' if is_fp16_only else ('INT8' if is_asr else 'INT4')
             if args.token:
                 dl_args.token = args.token
-            dl_args.weights_variant = getattr(args, 'weights_variant', 'auto')
             if cmd_download(dl_args) != 0:
                 return 1
 
@@ -1733,7 +1734,6 @@ def cmd_convert(args):
     download_args.cache_dir = cache_dir
     download_args.token = token
     download_args.reconvert = True
-    download_args.weights_variant = getattr(args, 'weights_variant', 'auto')
 
     original_get_weights = get_weights_dir
 
@@ -2015,8 +2015,6 @@ def create_parser():
                                  help='Quantization precision (default: INT4)')
     download_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     download_parser.add_argument('--token', help='HuggingFace API token')
-    download_parser.add_argument('--weights-variant', choices=WEIGHTS_VARIANT_CHOICES, default='auto',
-                                 help='Weights package preference: auto (default), apple, or standard')
     download_parser.add_argument('--reconvert', action='store_true',
                                  help='Download original model and convert (instead of using pre-converted from Cactus-Compute)')
 
@@ -2037,16 +2035,18 @@ def create_parser():
                             help='Quantization precision (default: INT4)')
     run_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     run_parser.add_argument('--token', help='HuggingFace API token')
-    run_parser.add_argument('--weights-variant', choices=WEIGHTS_VARIANT_CHOICES, default='auto',
-                            help='Weights package preference for auto-download: auto, apple, or standard')
     run_parser.add_argument('--no-cloud-tele', action='store_true',
                             help='Disable cloud telemetry (write to cache only)')
     run_parser.add_argument('--reconvert', action='store_true',
                             help='Download original model and convert (instead of using pre-converted from Cactus-Compute)')
     run_parser.add_argument('--image',
                             help='Path to image file for VLM inference (attached to first message)')
+    run_parser.add_argument('--audio',
+                            help='Path to audio file (WAV) for audio chat (attached to first message)')
     run_parser.add_argument('--system',
                             help='System prompt to prepend to all messages')
+    run_parser.add_argument('--prompt',
+                            help='Initial prompt to send immediately')
     run_parser.add_argument('--no-thinking', action='store_true',
                             help='Disable thinking/reasoning for models that support it')
 
@@ -2061,8 +2061,6 @@ def create_parser():
                                    help='Quantization precision (default: INT4)')
     transcribe_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     transcribe_parser.add_argument('--token', help='HuggingFace API token')
-    transcribe_parser.add_argument('--weights-variant', choices=WEIGHTS_VARIANT_CHOICES, default='auto',
-                                   help='Weights package preference for auto-download: auto, apple, or standard')
     transcribe_parser.add_argument('--no-cloud-tele', action='store_true',
                                    help='Disable cloud telemetry (write to cache only)')
     transcribe_parser.add_argument('--force-handoff', action='store_true',
@@ -2083,8 +2081,6 @@ def create_parser():
                              help='Quantization precision (default: INT4)')
     eval_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     eval_parser.add_argument('--token', help='HuggingFace API token')
-    eval_parser.add_argument('--weights-variant', choices=WEIGHTS_VARIANT_CHOICES, default='auto',
-                             help='Weights package preference for auto-download: auto, apple, or standard')
     eval_parser.add_argument('--tools', action='store_true', help='Run tools evals (default)')
     eval_parser.add_argument('--vlm', action='store_true', help='Run VLM-specific evals')
     eval_parser.add_argument('--stt', action='store_true', help='Run speech-to-text evals')
@@ -2115,8 +2111,6 @@ def create_parser():
     test_parser.add_argument('--no-rebuild', action='store_true',
                              help='Skip building cactus library and tests')
     test_parser.add_argument('--token', help='HuggingFace API token')
-    test_parser.add_argument('--weights-variant', choices=WEIGHTS_VARIANT_CHOICES, default='auto',
-                             help='Weights package preference during reconvert/download: auto, apple, or standard')
     test_parser.add_argument('--android', action='store_true',
                              help='Run tests on Android')
     test_parser.add_argument('--ios', action='store_true',
@@ -2152,8 +2146,6 @@ def create_parser():
                                 help='Quantization precision (default: INT4)')
     convert_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     convert_parser.add_argument('--token', help='HuggingFace API token')
-    convert_parser.add_argument('--weights-variant', choices=WEIGHTS_VARIANT_CHOICES, default='auto',
-                                help='Weights package preference used by conversion download step: auto, apple, or standard')
     convert_parser.add_argument('--lora', help='Path to LoRA adapter (local path or HuggingFace ID) to merge before conversion')
 
     return parser

@@ -187,10 +187,12 @@ static std::string gbnf_tool_name_rule(const std::vector<ToolDefinition>& tools,
     return rule;
 }
 
-static Grammar gemma_style_tool_call_grammar(const std::vector<ToolDefinition>& tools) {
-    const auto gbnf = R"(
+static Grammar gemma_style_tool_call_grammar(const std::vector<ToolDefinition>& tools, bool use_pipe_tags_only) {
+    std::string gbnf = R"(
     root ::= tool_call+
-    tool_call ::= standard_tool_call | pipe_tool_call
+    tool_call ::= )";
+    gbnf += use_pipe_tags_only ? "pipe_tool_call\n" : "standard_tool_call\n";
+    gbnf += R"(
     standard_tool_call ::= "<start_function_call>" "call:" tool_name object "<end_function_call>"
     pipe_tool_call ::= "<|tool_call>" "call:" tool_name object "<tool_call|>"
     object ::= "{" (pair ("," pair)*)? "}"
@@ -252,7 +254,9 @@ static Grammar model_tool_call_grammar(
             return qwen_style_tool_call_grammar(tools);
         case Config::ModelType::GEMMA:
         case Config::ModelType::GEMMA3N:
-            return gemma_style_tool_call_grammar(tools);
+            return gemma_style_tool_call_grammar(tools, false);
+        case Config::ModelType::GEMMA4:
+            return gemma_style_tool_call_grammar(tools, true);
         case Config::ModelType::LFM2:
             return lfm2_style_tool_call_grammar(tools);
         default:
