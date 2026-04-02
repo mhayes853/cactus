@@ -8,6 +8,7 @@ import subprocess
 import shutil
 import platform
 from pathlib import Path
+from pathlib import PurePosixPath
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
@@ -47,6 +48,9 @@ PROJECT_ROOT = _resolve_project_root()
 DEFAULT_MODEL_ID = "LiquidAI/LFM2.5-1.2B-Instruct"
 DEFAULT_TEST_TRANSCRIBE_MODEL_ID = "nvidia/parakeet-tdt-0.6b-v3"
 DEFAULT_TEST_WHISPER_MODEL_ID = "openai/whisper-small"
+DEFAULT_TEST_DIARIZE_MODEL_ID = "pyannote/segmentation-3.0"
+DEFAULT_TEST_EMBED_SPEAKER_MODEL_ID = "pyannote/wespeaker-voxceleb-resnet34-LM"
+WEIGHTS_VARIANT_CHOICES = ["auto", "apple", "standard"]
 
 with open(PROJECT_ROOT / "models.json") as _f:
     MODELS_REGISTRY = json.load(_f)
@@ -63,19 +67,7 @@ def print_color(color, message):
     print(f"{color}{message}{NC}")
 
 
-def get_model_dir_name(model_id):
-    """Convert HuggingFace model ID to local directory name."""
-    model_name = model_id.split('/')[-1]
-    model_name = model_name.lower()
-    return model_name
-
-
-def get_weights_dir(model_id):
-    """Get the weights directory path for a model."""
-    if 'silero-vad' in model_id.lower():
-        return PROJECT_ROOT / "weights" / "silero-vad"
-    model_dir = get_model_dir_name(model_id)
-    return PROJECT_ROOT / "weights" / model_dir
+from .downloads import get_model_dir_name, get_weights_dir, download_from_hf as _download_from_hf_impl
 
 
 def check_command(cmd):
@@ -137,71 +129,32 @@ def ensure_vad_weights(model_id, weights_dir, precision='INT8'):
         print("Transcription may fail without VAD. Try: cactus download snakers4/silero-vad")
 
 
-def download_from_hf(model_id, weights_dir, precision):
+def _normalize_weights_variant(weights_variant):
+    variant = str(weights_variant or "auto").strip().lower()
+    if variant not in WEIGHTS_VARIANT_CHOICES:
+        return "auto"
+    return variant
+
+
+def _is_apple_parakeet_model(model_id, weights_variant="auto"):
+    if platform.system() != "Darwin":
+        return False
+    if _normalize_weights_variant(weights_variant) == "standard":
+        return False
+    return "parakeet" in str(model_id).lower()
+
+
+def _is_parakeet_encoder_weight_file_name(file_name):
+    is_layer_encoder_file = re.match(r"^layer_\d+_", file_name) is not None
+    return (
+        (file_name.startswith("subsampling_") or is_layer_encoder_file)
+        and (file_name.endswith(".weights") or file_name.endswith(".bias"))
+    )
+
+
+def download_from_hf(model_id, weights_dir, precision, weights_variant="auto"):
     """Download pre-converted model from Cactus-Compute HuggingFace."""
-    try:
-        from huggingface_hub import hf_hub_download, list_repo_files
-        import zipfile
-    except ImportError:
-        print_color(RED, "Error: huggingface_hub package not found.")
-        print("Please run: pip install huggingface_hub")
-        return False
-
-    model_name = get_model_dir_name(model_id)
-    org = "Cactus-Compute"
-    repo_id = f"{org}/{model_id.split('/')[-1]}"
-
-    try:
-        precision_lower = precision.lower()
-        apple_zip = f"{model_name}-{precision_lower}-apple.zip"
-        standard_zip = f"{model_name}-{precision_lower}.zip"
-
-        repo_files = list_repo_files(repo_id, repo_type="model")
-
-        zip_file = None
-        if f"weights/{apple_zip}" in repo_files:
-            zip_file = apple_zip
-        elif f"weights/{standard_zip}" in repo_files:
-            zip_file = standard_zip
-        else:
-            print_color(YELLOW, f"Pre-converted model not found in {repo_id}")
-            return False
-
-        print_color(BLUE, f"Downloading from {repo_id}...")
-
-        zip_path = hf_hub_download(
-            repo_id=repo_id,
-            filename=f"weights/{zip_file}",
-            repo_type="model"
-        )
-
-        weights_dir.mkdir(parents=True, exist_ok=True)
-
-        print_color(YELLOW, "Extracting model weights...")
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(weights_dir)
-
-        if not (weights_dir / "config.txt").exists():
-            print_color(RED, f"Error: Downloaded model is missing config.txt")
-            if weights_dir.exists():
-                shutil.rmtree(weights_dir)
-            return False
-
-        # Ensure quantization field exists in config.txt (older zips may lack it)
-        config_path = weights_dir / "config.txt"
-        config_text = config_path.read_text()
-        if 'quantization=' not in config_text:
-            with open(config_path, 'a') as f:
-                f.write(f"quantization={precision}\n")
-
-        print_color(GREEN, f"Successfully downloaded pre-converted model to {weights_dir}")
-        return True
-
-    except Exception:
-        print_color(YELLOW, f"Could not download from {repo_id}")
-        if weights_dir.exists():
-            shutil.rmtree(weights_dir)
-        return False
+    return _download_from_hf_impl(model_id, weights_dir, precision)
 
 
 def cmd_download(args):
@@ -212,6 +165,7 @@ def cmd_download(args):
     weights_dir = get_weights_dir(model_id)
     reconvert = getattr(args, 'reconvert', False)
     precision = getattr(args, 'precision', 'INT4')
+    weights_variant = _normalize_weights_variant(getattr(args, 'weights_variant', 'auto'))
 
     if reconvert and weights_dir.exists():
         print_color(YELLOW, f"Removing cached weights for reconversion...")
@@ -227,7 +181,7 @@ def cmd_download(args):
     print("=" * 45)
 
     if not reconvert and not is_local:
-        if download_from_hf(model_id, weights_dir, precision):
+        if download_from_hf(model_id, weights_dir, precision, weights_variant=weights_variant):
             ensure_vad_weights(model_id, weights_dir, precision)
             return 0
 
@@ -371,6 +325,8 @@ def cmd_download(args):
     is_whisper = 'whisper' in model_name.lower()
     is_parakeet = 'parakeet' in model_name.lower()
     is_vad = 'silero-vad' in model_name.lower()
+    is_pyannote = 'segmentation-3.0' in model_name.lower()
+    is_wespeaker = 'wespeaker' in model_name.lower()
 
     try:
         if is_vlm:
@@ -540,6 +496,35 @@ def cmd_download(args):
             print_color(GREEN, f"Successfully downloaded and converted weights to {weights_dir}")
             return 0
 
+        elif is_pyannote or is_wespeaker:
+            try:
+                import warnings
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    from pyannote.audio import Model as PyannoteModel
+            except ImportError:
+                print_color(RED, "Error: pyannote.audio is required. Install with: pip install pyannote.audio")
+                return 1
+            from .converter import convert_pyannote_weights, convert_wespeaker_weights
+
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                pyannote_model = PyannoteModel.from_pretrained(model_id, token=token)
+            pyannote_model.eval()
+
+            if is_pyannote:
+                convert_pyannote_weights(pyannote_model, weights_dir, precision, args)
+            else:
+                convert_wespeaker_weights(pyannote_model, weights_dir, precision, args)
+
+            del pyannote_model
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+            print_color(GREEN, f"Successfully downloaded and converted weights to {weights_dir}")
+            return 0
+
         else:
             config_json = _download_config_json(model_id)
             model_type = str(config_json.get('model_type', '')).lower()
@@ -576,7 +561,13 @@ def cmd_download(args):
                 except ValueError:
                     model = AutoModel.from_pretrained(model_id, cache_dir=cache_dir, trust_remote_code=True, dtype=torch.bfloat16, token=token)
 
-        config = convert_hf_model_weights(model, weights_dir, precision, args)
+        config = convert_hf_model_weights(
+            model,
+            weights_dir,
+            precision,
+            args,
+            skip_parakeet_encoder_weights=_is_apple_parakeet_model(model_id, weights_variant),
+        )
         del model
 
         model_name_lower = model_name.lower()
@@ -1337,6 +1328,7 @@ def cmd_eval(args):
     dlargs.cache_dir = getattr(args, 'cache_dir', None)
     dlargs.token = getattr(args, 'token', None)
     dlargs.reconvert = getattr(args, 'reconvert', False)
+    dlargs.weights_variant = getattr(args, 'weights_variant', 'auto')
 
     download_result = cmd_download(dlargs)
     if download_result != 0:
@@ -1450,12 +1442,15 @@ def cmd_test(args):
         print_color(BLUE, f"Using large models: {args.model}, {args.transcribe_model}, {args.vad_model}")
 
     if getattr(args, 'reconvert', False):
-        for model_id in [
+        reconvert_models = [
             getattr(args, 'model', 'LiquidAI/LFM2-VL-450M'),
             getattr(args, 'transcribe_model', DEFAULT_TEST_TRANSCRIBE_MODEL_ID),
             getattr(args, 'whisper_model', DEFAULT_TEST_WHISPER_MODEL_ID),
-            getattr(args, 'vad_model', 'snakers4/silero-vad')
-        ]:
+            getattr(args, 'vad_model', 'snakers4/silero-vad'),
+            getattr(args, 'diarize_model', DEFAULT_TEST_DIARIZE_MODEL_ID),
+            getattr(args, 'embed_speaker_model', DEFAULT_TEST_EMBED_SPEAKER_MODEL_ID),
+        ]
+        for model_id in reconvert_models:
             class DownloadArgs:
                 pass
             dl_args = DownloadArgs()
@@ -1466,9 +1461,11 @@ def cmd_test(args):
                 dl_args.precision = args.precision
             else:
                 is_asr = 'whisper' in model_id.lower() or 'moonshine' in model_id.lower() or 'silero-vad' in model_id.lower()
-                dl_args.precision = 'INT8' if is_asr else 'INT4'
+                is_fp16_only = 'segmentation-3.0' in model_id.lower() or 'wespeaker' in model_id.lower()
+                dl_args.precision = 'FP16' if is_fp16_only else ('INT8' if is_asr else 'INT4')
             if args.token:
                 dl_args.token = args.token
+            dl_args.weights_variant = getattr(args, 'weights_variant', 'auto')
             if cmd_download(dl_args) != 0:
                 return 1
 
@@ -1486,8 +1483,12 @@ def cmd_test(args):
         cmd.extend(["--transcribe_model", args.transcribe_model])
     if getattr(args, 'whisper_model', None):
         cmd.extend(["--whisper_model", args.whisper_model])
-    if args.vad_model:
+    if getattr(args, 'vad_model', None):
         cmd.extend(["--vad_model", args.vad_model])
+    if getattr(args, 'diarize_model', None):
+        cmd.extend(["--diarize_model", args.diarize_model])
+    if getattr(args, 'embed_speaker_model', None):
+        cmd.extend(["--embed_speaker_model", args.embed_speaker_model])
     if args.precision:
         cmd.extend(["--precision", args.precision])
     if getattr(args, 'no_rebuild', False):
@@ -1732,6 +1733,7 @@ def cmd_convert(args):
     download_args.cache_dir = cache_dir
     download_args.token = token
     download_args.reconvert = True
+    download_args.weights_variant = getattr(args, 'weights_variant', 'auto')
 
     original_get_weights = get_weights_dir
 
@@ -2013,6 +2015,8 @@ def create_parser():
                                  help='Quantization precision (default: INT4)')
     download_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     download_parser.add_argument('--token', help='HuggingFace API token')
+    download_parser.add_argument('--weights-variant', choices=WEIGHTS_VARIANT_CHOICES, default='auto',
+                                 help='Weights package preference: auto (default), apple, or standard')
     download_parser.add_argument('--reconvert', action='store_true',
                                  help='Download original model and convert (instead of using pre-converted from Cactus-Compute)')
 
@@ -2033,6 +2037,8 @@ def create_parser():
                             help='Quantization precision (default: INT4)')
     run_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     run_parser.add_argument('--token', help='HuggingFace API token')
+    run_parser.add_argument('--weights-variant', choices=WEIGHTS_VARIANT_CHOICES, default='auto',
+                            help='Weights package preference for auto-download: auto, apple, or standard')
     run_parser.add_argument('--no-cloud-tele', action='store_true',
                             help='Disable cloud telemetry (write to cache only)')
     run_parser.add_argument('--reconvert', action='store_true',
@@ -2055,6 +2061,8 @@ def create_parser():
                                    help='Quantization precision (default: INT4)')
     transcribe_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     transcribe_parser.add_argument('--token', help='HuggingFace API token')
+    transcribe_parser.add_argument('--weights-variant', choices=WEIGHTS_VARIANT_CHOICES, default='auto',
+                                   help='Weights package preference for auto-download: auto, apple, or standard')
     transcribe_parser.add_argument('--no-cloud-tele', action='store_true',
                                    help='Disable cloud telemetry (write to cache only)')
     transcribe_parser.add_argument('--force-handoff', action='store_true',
@@ -2075,6 +2083,8 @@ def create_parser():
                              help='Quantization precision (default: INT4)')
     eval_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     eval_parser.add_argument('--token', help='HuggingFace API token')
+    eval_parser.add_argument('--weights-variant', choices=WEIGHTS_VARIANT_CHOICES, default='auto',
+                             help='Weights package preference for auto-download: auto, apple, or standard')
     eval_parser.add_argument('--tools', action='store_true', help='Run tools evals (default)')
     eval_parser.add_argument('--vlm', action='store_true', help='Run VLM-specific evals')
     eval_parser.add_argument('--stt', action='store_true', help='Run speech-to-text evals')
@@ -2094,6 +2104,10 @@ def create_parser():
                              help='Whisper model to use for language detection tests')
     test_parser.add_argument('--vad_model', default='snakers4/silero-vad',
                              help='VAD model to use')
+    test_parser.add_argument('--diarize_model', default=DEFAULT_TEST_DIARIZE_MODEL_ID,
+                             help='Diarization model to use')
+    test_parser.add_argument('--embed_speaker_model', default=DEFAULT_TEST_EMBED_SPEAKER_MODEL_ID,
+                             help='Speaker embedding model to use')
     test_parser.add_argument('--benchmark', action='store_true',
                              help='Use larger models (LFM2.5-VL-1.6B + nvidia/parakeet-ctc-1.1b)')
     test_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'],
@@ -2101,6 +2115,8 @@ def create_parser():
     test_parser.add_argument('--no-rebuild', action='store_true',
                              help='Skip building cactus library and tests')
     test_parser.add_argument('--token', help='HuggingFace API token')
+    test_parser.add_argument('--weights-variant', choices=WEIGHTS_VARIANT_CHOICES, default='auto',
+                             help='Weights package preference during reconvert/download: auto, apple, or standard')
     test_parser.add_argument('--android', action='store_true',
                              help='Run tests on Android')
     test_parser.add_argument('--ios', action='store_true',
@@ -2136,6 +2152,8 @@ def create_parser():
                                 help='Quantization precision (default: INT4)')
     convert_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     convert_parser.add_argument('--token', help='HuggingFace API token')
+    convert_parser.add_argument('--weights-variant', choices=WEIGHTS_VARIANT_CHOICES, default='auto',
+                                help='Weights package preference used by conversion download step: auto, apple, or standard')
     convert_parser.add_argument('--lora', help='Path to LoRA adapter (local path or HuggingFace ID) to merge before conversion')
 
     return parser

@@ -258,6 +258,54 @@ size_t argmax_range(const BufferDesc& buffer, size_t offset, size_t length) {
     throw std::runtime_error("Unsupported logits precision in argmax");
 }
 
+size_t argmax_range_with_bias(const BufferDesc& buffer, size_t offset, size_t length,
+                              const std::unordered_map<uint32_t, float>& bias) {
+    if (bias.empty()) {
+        return argmax_range(buffer, offset, length);
+    }
+    if (length == 0 || (offset + length) > buffer.total_size) {
+        throw std::runtime_error("Invalid argmax range");
+    }
+
+    size_t best_idx = 0;
+    float best_val = -std::numeric_limits<float>::infinity();
+
+    if (buffer.precision == Precision::FP16) {
+        const __fp16* src = buffer.data_as<__fp16>() + offset;
+        for (size_t i = 0; i < length; ++i) {
+            float v = static_cast<float>(src[i]);
+            auto it = bias.find(static_cast<uint32_t>(i));
+            if (it != bias.end()) v += it->second;
+            if (v > best_val) { best_val = v; best_idx = i; }
+        }
+        return best_idx;
+    }
+
+    if (buffer.precision == Precision::FP32) {
+        const float* src = buffer.data_as<float>() + offset;
+        for (size_t i = 0; i < length; ++i) {
+            float v = src[i];
+            auto it = bias.find(static_cast<uint32_t>(i));
+            if (it != bias.end()) v += it->second;
+            if (v > best_val) { best_val = v; best_idx = i; }
+        }
+        return best_idx;
+    }
+
+    if (buffer.precision == Precision::INT8) {
+        const int8_t* src = buffer.data_as<int8_t>() + offset;
+        for (size_t i = 0; i < length; ++i) {
+            float v = static_cast<float>(src[i]);
+            auto it = bias.find(static_cast<uint32_t>(i));
+            if (it != bias.end()) v += it->second;
+            if (v > best_val) { best_val = v; best_idx = i; }
+        }
+        return best_idx;
+    }
+
+    throw std::runtime_error("Unsupported logits precision in biased argmax");
+}
+
 } // namespace
 
 namespace cactus {
@@ -281,19 +329,6 @@ ParakeetTDTModel::ParakeetTDTModel(const Config& config) : Model(config) {
 }
 
 void ParakeetTDTModel::load_weights_to_graph(CactusGraph* gb) {
-    weight_nodes_.subsampling_conv0_weight = gb->mmap_weights(model_folder_path_ + "/subsampling_conv0_weight.weights");
-    weight_nodes_.subsampling_conv0_bias = gb->mmap_weights(model_folder_path_ + "/subsampling_conv0_bias.bias");
-    weight_nodes_.subsampling_depthwise1_weight = gb->mmap_weights(model_folder_path_ + "/subsampling_depthwise1_weight.weights");
-    weight_nodes_.subsampling_depthwise1_bias = gb->mmap_weights(model_folder_path_ + "/subsampling_depthwise1_bias.bias");
-    weight_nodes_.subsampling_pointwise1_weight = gb->mmap_weights(model_folder_path_ + "/subsampling_pointwise1_weight.weights");
-    weight_nodes_.subsampling_pointwise1_bias = gb->mmap_weights(model_folder_path_ + "/subsampling_pointwise1_bias.bias");
-    weight_nodes_.subsampling_depthwise2_weight = gb->mmap_weights(model_folder_path_ + "/subsampling_depthwise2_weight.weights");
-    weight_nodes_.subsampling_depthwise2_bias = gb->mmap_weights(model_folder_path_ + "/subsampling_depthwise2_bias.bias");
-    weight_nodes_.subsampling_pointwise2_weight = gb->mmap_weights(model_folder_path_ + "/subsampling_pointwise2_weight.weights");
-    weight_nodes_.subsampling_pointwise2_bias = gb->mmap_weights(model_folder_path_ + "/subsampling_pointwise2_bias.bias");
-    weight_nodes_.subsampling_linear_weight = gb->mmap_weights(model_folder_path_ + "/subsampling_linear_weight.weights");
-    weight_nodes_.subsampling_linear_bias = gb->mmap_weights(model_folder_path_ + "/subsampling_linear_bias.bias");
-
     weight_nodes_.predictor_embed = gb->mmap_weights(model_folder_path_ + "/tdt_predictor_embed.weights");
 
     size_t predictor_layers = static_cast<size_t>(config_.predictor_num_layers);
@@ -343,53 +378,73 @@ void ParakeetTDTModel::load_weights_to_graph(CactusGraph* gb) {
         }
     }
 
-    for (uint32_t i = 0; i < config_.num_layers; ++i) {
-        auto& layer = weight_nodes_.layers[i];
-        std::string layer_prefix = model_folder_path_ + "/layer_" + std::to_string(i) + "_";
+    const std::filesystem::path model_path(model_folder_path_);
+    has_cpu_encoder_weights_ =
+        std::filesystem::exists(model_path / "subsampling_conv0_weight.weights") &&
+        std::filesystem::exists(model_path / "subsampling_linear_weight.weights");
 
-        layer.ff1_linear1_weight = gb->mmap_weights(layer_prefix + "ff1_linear1.weights");
-        layer.ff1_linear1_bias = gb->mmap_weights(layer_prefix + "ff1_linear1.bias");
-        layer.ff1_linear2_weight = gb->mmap_weights(layer_prefix + "ff1_linear2.weights");
-        layer.ff1_linear2_bias = gb->mmap_weights(layer_prefix + "ff1_linear2.bias");
+    if (has_cpu_encoder_weights_) {
+        weight_nodes_.subsampling_conv0_weight = gb->mmap_weights(model_folder_path_ + "/subsampling_conv0_weight.weights");
+        weight_nodes_.subsampling_conv0_bias = gb->mmap_weights(model_folder_path_ + "/subsampling_conv0_bias.bias");
+        weight_nodes_.subsampling_depthwise1_weight = gb->mmap_weights(model_folder_path_ + "/subsampling_depthwise1_weight.weights");
+        weight_nodes_.subsampling_depthwise1_bias = gb->mmap_weights(model_folder_path_ + "/subsampling_depthwise1_bias.bias");
+        weight_nodes_.subsampling_pointwise1_weight = gb->mmap_weights(model_folder_path_ + "/subsampling_pointwise1_weight.weights");
+        weight_nodes_.subsampling_pointwise1_bias = gb->mmap_weights(model_folder_path_ + "/subsampling_pointwise1_bias.bias");
+        weight_nodes_.subsampling_depthwise2_weight = gb->mmap_weights(model_folder_path_ + "/subsampling_depthwise2_weight.weights");
+        weight_nodes_.subsampling_depthwise2_bias = gb->mmap_weights(model_folder_path_ + "/subsampling_depthwise2_bias.bias");
+        weight_nodes_.subsampling_pointwise2_weight = gb->mmap_weights(model_folder_path_ + "/subsampling_pointwise2_weight.weights");
+        weight_nodes_.subsampling_pointwise2_bias = gb->mmap_weights(model_folder_path_ + "/subsampling_pointwise2_bias.bias");
+        weight_nodes_.subsampling_linear_weight = gb->mmap_weights(model_folder_path_ + "/subsampling_linear_weight.weights");
+        weight_nodes_.subsampling_linear_bias = gb->mmap_weights(model_folder_path_ + "/subsampling_linear_bias.bias");
 
-        layer.ff2_linear1_weight = gb->mmap_weights(layer_prefix + "ff2_linear1.weights");
-        layer.ff2_linear1_bias = gb->mmap_weights(layer_prefix + "ff2_linear1.bias");
-        layer.ff2_linear2_weight = gb->mmap_weights(layer_prefix + "ff2_linear2.weights");
-        layer.ff2_linear2_bias = gb->mmap_weights(layer_prefix + "ff2_linear2.bias");
+        for (uint32_t i = 0; i < config_.num_layers; ++i) {
+            auto& layer = weight_nodes_.layers[i];
+            std::string layer_prefix = model_folder_path_ + "/layer_" + std::to_string(i) + "_";
 
-        layer.self_attn_q_weight = gb->mmap_weights(layer_prefix + "self_attn_q.weights");
-        layer.self_attn_q_bias = gb->mmap_weights(layer_prefix + "self_attn_q.bias");
-        layer.self_attn_k_weight = gb->mmap_weights(layer_prefix + "self_attn_k.weights");
-        layer.self_attn_k_bias = gb->mmap_weights(layer_prefix + "self_attn_k.bias");
-        layer.self_attn_v_weight = gb->mmap_weights(layer_prefix + "self_attn_v.weights");
-        layer.self_attn_v_bias = gb->mmap_weights(layer_prefix + "self_attn_v.bias");
-        layer.self_attn_output_weight = gb->mmap_weights(layer_prefix + "self_attn_output.weights");
-        layer.self_attn_output_bias = gb->mmap_weights(layer_prefix + "self_attn_output.bias");
-        layer.self_attn_relative_k_weight = gb->mmap_weights(layer_prefix + "self_attn_relative_k.weights");
-        layer.self_attn_bias_u = gb->mmap_weights(layer_prefix + "self_attn_bias_u.weights");
-        layer.self_attn_bias_v = gb->mmap_weights(layer_prefix + "self_attn_bias_v.weights");
+            layer.ff1_linear1_weight = gb->mmap_weights(layer_prefix + "ff1_linear1.weights");
+            layer.ff1_linear1_bias = gb->mmap_weights(layer_prefix + "ff1_linear1.bias");
+            layer.ff1_linear2_weight = gb->mmap_weights(layer_prefix + "ff1_linear2.weights");
+            layer.ff1_linear2_bias = gb->mmap_weights(layer_prefix + "ff1_linear2.bias");
 
-        layer.norm_ff1_weight = gb->mmap_weights(layer_prefix + "norm_ff1.weights");
-        layer.norm_ff1_bias = gb->mmap_weights(layer_prefix + "norm_ff1.bias");
-        layer.norm_self_attn_weight = gb->mmap_weights(layer_prefix + "norm_self_attn.weights");
-        layer.norm_self_attn_bias = gb->mmap_weights(layer_prefix + "norm_self_attn.bias");
-        layer.norm_conv_weight = gb->mmap_weights(layer_prefix + "norm_conv.weights");
-        layer.norm_conv_bias = gb->mmap_weights(layer_prefix + "norm_conv.bias");
-        layer.norm_ff2_weight = gb->mmap_weights(layer_prefix + "norm_ff2.weights");
-        layer.norm_ff2_bias = gb->mmap_weights(layer_prefix + "norm_ff2.bias");
-        layer.norm_out_weight = gb->mmap_weights(layer_prefix + "norm_out.weights");
-        layer.norm_out_bias = gb->mmap_weights(layer_prefix + "norm_out.bias");
+            layer.ff2_linear1_weight = gb->mmap_weights(layer_prefix + "ff2_linear1.weights");
+            layer.ff2_linear1_bias = gb->mmap_weights(layer_prefix + "ff2_linear1.bias");
+            layer.ff2_linear2_weight = gb->mmap_weights(layer_prefix + "ff2_linear2.weights");
+            layer.ff2_linear2_bias = gb->mmap_weights(layer_prefix + "ff2_linear2.bias");
 
-        layer.conv_pointwise1_weight = gb->mmap_weights(layer_prefix + "conv_pointwise1.weights");
-        layer.conv_pointwise1_bias = gb->mmap_weights(layer_prefix + "conv_pointwise1.bias");
-        layer.conv_depthwise_weight = gb->mmap_weights(layer_prefix + "conv_depthwise.weights");
-        layer.conv_depthwise_bias = gb->mmap_weights(layer_prefix + "conv_depthwise.bias");
-        layer.conv_pointwise2_weight = gb->mmap_weights(layer_prefix + "conv_pointwise2.weights");
-        layer.conv_pointwise2_bias = gb->mmap_weights(layer_prefix + "conv_pointwise2.bias");
-        layer.conv_batchnorm_weight = gb->mmap_weights(layer_prefix + "conv_batchnorm_weight.weights");
-        layer.conv_batchnorm_bias = gb->mmap_weights(layer_prefix + "conv_batchnorm_bias.bias");
-        layer.conv_batchnorm_running_mean = gb->mmap_weights(layer_prefix + "conv_batchnorm_running_mean.weights");
-        layer.conv_batchnorm_running_var = gb->mmap_weights(layer_prefix + "conv_batchnorm_running_var.weights");
+            layer.self_attn_q_weight = gb->mmap_weights(layer_prefix + "self_attn_q.weights");
+            layer.self_attn_q_bias = gb->mmap_weights(layer_prefix + "self_attn_q.bias");
+            layer.self_attn_k_weight = gb->mmap_weights(layer_prefix + "self_attn_k.weights");
+            layer.self_attn_k_bias = gb->mmap_weights(layer_prefix + "self_attn_k.bias");
+            layer.self_attn_v_weight = gb->mmap_weights(layer_prefix + "self_attn_v.weights");
+            layer.self_attn_v_bias = gb->mmap_weights(layer_prefix + "self_attn_v.bias");
+            layer.self_attn_output_weight = gb->mmap_weights(layer_prefix + "self_attn_output.weights");
+            layer.self_attn_output_bias = gb->mmap_weights(layer_prefix + "self_attn_output.bias");
+            layer.self_attn_relative_k_weight = gb->mmap_weights(layer_prefix + "self_attn_relative_k.weights");
+            layer.self_attn_bias_u = gb->mmap_weights(layer_prefix + "self_attn_bias_u.weights");
+            layer.self_attn_bias_v = gb->mmap_weights(layer_prefix + "self_attn_bias_v.weights");
+
+            layer.norm_ff1_weight = gb->mmap_weights(layer_prefix + "norm_ff1.weights");
+            layer.norm_ff1_bias = gb->mmap_weights(layer_prefix + "norm_ff1.bias");
+            layer.norm_self_attn_weight = gb->mmap_weights(layer_prefix + "norm_self_attn.weights");
+            layer.norm_self_attn_bias = gb->mmap_weights(layer_prefix + "norm_self_attn.bias");
+            layer.norm_conv_weight = gb->mmap_weights(layer_prefix + "norm_conv.weights");
+            layer.norm_conv_bias = gb->mmap_weights(layer_prefix + "norm_conv.bias");
+            layer.norm_ff2_weight = gb->mmap_weights(layer_prefix + "norm_ff2.weights");
+            layer.norm_ff2_bias = gb->mmap_weights(layer_prefix + "norm_ff2.bias");
+            layer.norm_out_weight = gb->mmap_weights(layer_prefix + "norm_out.weights");
+            layer.norm_out_bias = gb->mmap_weights(layer_prefix + "norm_out.bias");
+
+            layer.conv_pointwise1_weight = gb->mmap_weights(layer_prefix + "conv_pointwise1.weights");
+            layer.conv_pointwise1_bias = gb->mmap_weights(layer_prefix + "conv_pointwise1.bias");
+            layer.conv_depthwise_weight = gb->mmap_weights(layer_prefix + "conv_depthwise.weights");
+            layer.conv_depthwise_bias = gb->mmap_weights(layer_prefix + "conv_depthwise.bias");
+            layer.conv_pointwise2_weight = gb->mmap_weights(layer_prefix + "conv_pointwise2.weights");
+            layer.conv_pointwise2_bias = gb->mmap_weights(layer_prefix + "conv_pointwise2.bias");
+            layer.conv_batchnorm_weight = gb->mmap_weights(layer_prefix + "conv_batchnorm_weight.weights");
+            layer.conv_batchnorm_bias = gb->mmap_weights(layer_prefix + "conv_batchnorm_bias.bias");
+            layer.conv_batchnorm_running_mean = gb->mmap_weights(layer_prefix + "conv_batchnorm_running_mean.weights");
+            layer.conv_batchnorm_running_var = gb->mmap_weights(layer_prefix + "conv_batchnorm_running_var.weights");
+        }
     }
 }
 
@@ -678,6 +733,11 @@ size_t ParakeetTDTModel::build_encoder(CactusGraph* gb, const std::vector<float>
         }
     }
 
+    if (!has_cpu_encoder_weights_) {
+        throw std::runtime_error(
+            "Parakeet-TDT requires either CPU encoder weights or model.mlpackage encoder output.");
+    }
+
     ComputeBackend backend = ComputeBackend::CPU;
     size_t hidden = build_subsampling(gb, audio_features);
     const auto& hidden_shape = gb->get_output_buffer(hidden).shape;
@@ -868,7 +928,8 @@ std::vector<ParakeetTDTModel::TDTToken> ParakeetTDTModel::greedy_decode_tdt_toke
             gb->execute();
 
             const auto& logits_buf = gb->get_output_buffer(logits);
-            const size_t best_token = argmax_range(logits_buf, 0, token_classes);
+            const auto& bias = get_vocab_bias();
+            const size_t best_token = argmax_range_with_bias(logits_buf, 0, token_classes, bias);
             const size_t best_duration_idx = argmax_range(logits_buf, token_classes, duration_classes);
             const uint32_t skip = durations[best_duration_idx];
 
