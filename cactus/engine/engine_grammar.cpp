@@ -174,11 +174,6 @@ static Grammar qwen_style_tool_call_grammar(const std::vector<ToolDefinition>& t
     return Grammar::structural_tag(qwen_tool_structural_tag_json(tools, force_tools));
 }
 
-static Grammar gemma_style_tool_call_grammar(const std::vector<ToolDefinition>& tools) {
-    (void)tools;
-    return Grammar::universal();
-}
-
 static std::string gbnf_escape_literal(const std::string& value) {
     std::string escaped;
     escaped.reserve(value.size());
@@ -210,6 +205,57 @@ static std::string lfm2_tool_name_rule(const std::vector<ToolDefinition>& tools)
     return rule;
 }
 
+static std::string gemma_tool_name_rule(const std::vector<ToolDefinition>& tools) {
+    if (tools.empty()) {
+        throw std::runtime_error("gemma_style_tool_call requires at least one tool definition");
+    }
+
+    std::string rule = "tool_name ::= ";
+    for (size_t i = 0; i < tools.size(); ++i) {
+        const auto& tool = tools[i];
+        if (tool.name.empty()) {
+            throw std::runtime_error("tool definitions must have a non-empty name");
+        }
+        if (i > 0) {
+            rule += " | ";
+        }
+        rule += "\"" + gbnf_escape_literal(tool.name) + "\"";
+    }
+    return rule;
+}
+
+static std::string gemma_tool_call_gbnf(const std::vector<ToolDefinition>& tools) {
+    return std::string(R"GRAMMAR(root ::= tool_call+
+tool_call ::= standard_tool_call | pipe_tool_call
+standard_tool_call ::= "<start_function_call>" "call:" tool_name object "<end_function_call>"
+pipe_tool_call ::= "<|tool_call>" "call:" tool_name object "<tool_call|>"
+object ::= "{" pair_list? "}"
+pair_list ::= pair ("," pair)*
+pair ::= object_key ":" value
+array ::= "[" array_items? "]"
+array_items ::= value ("," value)*
+value ::= escaped_string | number | boolean | null | array | object
+escaped_string ::= "<escape>" escape_chars "<escape>"
+escape_chars ::= escape_char*
+escape_char ::= [^<] | "<" [^e] | "<e" [^s] | "<es" [^c] | "<esc" [^a] | "<esca" [^p] | "<escap" [^e] | "<escape" [^>]
+boolean ::= "true" | "false"
+null ::= "null"
+number ::= "-"? int frac? exp?
+int ::= "0" | nonzero_digit digit*
+frac ::= "." digit+
+exp ::= ("e" | "E") ("+" | "-")? digit+
+object_key ::= object_key_start object_key_continue*
+object_key_start ::= [A-Za-z_]
+object_key_continue ::= [A-Za-z0-9_]
+digit ::= [0-9]
+nonzero_digit ::= [1-9]
+)GRAMMAR") + gemma_tool_name_rule(tools) + "\n";
+}
+
+static Grammar gemma_style_tool_call_grammar(const std::vector<ToolDefinition>& tools) {
+    return Grammar::gbnf(gemma_tool_call_gbnf(tools));
+}
+
 static std::string lfm2_tool_call_gbnf(const std::vector<ToolDefinition>& tools) {
     return std::string(R"GRAMMAR(root ::= tool_block+
 tool_block ::= tool_call_start "[" call_list "]" tool_call_end
@@ -224,7 +270,7 @@ dict ::= "{" dict_items? "}"
 dict_items ::= dict_item ("," dict_item)*
 dict_item ::= dict_key ":" value
 dict_key ::= string | ident
-boolean ::= "True" | "False" | "true" | "false"
+boolean ::= "True" | "False"
 none ::= "None" | "null"
 number ::= "-"? int frac? exp?
 int ::= "0" | nonzero_digit digit*
@@ -260,6 +306,7 @@ static Grammar model_tool_call_grammar(
         case Config::ModelType::YOUTU:
             return qwen_style_tool_call_grammar(tools, force_tools);
         case Config::ModelType::GEMMA:
+        case Config::ModelType::GEMMA3N:
             return gemma_style_tool_call_grammar(tools);
         case Config::ModelType::LFM2:
             return lfm2_style_tool_call_grammar(tools);
