@@ -583,102 +583,6 @@ struct KVCache {
     void compact_to_windows(const std::vector<size_t>& target_windows);
 };
 
-class ToolCallConstrainer {
-public:
-    enum class State {
-        DONE,
-
-        QWEN_START,
-        QWEN_EXPECT_OPEN_BRACE,
-        QWEN_EXPECT_NAME_KEY,
-        QWEN_EXPECT_NAME_COLON,
-        QWEN_EXPECT_NAME_VALUE,
-        QWEN_EXPECT_COMMA,
-        QWEN_EXPECT_ARGS_KEY,
-        QWEN_EXPECT_ARGS_COLON,
-        QWEN_IN_ARGUMENTS,
-        QWEN_EXPECT_CLOSE_BRACE,
-        QWEN_EXPECT_END,
-
-        LFM_START,
-        LFM_EXPECT_BRACKET,
-        LFM_IN_FUNC_NAME,
-        LFM_EXPECT_PAREN,
-        LFM_IN_ARGUMENTS,
-        LFM_EXPECT_BRACKET_CLOSE,
-        LFM_EXPECT_END,
-
-        GEMMA_START,
-        GEMMA_EXPECT_CALL,
-        GEMMA_IN_FUNC_NAME,
-        GEMMA_EXPECT_BRACE,
-        GEMMA_IN_ARGUMENTS,
-        GEMMA_EXPECT_END
-    };
-
-    void init(Config::ModelType model_type,
-              const std::vector<std::string>& function_names,
-              Tokenizer* tokenizer);
-
-    const std::unordered_map<uint32_t, float>& get_bias() const { return current_bias_; }
-
-    void update(uint32_t token_id, const std::string& decoded_text);
-
-    void reset();
-
-    bool is_active() const { return active_; }
-
-private:
-    bool active_ = false;
-    State state_ = State::QWEN_START;
-    Config::ModelType model_type_ = Config::ModelType::QWEN;
-    Tokenizer* tokenizer_ = nullptr;
-
-    bool is_gemma_family() const { return Config::is_gemma_family(model_type_); }
-
-    std::vector<std::string> function_names_;
-    std::string generated_text_;
-    int brace_depth_ = 0;
-
-    std::string call_start_tag_;
-    std::string call_end_tag_;
-
-    std::unordered_set<uint32_t> qwen_tool_call_start_tokens_;
-    std::unordered_set<uint32_t> qwen_tool_call_end_tokens_;
-    std::unordered_set<uint32_t> open_brace_tokens_;
-    std::unordered_set<uint32_t> close_brace_tokens_;
-    std::unordered_set<uint32_t> colon_tokens_;
-    std::unordered_set<uint32_t> comma_tokens_;
-    std::unordered_set<uint32_t> name_key_tokens_;
-    std::unordered_set<uint32_t> args_key_tokens_;
-    std::unordered_set<uint32_t> quote_tokens_;
-    std::unordered_set<uint32_t> backtick_tokens_;
-    std::unordered_set<uint32_t> all_func_name_tokens_;
-    std::unordered_map<std::string, std::vector<uint32_t>> func_name_sequences_;
-
-    std::unordered_set<uint32_t> tool_start_tokens_;
-    std::unordered_set<uint32_t> tool_end_tokens_;
-    std::unordered_set<uint32_t> bracket_open_tokens_;
-    std::unordered_set<uint32_t> bracket_close_tokens_;
-    std::unordered_set<uint32_t> paren_open_tokens_;
-    std::unordered_set<uint32_t> paren_close_tokens_;
-    std::unordered_set<uint32_t> equals_tokens_;
-
-    std::unordered_set<uint32_t> gemma_call_start_tokens_;
-    std::unordered_set<uint32_t> gemma_call_end_tokens_;
-    std::unordered_set<uint32_t> gemma_response_start_tokens_;
-    std::unordered_set<uint32_t> gemma_call_prefix_tokens_;
-    std::unordered_set<uint32_t> escape_tokens_;
-
-    std::unordered_map<uint32_t, float> current_bias_;
-
-    void compute_bias();
-    void tokenize_grammar_elements();
-    void add_tokens_for_string(const std::string& str, std::unordered_set<uint32_t>& token_set);
-    void tokenize_function_names(bool quote_names);
-    void init_common_tokens();
-};
-
 class Model {
 public:
     struct DebugNode {
@@ -738,10 +642,6 @@ public:
 
     virtual void remove_thinking_tokens(const std::vector<std::pair<size_t, size_t>>& ranges);
     virtual void compact_kv_cache() {}
-
-    void set_tool_constraints(const std::vector<std::string>& function_names);
-    void clear_tool_constraints();
-    void update_tool_constraints(uint32_t token_id);
 
     void* graph_handle_;
 
@@ -811,8 +711,6 @@ protected:
     std::unique_ptr<npu::NPUPrefill> npu_prefill_;
     void prefill_npu(const std::vector<uint32_t>& tokens);
     virtual std::vector<__fp16> get_token_embeddings(const std::vector<uint32_t>& tokens);
-
-    ToolCallConstrainer tool_constrainer_;
 
 private:
     std::unordered_map<uint32_t, float> vocab_bias_;

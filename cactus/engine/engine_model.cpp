@@ -265,7 +265,7 @@ uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, f
 size_t Model::sample_token(CactusGraph* gb, size_t logits_node_id, float temperature, float top_p, size_t top_k,
                            const std::unordered_map<uint32_t, float>* extra_bias,
                            const std::vector<int32_t>* token_bitmask) const {
-    auto combined_bias = tool_constrainer_.get_bias();
+    auto combined_bias = std::unordered_map<uint32_t, float>{};
     for (const auto& [token_id, boost] : vocab_bias_) {
         combined_bias[token_id] += boost;
     }
