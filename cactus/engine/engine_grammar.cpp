@@ -123,11 +123,7 @@ Grammar Grammar::structural_tag(const std::string& structural_tag_json) {
     throw std::get<xgrammar::StructuralTagError>(result);
 }
 
-static std::string qwen_tool_structural_tag_json(const std::vector<ToolDefinition>& tools, bool force_tools) {
-    if (tools.empty()) {
-        throw std::runtime_error("qwen_style_tool_call requires at least one tool definition");
-    }
-
+static std::string qwen_tool_structural_tag_json(const std::vector<ToolDefinition>& tools) {
     picojson::array tags;
 
     for (const auto& tool : tools) {
@@ -152,17 +148,10 @@ static std::string qwen_tool_structural_tag_json(const std::vector<ToolDefinitio
     }
 
     picojson::object format;
-    if (force_tools) {
-        format["type"] = picojson::value("tags_with_separator");
-        format["separator"] = picojson::value("");
-        format["tags"] = picojson::value(tags);
-    } else {
-        picojson::array triggers;
-        triggers.push_back(picojson::value("<tool_call>"));
-        format["type"] = picojson::value("triggered_tags");
-        format["triggers"] = picojson::value(triggers);
-        format["tags"] = picojson::value(tags);
-    }
+    format["type"] = picojson::value("tags_with_separator");
+    format["separator"] = picojson::value("");
+    format["tags"] = picojson::value(tags);
+    format["at_least_one"] = picojson::value(true);
 
     picojson::object root;
     root["type"] = picojson::value("structural_tag");
@@ -170,8 +159,8 @@ static std::string qwen_tool_structural_tag_json(const std::vector<ToolDefinitio
     return picojson::value(root).serialize();
 }
 
-static Grammar qwen_style_tool_call_grammar(const std::vector<ToolDefinition>& tools, bool force_tools) {
-    return Grammar::structural_tag(qwen_tool_structural_tag_json(tools, force_tools));
+static Grammar qwen_style_tool_call_grammar(const std::vector<ToolDefinition>& tools) {
+    return Grammar::structural_tag(qwen_tool_structural_tag_json(tools));
 }
 
 static std::string gbnf_escape_literal(const std::string& value) {
@@ -186,117 +175,73 @@ static std::string gbnf_escape_literal(const std::string& value) {
     return escaped;
 }
 
-static std::string lfm2_tool_name_rule(const std::vector<ToolDefinition>& tools) {
-    if (tools.empty()) {
-        throw std::runtime_error("lfm2_style_tool_call requires at least one tool definition");
-    }
-
+static std::string gbnf_tool_name_rule(const std::vector<ToolDefinition>& tools, const char* error_prefix) {
     std::string rule = "tool_name ::= ";
     for (size_t i = 0; i < tools.size(); ++i) {
         const auto& tool = tools[i];
-        if (tool.name.empty()) {
-            throw std::runtime_error("tool definitions must have a non-empty name");
-        }
         if (i > 0) {
             rule += " | ";
         }
         rule += "\"" + gbnf_escape_literal(tool.name) + "\"";
     }
     return rule;
-}
-
-static std::string gemma_tool_name_rule(const std::vector<ToolDefinition>& tools) {
-    if (tools.empty()) {
-        throw std::runtime_error("gemma_style_tool_call requires at least one tool definition");
-    }
-
-    std::string rule = "tool_name ::= ";
-    for (size_t i = 0; i < tools.size(); ++i) {
-        const auto& tool = tools[i];
-        if (tool.name.empty()) {
-            throw std::runtime_error("tool definitions must have a non-empty name");
-        }
-        if (i > 0) {
-            rule += " | ";
-        }
-        rule += "\"" + gbnf_escape_literal(tool.name) + "\"";
-    }
-    return rule;
-}
-
-static std::string gemma_tool_call_gbnf(const std::vector<ToolDefinition>& tools) {
-    return std::string(R"GRAMMAR(root ::= tool_call+
-tool_call ::= standard_tool_call | pipe_tool_call
-standard_tool_call ::= "<start_function_call>" "call:" tool_name object "<end_function_call>"
-pipe_tool_call ::= "<|tool_call>" "call:" tool_name object "<tool_call|>"
-object ::= "{" pair_list? "}"
-pair_list ::= pair ("," pair)*
-pair ::= object_key ":" value
-array ::= "[" array_items? "]"
-array_items ::= value ("," value)*
-value ::= escaped_string | number | boolean | null | array | object
-escaped_string ::= "<escape>" escape_chars "<escape>"
-escape_chars ::= escape_char*
-escape_char ::= [^<] | "<" [^e] | "<e" [^s] | "<es" [^c] | "<esc" [^a] | "<esca" [^p] | "<escap" [^e] | "<escape" [^>]
-boolean ::= "true" | "false"
-null ::= "null"
-number ::= "-"? int frac? exp?
-int ::= "0" | nonzero_digit digit*
-frac ::= "." digit+
-exp ::= ("e" | "E") ("+" | "-")? digit+
-object_key ::= object_key_start object_key_continue*
-object_key_start ::= [A-Za-z_]
-object_key_continue ::= [A-Za-z0-9_]
-digit ::= [0-9]
-nonzero_digit ::= [1-9]
-)GRAMMAR") + gemma_tool_name_rule(tools) + "\n";
 }
 
 static Grammar gemma_style_tool_call_grammar(const std::vector<ToolDefinition>& tools) {
-    return Grammar::gbnf(gemma_tool_call_gbnf(tools));
-}
-
-static std::string lfm2_tool_call_gbnf(const std::vector<ToolDefinition>& tools) {
-    return std::string(R"GRAMMAR(root ::= tool_block+
-tool_block ::= tool_call_start "[" call_list "]" tool_call_end
-call_list ::= call ("," call)*
-call ::= tool_name "(" kwarg_list? ")"
-kwarg_list ::= kwarg ("," kwarg)*
-kwarg ::= ident "=" value
-value ::= string | number | boolean | none | list | dict
-list ::= "[" list_items? "]"
-list_items ::= value ("," value)*
-dict ::= "{" dict_items? "}"
-dict_items ::= dict_item ("," dict_item)*
-dict_item ::= dict_key ":" value
-dict_key ::= string | ident
-boolean ::= "True" | "False"
-none ::= "None" | "null"
-number ::= "-"? int frac? exp?
-int ::= "0" | nonzero_digit digit*
-frac ::= "." digit+
-exp ::= ("e" | "E") ("+" | "-")? digit+
-string ::= "\"" string_char* "\""
-string_char ::= unescaped | "\\" escape
-unescaped ::= [^"\\]
-escape ::= "\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t"
-ident ::= ident_start ident_continue*
-ident_start ::= [A-Za-z_]
-ident_continue ::= [A-Za-z0-9_]
-digit ::= [0-9]
-nonzero_digit ::= [1-9]
-tool_call_start ::= "<|tool_call_start|>"
-tool_call_end ::= "<|tool_call_end|>"
-)GRAMMAR") + lfm2_tool_name_rule(tools) + "\n";
+    const auto gbnf = R"(
+    root ::= tool_call+
+    tool_call ::= standard_tool_call | pipe_tool_call
+    standard_tool_call ::= "<start_function_call>" "call:" tool_name object "<end_function_call>"
+    pipe_tool_call ::= "<|tool_call>" "call:" tool_name object "<tool_call|>"
+    object ::= "{" (pair ("," pair)*)? "}"
+    pair ::= object_key ":" value
+    array ::= "[" (value ("," value)*)? "]"
+    value ::= string | number | boolean | null | array | object
+    string ::= "<escape>" string_char* "<escape>"
+    string_char ::= [^<] | "<" [^e] | "<e" [^s] | "<es" [^c] | "<esc" [^a] | "<esca" [^p] | "<escap" [^e] | "<escape" [^>]
+    boolean ::= "true" | "false"
+    null ::= "null"
+    number ::= "-"? int frac? exp?
+    int ::= "0" | nonzero_digit digit*
+    frac ::= "." digit+
+    exp ::= ("e" | "E") ("+" | "-")? digit+
+    object_key ::= [A-Za-z_] [A-Za-z0-9_]*
+    digit ::= [0-9]
+    nonzero_digit ::= [1-9]
+    )";
+    return Grammar::gbnf(gbnf + gbnf_tool_name_rule(tools, "gemma_style_tool_call") + "\n");
 }
 
 static Grammar lfm2_style_tool_call_grammar(const std::vector<ToolDefinition>& tools) {
-    return Grammar::gbnf(lfm2_tool_call_gbnf(tools));
+    const auto gbnf = R"GRAMMAR(
+    root ::= tool_block+
+    tool_block ::= "<|tool_call_start|>" "[" call ("," call)* "]" "<|tool_call_end|>"
+    call ::= tool_name "(" (kwarg ("," kwarg)*)? ")"
+    kwarg ::= ident "=" value
+    value ::= string | number | boolean | none | list | dict
+    list ::= "[" (value ("," value)*)? "]"
+    dict ::= "{" (dict_item ("," dict_item)*)? "}"
+    dict_item ::= dict_key ":" value
+    dict_key ::= string | ident
+    boolean ::= "True" | "False"
+    none ::= "None" | "null"
+    number ::= "-"? int frac? exp?
+    int ::= "0" | nonzero_digit digit*
+    frac ::= "." digit+
+    exp ::= ("e" | "E") ("+" | "-")? digit+
+    string ::= "\"" string_char* "\""
+    string_char ::= unescaped | "\\" escape
+    unescaped ::= [^"\\]
+    escape ::= "\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t"
+    ident ::= [A-Za-z_] [A-Za-z0-9_]*
+    digit ::= [0-9]
+    nonzero_digit ::= [1-9]
+    )GRAMMAR";
+    return Grammar::gbnf(gbnf + gbnf_tool_name_rule(tools, "lfm2_style_tool_call") + "\n");
 }
 
 static Grammar model_tool_call_grammar(
     Config::ModelType model_type,
-    bool force_tools,
     const std::vector<ToolDefinition>& tools
 ) {
     if (tools.empty()) return Grammar();
@@ -304,7 +249,7 @@ static Grammar model_tool_call_grammar(
         case Config::ModelType::QWEN:
         case Config::ModelType::QWEN3P5:
         case Config::ModelType::YOUTU:
-            return qwen_style_tool_call_grammar(tools, force_tools);
+            return qwen_style_tool_call_grammar(tools);
         case Config::ModelType::GEMMA:
         case Config::ModelType::GEMMA3N:
             return gemma_style_tool_call_grammar(tools);
@@ -369,8 +314,10 @@ Grammar Grammar::model_decode_grammar(
     if (grammar.is_empty() && tools.empty()) {
         return Grammar();
     }
-    auto tool_grammar = model_tool_call_grammar(model_type, force_tools, tools);
-    auto content_grammar = force_tools ? tool_grammar : Grammar::unite({grammar, tool_grammar});
+    auto tool_grammar = model_tool_call_grammar(model_type, tools);
+    auto content_grammar = force_tools
+        ? Grammar::concatenate({tool_grammar, grammar})
+        : Grammar::unite({grammar, tool_grammar});
     return supports_reasoning
         ? Grammar::concatenate({reasoning_grammar(), content_grammar})
         : content_grammar;
