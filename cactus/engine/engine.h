@@ -75,6 +75,12 @@ struct ToolDefinition {
     picojson::value arguments_schema;
 
     static std::vector<ToolDefinition> parse_tools_json(const std::string& tools_json);
+
+    bool operator==(const ToolDefinition& other) const {
+        return name == other.name
+            && description == other.description
+            && arguments_schema == other.arguments_schema;
+    }
 };
 
 

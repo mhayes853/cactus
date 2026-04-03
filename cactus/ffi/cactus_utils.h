@@ -68,59 +68,7 @@ struct CactusModelHandle {
         const CactusGrammarHandle* user_grammar_handle = nullptr;
         bool force_tools = false;
         bool thinking_supported = false;
-        std::string tools_json;
-
-        static GrammarMatcherHandle create(
-            const CactusGrammarHandle* user_grammar_handle,
-            bool force_tools,
-            bool thinking_supported,
-            std::string tools_json,
-            cactus::engine::Config::ModelType model_type,
-            const cactus::engine::TokenizerInfo& tokenizer_info
-        ) {
-            std::vector<cactus::engine::ToolDefinition> decode_tools;
-            if (!tools_json.empty()) {
-                decode_tools = cactus::engine::ToolDefinition::parse_tools_json(tools_json);
-            }
-
-            cactus::engine::Grammar decode_grammar = cactus::engine::Grammar::model_decode_grammar(
-                user_grammar_handle ? *user_grammar_handle->grammar : cactus::engine::Grammar::universal(),
-                force_tools,
-                thinking_supported,
-                model_type,
-                decode_tools
-            );
-            if (decode_grammar.is_empty()) {
-                throw std::runtime_error("Cannot constrain generation to empty grammar");
-            }
-
-            GrammarMatcherHandle handle;
-            handle.matcher = std::make_unique<cactus::engine::GrammarMatcher>(&decode_grammar, tokenizer_info);
-            handle.user_grammar_handle = user_grammar_handle;
-            handle.force_tools = force_tools;
-            handle.thinking_supported = thinking_supported;
-            handle.tools_json = std::move(tools_json);
-            return handle;
-        }
-
-        bool can_reuse(
-            const CactusGrammarHandle* other_user_grammar_handle,
-            bool other_force_tools,
-            bool other_thinking_supported,
-            const std::string& other_tools_json
-        ) const {
-            return matcher
-                && user_grammar_handle == other_user_grammar_handle
-                && force_tools == other_force_tools
-                && thinking_supported == other_thinking_supported
-                && tools_json == other_tools_json;
-        }
-
-        void reset_matcher() {
-            if (matcher) {
-                matcher->reset();
-            }
-        }
+        std::vector<cactus::engine::ToolDefinition> tool_definitions;
     };
 
     std::unique_ptr<cactus::engine::Model> model;
