@@ -360,6 +360,116 @@ bool test_gemma4_vision(bool expect_npu) {
 }
 
 
+bool test_gemma4_vision_json_schema() {
+    const char* model_path = get_model_path();
+    const char* image_path = get_image_path();
+    if (!model_path || !image_path) {
+        std::cerr << "  SKIP: CACTUS_TEST_GEMMA4_MODEL or CACTUS_TEST_IMAGE not set\n";
+        return true;
+    }
+
+    std::cout << "\n╔══════════════════════════════════════════╗\n"
+              << "║" << std::setw(42) << std::left << "   VISION JSON SCHEMA TEST" << "║\n"
+              << "╚══════════════════════════════════════════╝\n";
+    std::cout << "├─ User prompt: Describe the image.\n";
+
+    cactus_model_t model = cactus_init(model_path, nullptr, false);
+    if (!model) {
+        std::cerr << "[✗] Failed to initialize model\n";
+        return false;
+    }
+
+    const char* schema = R"({
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string", "minLength": 1},
+            "dominant_colors": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "minItems": 1,
+                "maxItems": 3
+            }
+        },
+        "required": ["summary", "dominant_colors"],
+        "additionalProperties": false
+    })";
+
+    cactus_grammar_t grammar = cactus_grammar_init_json_schema(
+        schema,
+        CACTUS_GRAMMAR_JSON_SCHEMA_DEFAULT_OPTIONS
+    );
+    if (!grammar) {
+        std::cerr << "[✗] Failed to initialize JSON Schema grammar\n";
+        cactus_destroy(model);
+        return false;
+    }
+
+    const char* prompt = "Describe this image.";
+    std::string messages = R"([
+        {"role": "system", "content": "/no_think You are a precise vision assistant."},
+        {"role": "user", "content": ")" + escape_json(prompt) + R"(", "images": [")"
+        + escape_json(image_path) + R"("]}
+    ])";
+
+    StreamingData data;
+    data.model = model;
+    char response[4096];
+
+    std::cout << "Response: ";
+    int result = cactus_complete(model, messages.c_str(), response, sizeof(response),
+                                 g_options, nullptr, stream_callback, &data, nullptr, 0, grammar);
+
+    std::cout << "\n\n[Results]\n";
+
+    Metrics metrics;
+    metrics.parse(response);
+    const std::string& output = metrics.response;
+
+    std::string json_error;
+    bool valid_json = is_valid_json_document(output, json_error);
+    bool has_summary = false;
+    bool has_colors = false;
+
+    if (valid_json) {
+        picojson::value value;
+        auto begin = output.begin();
+        picojson::parse(value, begin, output.end(), &json_error);
+        if (value.is<picojson::object>()) {
+            has_summary = value.contains("summary")
+                && value.get("summary").is<std::string>()
+                && !value.get("summary").get<std::string>().empty();
+
+            const picojson::value& colors_value = value.get("dominant_colors");
+            if (value.contains("dominant_colors") && colors_value.is<picojson::array>()) {
+                const picojson::array& colors = colors_value.get<picojson::array>();
+                has_colors = !colors.empty();
+                for (const auto& color : colors) {
+                    if (!color.is<std::string>() || color.get<std::string>().empty()) {
+                        has_colors = false;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    std::cout << "├─ Valid JSON: " << (valid_json ? "YES" : "NO") << "\n"
+              << "├─ Has summary: " << (has_summary ? "YES" : "NO") << "\n"
+              << "├─ Has dominant_colors: " << (has_colors ? "YES" : "NO") << "\n";
+    if (!valid_json) {
+        std::cout << "├─ JSON error: " << json_error << "\n";
+    }
+    if (!valid_json || !has_summary || !has_colors) {
+        std::cout << "├─ Raw output: " << output << "\n";
+    }
+    metrics.print_json();
+
+    cactus_grammar_destroy(grammar);
+    cactus_destroy(model);
+    return result > 0 && data.token_count > 0 && valid_json && has_summary && has_colors;
+}
+
+
 bool test_gemma4_audio(bool expect_npu) {
     const char* model_path = get_model_path();
     std::string assets = get_assets_dir();
@@ -512,6 +622,148 @@ bool test_gemma4_audio(bool expect_npu) {
 }
 
 
+bool test_gemma4_audio_json_schema_pcm() {
+    const char* model_path = get_model_path();
+    std::string assets = get_assets_dir();
+    if (!model_path) {
+        std::cerr << "  SKIP: CACTUS_TEST_GEMMA4_MODEL or CACTUS_TEST_MODEL not set\n";
+        return true;
+    }
+
+    std::string audio_path = assets + "/test.wav";
+    struct stat st;
+    if (stat(audio_path.c_str(), &st) != 0) {
+        std::cerr << "  SKIP: test.wav not found in assets\n";
+        return true;
+    }
+
+    std::cout << "\n╔══════════════════════════════════════════╗\n"
+              << "║" << std::setw(42) << std::left << " AUDIO JSON SCHEMA PCM TEST" << "║\n"
+              << "╚══════════════════════════════════════════╝\n";
+    std::cout << "├─ User prompt: Describe the audio.\n";
+
+    cactus_model_t model = cactus_init(model_path, nullptr, false);
+    if (!model) {
+        std::cerr << "[✗] Failed to initialize model\n";
+        return false;
+    }
+
+    AudioFP32 wav = load_wav(audio_path.c_str());
+    if (wav.samples.empty()) {
+        std::cerr << "[✗] Failed to load audio\n";
+        cactus_destroy(model);
+        return false;
+    }
+
+    std::vector<int16_t> pcm16(wav.samples.size());
+    for (size_t i = 0; i < wav.samples.size(); i++) {
+        float sample = wav.samples[i];
+        if (sample > 1.0f) sample = 1.0f;
+        if (sample < -1.0f) sample = -1.0f;
+        pcm16[i] = static_cast<int16_t>(sample * 32767.0f);
+    }
+
+    const char* schema = R"({
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string", "minLength": 1},
+            "keywords": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "minItems": 1,
+                "maxItems": 4
+            }
+        },
+        "required": ["summary", "keywords"],
+        "additionalProperties": false
+    })";
+
+    cactus_grammar_t grammar = cactus_grammar_init_json_schema(
+        schema,
+        CACTUS_GRAMMAR_JSON_SCHEMA_DEFAULT_OPTIONS
+    );
+    if (!grammar) {
+        std::cerr << "[✗] Failed to initialize JSON Schema grammar\n";
+        cactus_destroy(model);
+        return false;
+    }
+
+    const char* prompt = "Describe the audio.";
+    std::string messages = R"([
+        {"role": "system", "content": "/no_think You are a precise audio assistant."},
+        {"role": "user", "content": ")" + escape_json(prompt) + R"("}
+    ])";
+
+    StreamingData data;
+    data.model = model;
+    char response[4096];
+
+    std::cout << "Response: ";
+    int result = cactus_complete(
+        model,
+        messages.c_str(),
+        response,
+        sizeof(response),
+        g_options,
+        nullptr,
+        stream_callback,
+        &data,
+        reinterpret_cast<const uint8_t*>(pcm16.data()),
+        pcm16.size() * sizeof(int16_t),
+        grammar
+    );
+
+    std::cout << "\n\n[Results]\n";
+
+    Metrics metrics;
+    metrics.parse(response);
+    const std::string& output = metrics.response;
+
+    std::string json_error;
+    bool valid_json = is_valid_json_document(output, json_error);
+    bool has_summary = false;
+    bool has_keywords = false;
+
+    if (valid_json) {
+        picojson::value value;
+        auto begin = output.begin();
+        picojson::parse(value, begin, output.end(), &json_error);
+        if (value.is<picojson::object>()) {
+            has_summary = value.contains("summary")
+                && value.get("summary").is<std::string>()
+                && !value.get("summary").get<std::string>().empty();
+
+            const picojson::value& keywords_value = value.get("keywords");
+            if (value.contains("keywords") && keywords_value.is<picojson::array>()) {
+                const picojson::array& keywords = keywords_value.get<picojson::array>();
+                has_keywords = !keywords.empty();
+                for (const auto& keyword : keywords) {
+                    if (!keyword.is<std::string>() || keyword.get<std::string>().empty()) {
+                        has_keywords = false;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    std::cout << "├─ Valid JSON: " << (valid_json ? "YES" : "NO") << "\n"
+              << "├─ Has summary: " << (has_summary ? "YES" : "NO") << "\n"
+              << "├─ Has keywords: " << (has_keywords ? "YES" : "NO") << "\n";
+    if (!valid_json) {
+        std::cout << "├─ JSON error: " << json_error << "\n";
+    }
+    if (!valid_json || !has_summary || !has_keywords) {
+        std::cout << "├─ Raw output: " << output << "\n";
+    }
+    metrics.print_json();
+
+    cactus_grammar_destroy(grammar);
+    cactus_destroy(model);
+    return result > 0 && data.token_count > 0 && valid_json && has_summary && has_keywords;
+}
+
+
 int main() {
     TestUtils::TestRunner runner("Gemma4 Suite");
 
@@ -520,6 +772,8 @@ int main() {
     runner.run_test("1k_context", test_1k_context());
     runner.run_test("vision", test_gemma4_vision(false));
     runner.run_test("vision_npu", test_gemma4_vision(true));
+    runner.run_test("vision_json_schema", test_gemma4_vision_json_schema());
+    runner.run_test("audio_json_schema_pcm", test_gemma4_audio_json_schema_pcm());
     runner.run_test("audio", test_gemma4_audio(false));
     runner.run_test("audio_npu", test_gemma4_audio(true));
 

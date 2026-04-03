@@ -630,8 +630,9 @@ protected:
     size_t build_conv1d(CactusGraph* gb, size_t input);
 
     uint32_t decode_with_audio(const std::vector<uint32_t>& tokens, const std::vector<float>& audio_features,
-                                    float temperature = 0.0f, float top_p = 0.0f, size_t top_k = 0, const std::string& profile_file = "", float* out_entropy = nullptr,
-                                    float* out_token_time_start = nullptr, float* out_token_time_end = nullptr) override;
+                                     float temperature = 0.0f, float top_p = 0.0f, size_t top_k = 0, const std::string& profile_file = "", float* out_entropy = nullptr,
+                                     float* out_token_time_start = nullptr, float* out_token_time_end = nullptr,
+                                     GrammarMatcher* matcher = nullptr) override;
 
     std::vector<float> get_audio_embeddings(const std::vector<float>& audio_features) override;
     
@@ -900,8 +901,9 @@ protected:
     size_t build_audio_preprocessor(CactusGraph* gb, size_t input);
 
     uint32_t decode_with_audio(const std::vector<uint32_t>& tokens, const std::vector<float>& audio_features,
-                                    float temperature = 0.0f, float top_p = 0.0f, size_t top_k = 0, const std::string& profile_file = "", float* out_entropy = nullptr,
-                                    float* out_token_time_start = nullptr, float* out_token_time_end = nullptr) override;
+                                     float temperature = 0.0f, float top_p = 0.0f, size_t top_k = 0, const std::string& profile_file = "", float* out_entropy = nullptr,
+                                     float* out_token_time_start = nullptr, float* out_token_time_end = nullptr,
+                                     GrammarMatcher* matcher = nullptr) override;
 
     std::vector<float> get_audio_embeddings(const std::vector<float>& audio_features) override;
     
@@ -1032,7 +1034,8 @@ protected:
     uint32_t decode_with_audio(const std::vector<uint32_t>& tokens, const std::vector<float>& audio_features,
                                float temperature = 0.0f, float top_p = 0.0f, size_t top_k = 0,
                                const std::string& profile_file = "", float* out_entropy = nullptr,
-                               float* out_token_time_start = nullptr, float* out_token_time_end = nullptr) override;
+                               float* out_token_time_start = nullptr, float* out_token_time_end = nullptr,
+                               GrammarMatcher* matcher = nullptr) override;
     std::vector<float> get_audio_embeddings(const std::vector<float>& audio_features) override;
     void reset_cache() override;
 
@@ -1151,7 +1154,8 @@ protected:
     uint32_t decode_with_audio(const std::vector<uint32_t>& tokens, const std::vector<float>& audio_features,
                                float temperature = 0.0f, float top_p = 0.0f, size_t top_k = 0,
                                const std::string& profile_file = "", float* out_entropy = nullptr,
-                               float* out_token_time_start = nullptr, float* out_token_time_end = nullptr) override;
+                               float* out_token_time_start = nullptr, float* out_token_time_end = nullptr,
+                               GrammarMatcher* matcher = nullptr) override;
     std::vector<float> get_audio_embeddings(const std::vector<float>& audio_features) override;
     void reset_cache() override;
 
