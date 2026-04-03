@@ -342,11 +342,6 @@ struct TokenizerRuntimeConfig {
 TokenizerRuntimeConfig load_tokenizer_runtime_config(const std::string& config_file);
 void load_special_tokens_map(const std::string& config_file, std::unordered_map<std::string, uint32_t>& special_tokens);
 
-inline bool supports_thinking_tokens(const std::unordered_map<std::string, uint32_t>& special_tokens) {
-    return special_tokens.find("<think>") != special_tokens.end()
-        && special_tokens.find("</think>") != special_tokens.end();
-}
-
 
 class Tokenizer {
 public:
@@ -419,7 +414,10 @@ public:
     uint32_t get_unk_token() const override { return unk_token_id_; }
     uint32_t get_bos_token() const override { return bos_token_id_; }
     uint32_t get_eos_token() const override { return eos_token_id_; }
-    bool is_thinking_supported() const override { return supports_thinking_tokens(special_tokens_); }
+    bool is_thinking_supported() const override {
+        return special_tokens_.find("<think>") != special_tokens_.end()
+                && special_tokens_.find("</think>") != special_tokens_.end();
+    }
 
 private:
     const std::vector<std::string>& get_encoded_vocab() const override { return id_to_token_; }
@@ -478,7 +476,7 @@ public:
     uint32_t get_unk_token() const override { return unk_token_id_; }
     uint32_t get_bos_token() const override { return bos_token_id_; }
     uint32_t get_eos_token() const override { return eos_token_id_; }
-    bool is_thinking_supported() const override { return supports_thinking_tokens(special_tokens_); }
+    bool is_thinking_supported() const override { return model_type_ == ModelType::GEMMA4; }
     bool get_add_prefix_space() const override { return model_type_ == ModelType::BERT; }
 
 private:

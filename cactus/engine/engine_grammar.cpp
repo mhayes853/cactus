@@ -175,7 +175,7 @@ static std::string gbnf_escape_literal(const std::string& value) {
     return escaped;
 }
 
-static std::string gbnf_tool_name_rule(const std::vector<ToolDefinition>& tools, const char* error_prefix) {
+static std::string gbnf_tool_name_rule(const std::vector<ToolDefinition>& tools) {
     std::string rule = "tool_name ::= ";
     for (size_t i = 0; i < tools.size(); ++i) {
         const auto& tool = tools[i];
@@ -191,10 +191,10 @@ static Grammar gemma_style_tool_call_grammar(const std::vector<ToolDefinition>& 
     std::string gbnf = R"(
     root ::= tool_call+
     tool_call ::= )";
-    gbnf += use_pipe_tags_only ? "pipe_tool_call\n" : "standard_tool_call\n";
+    gbnf += use_pipe_tags_only
+        ? R"("<|tool_call>" "call:" tool_name object "<tool_call|>")"
+        : R"("<start_function_call>" "call:" tool_name object "<end_function_call>")";
     gbnf += R"(
-    standard_tool_call ::= "<start_function_call>" "call:" tool_name object "<end_function_call>"
-    pipe_tool_call ::= "<|tool_call>" "call:" tool_name object "<tool_call|>"
     object ::= "{" (pair ("," pair)*)? "}"
     pair ::= object_key ":" value
     array ::= "[" (value ("," value)*)? "]"
@@ -211,7 +211,7 @@ static Grammar gemma_style_tool_call_grammar(const std::vector<ToolDefinition>& 
     digit ::= [0-9]
     nonzero_digit ::= [1-9]
     )";
-    return Grammar::gbnf(gbnf + gbnf_tool_name_rule(tools, "gemma_style_tool_call") + "\n");
+    return Grammar::gbnf(gbnf + gbnf_tool_name_rule(tools) + "\n");
 }
 
 static Grammar lfm2_style_tool_call_grammar(const std::vector<ToolDefinition>& tools) {
@@ -239,7 +239,7 @@ static Grammar lfm2_style_tool_call_grammar(const std::vector<ToolDefinition>& t
     digit ::= [0-9]
     nonzero_digit ::= [1-9]
     )GRAMMAR";
-    return Grammar::gbnf(gbnf + gbnf_tool_name_rule(tools, "lfm2_style_tool_call") + "\n");
+    return Grammar::gbnf(gbnf + gbnf_tool_name_rule(tools) + "\n");
 }
 
 static Grammar model_tool_call_grammar(
@@ -290,7 +290,26 @@ Grammar Grammar::concatenate(const std::vector<Grammar>& grammars) {
     return handles.empty() ? Grammar() : Grammar(xgrammar::Grammar::Concat(handles));
 }
 
-static Grammar reasoning_grammar() {
+static Grammar reasoning_grammar(Config::ModelType model_type) {
+    if (model_type == Config::ModelType::GEMMA4) {
+        static const auto grammar = Grammar::gbnf(R"(
+            root ::= think?
+            think ::= "<|channel>" any_non_thinking_character* "\n<channel|>"
+            any_non_thinking_character ::= (
+                [^<]
+                | "<" [^c]
+                | "<c" [^h]
+                | "<ch" [^a]
+                | "<cha" [^n]
+                | "<chan" [^n]
+                | "<chann" [^e]
+                | "<channe" [^l]
+                | "<channel" [^|]
+                | "<channel|" [^>]
+            )
+        )");
+        return grammar;
+    }
     static const auto grammar = Grammar::gbnf(R"(
         root ::= think?
         think ::= "<think>\n" any_non_thinking_character* "\n</think>\n\n"
@@ -323,7 +342,7 @@ Grammar Grammar::model_decode_grammar(
         ? Grammar::concatenate({tool_grammar, grammar})
         : Grammar::unite({grammar, tool_grammar});
     return supports_reasoning
-        ? Grammar::concatenate({reasoning_grammar(), content_grammar})
+        ? Grammar::concatenate({reasoning_grammar(model_type), content_grammar})
         : content_grammar;
 }
 

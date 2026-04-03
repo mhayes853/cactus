@@ -692,6 +692,21 @@ static bool test_model_decode_gemma_with_tools_accepts_tool_call_after_thinking(
     );
 }
 
+static bool test_model_decode_gemma4_accepts_channel_reasoning_then_output(const GrammarFixture& fixture) {
+    Grammar user_grammar = Grammar::gbnf("root ::= \"hello\"");
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, false, true, Config::ModelType::GEMMA4, {});
+
+    return accepts_complete_text(combined, fixture, "<|channel>reasoning\n<channel|>hello")
+        && rejects_text(combined, fixture, "<think>\nreasoning\n</think>\n\nhello");
+}
+
+static bool test_model_decode_gemma4_rejects_extra_channel_close_tag(const GrammarFixture& fixture) {
+    Grammar user_grammar = Grammar::gbnf("root ::= \"hello\"");
+    Grammar combined = Grammar::model_decode_grammar(user_grammar, false, true, Config::ModelType::GEMMA4, {});
+
+    return rejects_text(combined, fixture, "<|channel>reasoning<channel|>\n<channel|>hello");
+}
+
 static bool test_grammar_matcher_reset_restores_initial_state(const GrammarFixture& fixture) {
     Grammar grammar = Grammar::gbnf("root ::= \"hello\"");
     GrammarMatcher matcher(&grammar, fixture.tokenizer_info);
@@ -767,6 +782,8 @@ int main() {
         runner.run_test("model_decode_qwen_with_tools_rejects_plain_text_when_forced", test_model_decode_qwen_with_tools_rejects_plain_text_when_forced(fixture));
         runner.run_test("model_decode_lfm2_with_tools_tool_call_after_thinking", test_model_decode_lfm2_with_tools_accepts_tool_call_after_thinking(fixture));
         runner.run_test("model_decode_gemma_with_tools_tool_call_after_thinking", test_model_decode_gemma_with_tools_accepts_tool_call_after_thinking(fixture));
+        runner.run_test("model_decode_gemma4_channel_reasoning", test_model_decode_gemma4_accepts_channel_reasoning_then_output(fixture));
+        runner.run_test("model_decode_gemma4_extra_channel_close_tag", test_model_decode_gemma4_rejects_extra_channel_close_tag(fixture));
         runner.run_test("grammar_matcher_reset", test_grammar_matcher_reset_restores_initial_state(fixture));
     } catch (const std::exception& e) {
         std::cerr << "[✗] Grammar test setup failed: " << e.what() << "\n";
