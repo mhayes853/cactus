@@ -705,7 +705,8 @@ uint32_t WhisperModel::decode_with_audio(
     const std::string& profile_file,
     float* out_entropy,
     float* /*out_token_time_start*/,
-    float* /*out_token_time_end*/)
+    float* /*out_token_time_end*/,
+    GrammarMatcher* /*matcher*/)
 {
     if (!initialized_ || !graph_handle_)
         throw std::runtime_error("Model not initialized - call init() first");

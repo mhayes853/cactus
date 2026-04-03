@@ -751,7 +751,8 @@ uint32_t ParakeetModel::decode_with_audio(
     const std::string& profile_file,
     float* out_entropy,
     float* /*out_token_time_start*/,
-    float* /*out_token_time_end*/)
+    float* /*out_token_time_end*/,
+    GrammarMatcher* /*matcher*/)
 {
     (void)temperature;
     (void)top_p;

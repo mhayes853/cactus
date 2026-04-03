@@ -335,7 +335,8 @@ public:
         const std::vector<float>& audio_features,
         float temperature = 0.0f, float top_p = 0.0f, size_t top_k = 0,
         const std::string& profile_file = "", float* out_entropy = nullptr,
-        float* out_token_time_start = nullptr, float* out_token_time_end = nullptr) override;
+        float* out_token_time_start = nullptr, float* out_token_time_end = nullptr,
+        GrammarMatcher* matcher = nullptr) override;
 
     void reset_cache() override;
     std::vector<float> get_image_embeddings(const std::string& image_path) override;
@@ -366,7 +367,8 @@ private:
                                const std::vector<float>* audio_features,
                                size_t audio_num_frames,
                                float temperature, float top_p, size_t top_k,
-                               const std::string& profile_file, float* out_entropy);
+                               const std::string& profile_file, float* out_entropy,
+                               GrammarMatcher* matcher = nullptr);
 
 public:
     struct MultimodalInputs {

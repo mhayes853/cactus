@@ -328,8 +328,8 @@ void Model::compute_entropy(CactusGraph* gb, size_t logits_node_id, float* out_e
     *out_entropy = static_cast<float>(entropy / max_entropy);
 }
 
-uint32_t Model::decode_with_audio(const std::vector<uint32_t>& tokens, const std::vector<float>& /*mel_bins*/, float temperature, float top_p, size_t top_k, const std::string& profile_file, float* out_entropy, float* /*out_token_time_start*/, float* /*out_token_time_end*/){
-    return decode(tokens, temperature, top_p, top_k, profile_file, out_entropy);
+uint32_t Model::decode_with_audio(const std::vector<uint32_t>& tokens, const std::vector<float>& /*mel_bins*/, float temperature, float top_p, size_t top_k, const std::string& profile_file, float* out_entropy, float* /*out_token_time_start*/, float* /*out_token_time_end*/, GrammarMatcher* matcher){
+    return decode(tokens, temperature, top_p, top_k, profile_file, out_entropy, matcher);
 }
 
 uint32_t Model::decode_with_images(const std::vector<uint32_t>& tokens, const std::vector<std::string>& image_paths,

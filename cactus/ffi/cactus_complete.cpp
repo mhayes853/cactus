@@ -521,7 +521,8 @@ int cactus_complete(
             next_token = handle->model->decode_with_audio(
                 prompt.tokens, prompt.audio_features,
                 prompt.options.temperature, prompt.options.top_p, prompt.options.top_k,
-                "", &first_token_entropy);
+                "", &first_token_entropy, nullptr, nullptr,
+                handle->grammar_matcher_handle.matcher.get());
         } else {
             auto prefill_result = do_prefill(handle, prompt, prompt.tokens);
             prompt_tokens = prefill_result.prefilled_count + prefill_result.remaining_tokens.size();
@@ -590,7 +591,8 @@ int cactus_complete(
                     next_token = handle->model->decode_with_audio(
                         handle->processed_tokens, prompt.audio_features,
                         prompt.options.temperature, prompt.options.top_p, prompt.options.top_k,
-                        "", &token_entropy);
+                        "", &token_entropy, nullptr, nullptr,
+                        handle->grammar_matcher_handle.matcher.get());
                 } else {
                     next_token = decode(
                         handle->model,
