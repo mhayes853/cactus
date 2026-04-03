@@ -579,11 +579,21 @@ bool test_tool_call_respects_strict_blob_schema() {
         [](int result, const StreamingData&, const std::string& response, const Metrics& m) {
             bool has_function = response.find("\"function_calls\":[") != std::string::npos;
             bool has_tool = response.find("emit_blob") != std::string::npos;
-            bool has_blob_payload = response.find("\"payload\":\"blob\"") != std::string::npos
-                || response.find("\"payload\": \"blob\"") != std::string::npos;
+
+            picojson::value value;
+            std::string json_error;
+            picojson::parse(value, response.begin(), response.end(), &json_error);
+            auto array = value.get("function_calls").get<picojson::array>();
+            bool has_blob_payload = !array.empty()
+                && array[0].get("arguments").get("payload").is<std::string>()
+                && array[0].get("arguments").get("payload").get<std::string>() == "blob";
+
             std::cout << "├─ Function call: " << (has_function ? "YES" : "NO") << "\n"
                       << "├─ Correct tool: " << (has_tool ? "YES" : "NO") << "\n"
                       << "├─ Blob payload: " << (has_blob_payload ? "YES" : "NO") << "\n";
+            if (!json_error.empty()) {
+                std::cout << "├─ JSON error: " << json_error << "\n";
+            }
             m.print_json();
             return result > 0 && has_function && has_tool && has_blob_payload;
         }, tools, -1, "Call the blob tool now.");
