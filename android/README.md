@@ -135,6 +135,27 @@ val resultJson = cactusComplete(model, messages, options, null) { token, _ ->
 println(resultJson)
 ```
 
+### Grammar-Constrained Completion
+
+```kotlin
+val schema = """
+{
+  "type": "object",
+  "properties": {
+    "name": {"type": "string"},
+    "age": {"type": "integer"}
+  },
+  "required": ["name", "age"],
+  "additionalProperties": false
+}
+""".trimIndent()
+
+val grammar = cactusGrammarInitJSONSchema(schema)
+val resultJson = cactusComplete(model, messages, null, null, null, grammar = grammar)
+println(resultJson)
+cactusGrammarDestroy(grammar)
+```
+
 ### Prefill
 
 Pre-processes input text and populates the KV cache without generating output tokens. This reduces latency for subsequent calls to `cactusComplete`.
@@ -144,7 +165,8 @@ fun cactusPrefill(
     model: Long,
     messagesJson: String,
     optionsJson: String?,
-    toolsJson: String?
+    toolsJson: String?,
+    pcmData: ByteArray? = null,
 ): String
 ```
 
@@ -324,7 +346,8 @@ fun cactusPrefill(
     model: Long,
     messagesJson: String,
     optionsJson: String?,
-    toolsJson: String?
+    toolsJson: String?,
+    pcmData: ByteArray? = null,
 ): String
 ```
 
@@ -336,8 +359,39 @@ fun cactusComplete(
     messagesJson: String,
     optionsJson: String?,
     toolsJson: String?,
-    callback: CactusTokenCallback?
+    callback: CactusTokenCallback?,
+    pcmData: ByteArray? = null,
+    grammar: Long? = null,
 ): String
+```
+
+### Grammar
+
+```kotlin
+data class CactusGrammarJsonSchemaOptions(
+    val anyWhitespace: Boolean = true,
+    val indent: Int = 2,
+    val itemSeparator: String = ",",
+    val keyValueSeparator: String = ":",
+    val strictMode: Boolean = true,
+    val maxWhitespaceCount: Int = 1,
+)
+
+fun cactusGrammarInitGBNF(gbnf: String, startSymbol: String? = null): Long
+fun cactusGrammarInitJSON(): Long
+fun cactusGrammarInitEmpty(): Long
+fun cactusGrammarInitUniversal(): Long
+fun cactusGrammarInitJSONSchema(
+    jsonSchema: String,
+    options: CactusGrammarJsonSchemaOptions = CactusGrammarJsonSchemaOptions(),
+): Long
+fun cactusGrammarInitRegex(regex: String): Long
+fun cactusGrammarInitStructuralTag(structuralTagJson: String): Long
+fun cactusGrammarUnion(grammars: LongArray): Long
+fun cactusGrammarConcatenate(grammars: LongArray): Long
+fun cactusGrammarIsEmpty(grammar: Long): Boolean
+fun cactusGrammarIsUniversal(grammar: Long): Boolean
+fun cactusGrammarDestroy(grammar: Long)
 ```
 
 ### Transcription

@@ -19,8 +19,22 @@ if not _LIB_PATH.exists():
 
 _lib = ctypes.CDLL(str(_LIB_PATH))
 
+cactus_model_t = ctypes.c_void_p
+cactus_index_t = ctypes.c_void_p
+cactus_stream_transcribe_t = ctypes.c_void_p
+cactus_grammar_t = ctypes.c_void_p
 cactus_graph_t = ctypes.c_void_p
 cactus_node_t = ctypes.c_uint64
+
+
+class cactus_grammar_json_schema_options_t(ctypes.Structure):
+    _fields_ = [
+        ("any_whitespace", ctypes.c_bool),
+        ("indent", ctypes.c_int),
+        ("separators", ctypes.c_char_p * 2),
+        ("strict_mode", ctypes.c_bool),
+        ("max_whitespace_count", ctypes.c_int),
+    ]
 
 class cactus_tensor_info_t(ctypes.Structure):
     _fields_ = [
@@ -36,7 +50,7 @@ _lib.cactus_set_telemetry_environment.restype = None
 _lib.cactus_set_telemetry_environment(b"python", None, None)
 
 _lib.cactus_init.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_bool]
-_lib.cactus_init.restype = ctypes.c_void_p
+_lib.cactus_init.restype = cactus_model_t
 
 # cactus graph API
 _lib.cactus_graph_create.restype = cactus_graph_t
@@ -280,18 +294,57 @@ _lib.cactus_graph_get_output_info.argtypes = [
 _lib.cactus_graph_get_output_info.restype = ctypes.c_int
 
 _lib.cactus_complete.argtypes = [
-    ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_size_t,
+    cactus_model_t, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_size_t,
     ctypes.c_char_p, ctypes.c_char_p, TokenCallback, ctypes.c_void_p,
-    ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t
+    ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, cactus_grammar_t
 ]
 _lib.cactus_complete.restype = ctypes.c_int
 
 _lib.cactus_prefill.argtypes = [
-    ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_size_t,
+    cactus_model_t, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_size_t,
     ctypes.c_char_p, ctypes.c_char_p,
     ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t
 ]
 _lib.cactus_prefill.restype = ctypes.c_int
+
+_lib.cactus_grammar_init_gbnf.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+_lib.cactus_grammar_init_gbnf.restype = cactus_grammar_t
+
+_lib.cactus_grammar_init_json.argtypes = []
+_lib.cactus_grammar_init_json.restype = cactus_grammar_t
+
+_lib.cactus_grammar_init_empty.argtypes = []
+_lib.cactus_grammar_init_empty.restype = cactus_grammar_t
+
+_lib.cactus_grammar_init_universal.argtypes = []
+_lib.cactus_grammar_init_universal.restype = cactus_grammar_t
+
+_lib.cactus_grammar_init_json_schema.argtypes = [
+    ctypes.c_char_p,
+    cactus_grammar_json_schema_options_t,
+]
+_lib.cactus_grammar_init_json_schema.restype = cactus_grammar_t
+
+_lib.cactus_grammar_init_regex.argtypes = [ctypes.c_char_p]
+_lib.cactus_grammar_init_regex.restype = cactus_grammar_t
+
+_lib.cactus_grammar_init_structural_tag.argtypes = [ctypes.c_char_p]
+_lib.cactus_grammar_init_structural_tag.restype = cactus_grammar_t
+
+_lib.cactus_grammar_union.argtypes = [ctypes.POINTER(cactus_grammar_t), ctypes.c_size_t]
+_lib.cactus_grammar_union.restype = cactus_grammar_t
+
+_lib.cactus_grammar_concatenate.argtypes = [ctypes.POINTER(cactus_grammar_t), ctypes.c_size_t]
+_lib.cactus_grammar_concatenate.restype = cactus_grammar_t
+
+_lib.cactus_grammar_is_empty.argtypes = [cactus_grammar_t]
+_lib.cactus_grammar_is_empty.restype = ctypes.c_bool
+
+_lib.cactus_grammar_is_universal.argtypes = [cactus_grammar_t]
+_lib.cactus_grammar_is_universal.restype = ctypes.c_bool
+
+_lib.cactus_grammar_destroy.argtypes = [cactus_grammar_t]
+_lib.cactus_grammar_destroy.restype = None
 
 _lib.cactus_transcribe.argtypes = [
     ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
@@ -472,6 +525,18 @@ def _enc(s):
     return s.encode() if isinstance(s, str) else s
 
 
+def cactus_grammar_json_schema_default_options():
+    """Returns the default JSON schema grammar options."""
+    separators = (ctypes.c_char_p * 2)(b",", b":")
+    return cactus_grammar_json_schema_options_t(
+        any_whitespace=True,
+        indent=2,
+        separators=separators,
+        strict_mode=True,
+        max_whitespace_count=1,
+    )
+
+
 def cactus_get_last_error():
     """Returns the last error message or None."""
     result = _lib.cactus_get_last_error()
@@ -525,7 +590,104 @@ def cactus_stop(model):
     _lib.cactus_stop(model)
 
 
-def cactus_complete(model, messages_json, options_json, tools_json, callback, pcm_data=None):
+def _grammar_array(grammars):
+    handles = [ctypes.c_void_p(g or 0) for g in grammars]
+    array = (cactus_grammar_t * len(handles))(*handles)
+    return array, len(handles)
+
+
+def cactus_grammar_init_gbnf(gbnf, start_symbol=None):
+    """Creates a grammar from a GBNF definition."""
+    handle = _lib.cactus_grammar_init_gbnf(_enc(gbnf), _enc(start_symbol))
+    if not handle:
+        raise RuntimeError(_err("Failed to initialize GBNF grammar"))
+    return handle
+
+
+def cactus_grammar_init_json():
+    """Creates a grammar that accepts valid JSON values."""
+    handle = _lib.cactus_grammar_init_json()
+    if not handle:
+        raise RuntimeError(_err("Failed to initialize JSON grammar"))
+    return handle
+
+
+def cactus_grammar_init_empty():
+    """Creates the empty grammar."""
+    handle = _lib.cactus_grammar_init_empty()
+    if not handle:
+        raise RuntimeError(_err("Failed to initialize empty grammar"))
+    return handle
+
+
+def cactus_grammar_init_universal():
+    """Creates the universal grammar."""
+    handle = _lib.cactus_grammar_init_universal()
+    if not handle:
+        raise RuntimeError(_err("Failed to initialize universal grammar"))
+    return handle
+
+
+def cactus_grammar_init_json_schema(json_schema, options=None):
+    """Creates a grammar from a JSON Schema document."""
+    if options is None:
+        options = cactus_grammar_json_schema_default_options()
+    handle = _lib.cactus_grammar_init_json_schema(_enc(json_schema), options)
+    if not handle:
+        raise RuntimeError(_err("Failed to initialize JSON schema grammar"))
+    return handle
+
+
+def cactus_grammar_init_regex(regex):
+    """Creates a grammar from a regular expression."""
+    handle = _lib.cactus_grammar_init_regex(_enc(regex))
+    if not handle:
+        raise RuntimeError(_err("Failed to initialize regex grammar"))
+    return handle
+
+
+def cactus_grammar_init_structural_tag(structural_tag_json):
+    """Creates a grammar from a structural-tag JSON specification."""
+    handle = _lib.cactus_grammar_init_structural_tag(_enc(structural_tag_json))
+    if not handle:
+        raise RuntimeError(_err("Failed to initialize structural tag grammar"))
+    return handle
+
+
+def cactus_grammar_union(grammars):
+    """Creates a grammar that accepts anything accepted by any input grammar."""
+    grammar_array, count = _grammar_array(grammars)
+    handle = _lib.cactus_grammar_union(grammar_array, count)
+    if not handle:
+        raise RuntimeError(_err("Failed to union grammars"))
+    return handle
+
+
+def cactus_grammar_concatenate(grammars):
+    """Creates a grammar that concatenates input grammars in order."""
+    grammar_array, count = _grammar_array(grammars)
+    handle = _lib.cactus_grammar_concatenate(grammar_array, count)
+    if not handle:
+        raise RuntimeError(_err("Failed to concatenate grammars"))
+    return handle
+
+
+def cactus_grammar_is_empty(grammar):
+    """Returns True when the grammar accepts no strings."""
+    return bool(_lib.cactus_grammar_is_empty(grammar))
+
+
+def cactus_grammar_is_universal(grammar):
+    """Returns True when the grammar accepts all strings."""
+    return bool(_lib.cactus_grammar_is_universal(grammar))
+
+
+def cactus_grammar_destroy(grammar):
+    """Releases grammar resources."""
+    _lib.cactus_grammar_destroy(grammar)
+
+
+def cactus_complete(model, messages_json, options_json, tools_json, callback, pcm_data=None, grammar=None):
     """Runs chat completion. Returns response string."""
     buf = ctypes.create_string_buffer(65536)
     if callback:
@@ -543,7 +705,7 @@ def cactus_complete(model, messages_json, options_json, tools_json, callback, pc
         pcm_size = 0
     rc = _lib.cactus_complete(
         model, _enc(messages_json), buf, len(buf),
-        _enc(options_json), _enc(tools_json), cb, None, pcm_ptr, pcm_size
+        _enc(options_json), _enc(tools_json), cb, None, pcm_ptr, pcm_size, grammar
     )
     if rc < 0:
         raise RuntimeError(_err("Completion failed"))

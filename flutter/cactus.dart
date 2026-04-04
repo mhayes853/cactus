@@ -6,6 +6,41 @@ import 'dart:typed_data';
 typedef CactusModelT = Pointer<Void>;
 typedef CactusIndexT = Pointer<Void>;
 typedef CactusStreamTranscribeT = Pointer<Void>;
+typedef CactusGrammarT = Pointer<Void>;
+
+final class CactusGrammarJsonSchemaOptionsNative extends Struct {
+  @Bool()
+  external bool anyWhitespace;
+
+  @Int32()
+  external int indent;
+
+  external Array<Pointer<Utf8>> separators;
+
+  @Bool()
+  external bool strictMode;
+
+  @Int32()
+  external int maxWhitespaceCount;
+}
+
+class CactusGrammarJsonSchemaOptions {
+  final bool anyWhitespace;
+  final int indent;
+  final String itemSeparator;
+  final String keyValueSeparator;
+  final bool strictMode;
+  final int maxWhitespaceCount;
+
+  const CactusGrammarJsonSchemaOptions({
+    this.anyWhitespace = true,
+    this.indent = 2,
+    this.itemSeparator = ',',
+    this.keyValueSeparator = ':',
+    this.strictMode = true,
+    this.maxWhitespaceCount = 1,
+  });
+}
 
 typedef TokenCallbackNative = Void Function(
     Pointer<Utf8> token, Uint32 tokenId, Pointer<Void> userData);
@@ -28,7 +63,8 @@ typedef CactusCompleteNative = Int32 Function(
     Pointer<NativeFunction<TokenCallbackNative>> callback,
     Pointer<Void> userData,
     Pointer<Uint8> pcmBuffer,
-    IntPtr pcmBufferSize);
+    IntPtr pcmBufferSize,
+    CactusGrammarT grammar);
 
 typedef CactusPrefillNative = Int32 Function(
     CactusModelT model,
@@ -37,18 +73,6 @@ typedef CactusPrefillNative = Int32 Function(
     IntPtr bufferSize,
     Pointer<Utf8> optionsJson,
     Pointer<Utf8> toolsJson,
-    Pointer<Uint8> pcmBuffer,
-    IntPtr pcmBufferSize);
-
-typedef CactusCompleteDart = Int32 Function(
-    CactusModelT model,
-    Pointer<Utf8> messagesJson,
-    Pointer<Utf8> responseBuffer,
-    IntPtr bufferSize,
-    Pointer<Utf8> optionsJson,
-    Pointer<Utf8> toolsJson,
-    Pointer<NativeFunction<TokenCallbackNative>> callback,
-    Pointer<Void> userData,
     Pointer<Uint8> pcmBuffer,
     IntPtr pcmBufferSize);
 
@@ -213,7 +237,34 @@ typedef CactusCompleteDart = int Function(
     Pointer<NativeFunction<TokenCallbackNative>> callback,
     Pointer<Void> userData,
     Pointer<Uint8> pcmBuffer,
-    int pcmBufferSize);
+    int pcmBufferSize,
+    CactusGrammarT grammar);
+
+typedef CactusGrammarInitGBNFNative = CactusGrammarT Function(
+    Pointer<Utf8> gbnf, Pointer<Utf8> startSymbol);
+
+typedef CactusGrammarInitJSONNative = CactusGrammarT Function();
+
+typedef CactusGrammarInitEmptyNative = CactusGrammarT Function();
+
+typedef CactusGrammarInitUniversalNative = CactusGrammarT Function();
+
+typedef CactusGrammarInitJSONSchemaNative = CactusGrammarT Function(
+    Pointer<Utf8> jsonSchema, CactusGrammarJsonSchemaOptionsNative options);
+
+typedef CactusGrammarInitRegexNative = CactusGrammarT Function(Pointer<Utf8> regex);
+
+typedef CactusGrammarInitStructuralTagNative = CactusGrammarT Function(Pointer<Utf8> structuralTagJson);
+
+typedef CactusGrammarUnionNative = CactusGrammarT Function(Pointer<CactusGrammarT> grammars, IntPtr count);
+
+typedef CactusGrammarConcatenateNative = CactusGrammarT Function(Pointer<CactusGrammarT> grammars, IntPtr count);
+
+typedef CactusGrammarIsEmptyNative = Bool Function(CactusGrammarT grammar);
+
+typedef CactusGrammarIsUniversalNative = Bool Function(CactusGrammarT grammar);
+
+typedef CactusGrammarDestroyNative = Void Function(CactusGrammarT grammar);
 
 typedef CactusTokenizeDart = int Function(
     CactusModelT model,
@@ -350,6 +401,21 @@ typedef CactusGetLastErrorDart = Pointer<Utf8> Function();
 typedef CactusSetTelemetryEnvironmentDart = void Function(
     Pointer<Utf8> framework, Pointer<Utf8> cacheLocation, Pointer<Utf8> version);
 
+typedef CactusGrammarInitGBNFDart = CactusGrammarT Function(
+    Pointer<Utf8> gbnf, Pointer<Utf8> startSymbol);
+typedef CactusGrammarInitJSONDart = CactusGrammarT Function();
+typedef CactusGrammarInitEmptyDart = CactusGrammarT Function();
+typedef CactusGrammarInitUniversalDart = CactusGrammarT Function();
+typedef CactusGrammarInitJSONSchemaDart = CactusGrammarT Function(
+    Pointer<Utf8> jsonSchema, CactusGrammarJsonSchemaOptionsNative options);
+typedef CactusGrammarInitRegexDart = CactusGrammarT Function(Pointer<Utf8> regex);
+typedef CactusGrammarInitStructuralTagDart = CactusGrammarT Function(Pointer<Utf8> structuralTagJson);
+typedef CactusGrammarUnionDart = CactusGrammarT Function(Pointer<CactusGrammarT> grammars, int count);
+typedef CactusGrammarConcatenateDart = CactusGrammarT Function(Pointer<CactusGrammarT> grammars, int count);
+typedef CactusGrammarIsEmptyDart = bool Function(CactusGrammarT grammar);
+typedef CactusGrammarIsUniversalDart = bool Function(CactusGrammarT grammar);
+typedef CactusGrammarDestroyDart = void Function(CactusGrammarT grammar);
+
 typedef CactusSetAppIdNative = Void Function(Pointer<Utf8> appId);
 typedef CactusSetAppIdDart = void Function(Pointer<Utf8> appId);
 
@@ -419,6 +485,42 @@ final _cactusStop =
     _lib.lookupFunction<CactusStopNative, CactusStopDart>('cactus_stop');
 final _cactusComplete =
     _lib.lookupFunction<CactusCompleteNative, CactusCompleteDart>('cactus_complete');
+final _cactusGrammarInitGBNF = _lib.lookupFunction<
+    CactusGrammarInitGBNFNative,
+    CactusGrammarInitGBNFDart>('cactus_grammar_init_gbnf');
+final _cactusGrammarInitJSON = _lib.lookupFunction<
+    CactusGrammarInitJSONNative,
+    CactusGrammarInitJSONDart>('cactus_grammar_init_json');
+final _cactusGrammarInitEmpty = _lib.lookupFunction<
+    CactusGrammarInitEmptyNative,
+    CactusGrammarInitEmptyDart>('cactus_grammar_init_empty');
+final _cactusGrammarInitUniversal = _lib.lookupFunction<
+    CactusGrammarInitUniversalNative,
+    CactusGrammarInitUniversalDart>('cactus_grammar_init_universal');
+final _cactusGrammarInitJSONSchema = _lib.lookupFunction<
+    CactusGrammarInitJSONSchemaNative,
+    CactusGrammarInitJSONSchemaDart>('cactus_grammar_init_json_schema');
+final _cactusGrammarInitRegex = _lib.lookupFunction<
+    CactusGrammarInitRegexNative,
+    CactusGrammarInitRegexDart>('cactus_grammar_init_regex');
+final _cactusGrammarInitStructuralTag = _lib.lookupFunction<
+    CactusGrammarInitStructuralTagNative,
+    CactusGrammarInitStructuralTagDart>('cactus_grammar_init_structural_tag');
+final _cactusGrammarUnion = _lib.lookupFunction<
+    CactusGrammarUnionNative,
+    CactusGrammarUnionDart>('cactus_grammar_union');
+final _cactusGrammarConcatenate = _lib.lookupFunction<
+    CactusGrammarConcatenateNative,
+    CactusGrammarConcatenateDart>('cactus_grammar_concatenate');
+final _cactusGrammarIsEmpty = _lib.lookupFunction<
+    CactusGrammarIsEmptyNative,
+    CactusGrammarIsEmptyDart>('cactus_grammar_is_empty');
+final _cactusGrammarIsUniversal = _lib.lookupFunction<
+    CactusGrammarIsUniversalNative,
+    CactusGrammarIsUniversalDart>('cactus_grammar_is_universal');
+final _cactusGrammarDestroy = _lib.lookupFunction<
+    CactusGrammarDestroyNative,
+    CactusGrammarDestroyDart>('cactus_grammar_destroy');
 final _cactusPrefill =
     _lib.lookupFunction<CactusPrefillNative, CactusPrefillDart>('cactus_prefill');
 final _cactusTokenize =
@@ -563,6 +665,37 @@ void _ensureFramework() {
   }
 }
 
+T _withGrammarJsonSchemaOptions<T>(
+  CactusGrammarJsonSchemaOptions options,
+  T Function(CactusGrammarJsonSchemaOptionsNative nativeOptions) body,
+) {
+  final nativeOptions = calloc<CactusGrammarJsonSchemaOptionsNative>();
+  final itemSeparatorPtr = options.itemSeparator.toNativeUtf8();
+  final keyValueSeparatorPtr = options.keyValueSeparator.toNativeUtf8();
+  nativeOptions.ref.anyWhitespace = options.anyWhitespace;
+  nativeOptions.ref.indent = options.indent;
+  nativeOptions.ref.separators[0] = itemSeparatorPtr;
+  nativeOptions.ref.separators[1] = keyValueSeparatorPtr;
+  nativeOptions.ref.strictMode = options.strictMode;
+  nativeOptions.ref.maxWhitespaceCount = options.maxWhitespaceCount;
+
+  try {
+    return body(nativeOptions.ref);
+  } finally {
+    calloc.free(itemSeparatorPtr);
+    calloc.free(keyValueSeparatorPtr);
+    calloc.free(nativeOptions);
+  }
+}
+
+Pointer<Pointer<Void>> _allocGrammarArray(List<CactusGrammarT> grammars) {
+  final array = calloc<Pointer<Void>>(grammars.length);
+  for (var i = 0; i < grammars.length; i++) {
+    array[i] = grammars[i];
+  }
+  return array;
+}
+
 /// Returns the last error message.
 String cactusGetLastError() {
   return _cactusGetLastError().toDartString();
@@ -625,6 +758,135 @@ void cactusStop(CactusModelT model) {
   _cactusStop(model);
 }
 
+/// Creates a grammar from a GBNF definition.
+CactusGrammarT cactusGrammarInitGBNF(String gbnf, [String? startSymbol]) {
+  final gbnfPtr = gbnf.toNativeUtf8();
+  final startSymbolPtr = startSymbol?.toNativeUtf8() ?? nullptr;
+  try {
+    final grammar = _cactusGrammarInitGBNF(gbnfPtr, startSymbolPtr);
+    if (grammar == nullptr) {
+      throw Exception('Failed to initialize GBNF grammar: ${cactusGetLastError()}');
+    }
+    return grammar;
+  } finally {
+    calloc.free(gbnfPtr);
+    if (startSymbolPtr != nullptr) calloc.free(startSymbolPtr);
+  }
+}
+
+/// Creates a grammar that accepts valid JSON values.
+CactusGrammarT cactusGrammarInitJSON() {
+  final grammar = _cactusGrammarInitJSON();
+  if (grammar == nullptr) {
+    throw Exception('Failed to initialize JSON grammar: ${cactusGetLastError()}');
+  }
+  return grammar;
+}
+
+/// Creates the empty grammar.
+CactusGrammarT cactusGrammarInitEmpty() {
+  final grammar = _cactusGrammarInitEmpty();
+  if (grammar == nullptr) {
+    throw Exception('Failed to initialize empty grammar: ${cactusGetLastError()}');
+  }
+  return grammar;
+}
+
+/// Creates the universal grammar.
+CactusGrammarT cactusGrammarInitUniversal() {
+  final grammar = _cactusGrammarInitUniversal();
+  if (grammar == nullptr) {
+    throw Exception('Failed to initialize universal grammar: ${cactusGetLastError()}');
+  }
+  return grammar;
+}
+
+/// Creates a grammar from a JSON Schema document.
+CactusGrammarT cactusGrammarInitJSONSchema(
+  String jsonSchema, [
+  CactusGrammarJsonSchemaOptions options = const CactusGrammarJsonSchemaOptions(),
+]) {
+  final jsonSchemaPtr = jsonSchema.toNativeUtf8();
+  try {
+    final grammar = _withGrammarJsonSchemaOptions(options, (nativeOptions) {
+      return _cactusGrammarInitJSONSchema(jsonSchemaPtr, nativeOptions);
+    });
+    if (grammar == nullptr) {
+      throw Exception('Failed to initialize JSON schema grammar: ${cactusGetLastError()}');
+    }
+    return grammar;
+  } finally {
+    calloc.free(jsonSchemaPtr);
+  }
+}
+
+/// Creates a grammar from a regular expression.
+CactusGrammarT cactusGrammarInitRegex(String regex) {
+  final regexPtr = regex.toNativeUtf8();
+  try {
+    final grammar = _cactusGrammarInitRegex(regexPtr);
+    if (grammar == nullptr) {
+      throw Exception('Failed to initialize regex grammar: ${cactusGetLastError()}');
+    }
+    return grammar;
+  } finally {
+    calloc.free(regexPtr);
+  }
+}
+
+/// Creates a grammar from a structural-tag JSON specification.
+CactusGrammarT cactusGrammarInitStructuralTag(String structuralTagJson) {
+  final structuralTagPtr = structuralTagJson.toNativeUtf8();
+  try {
+    final grammar = _cactusGrammarInitStructuralTag(structuralTagPtr);
+    if (grammar == nullptr) {
+      throw Exception('Failed to initialize structural tag grammar: ${cactusGetLastError()}');
+    }
+    return grammar;
+  } finally {
+    calloc.free(structuralTagPtr);
+  }
+}
+
+/// Creates a grammar that accepts anything accepted by any input grammar.
+CactusGrammarT cactusGrammarUnion(List<CactusGrammarT> grammars) {
+  final grammarArray = _allocGrammarArray(grammars);
+  try {
+    final grammar = _cactusGrammarUnion(grammarArray.cast(), grammars.length);
+    if (grammar == nullptr) {
+      throw Exception('Failed to union grammars: ${cactusGetLastError()}');
+    }
+    return grammar;
+  } finally {
+    calloc.free(grammarArray);
+  }
+}
+
+/// Creates a grammar that concatenates input grammars in order.
+CactusGrammarT cactusGrammarConcatenate(List<CactusGrammarT> grammars) {
+  final grammarArray = _allocGrammarArray(grammars);
+  try {
+    final grammar = _cactusGrammarConcatenate(grammarArray.cast(), grammars.length);
+    if (grammar == nullptr) {
+      throw Exception('Failed to concatenate grammars: ${cactusGetLastError()}');
+    }
+    return grammar;
+  } finally {
+    calloc.free(grammarArray);
+  }
+}
+
+/// Returns true when the grammar accepts no strings.
+bool cactusGrammarIsEmpty(CactusGrammarT grammar) => _cactusGrammarIsEmpty(grammar);
+
+/// Returns true when the grammar accepts all strings.
+bool cactusGrammarIsUniversal(CactusGrammarT grammar) => _cactusGrammarIsUniversal(grammar);
+
+/// Releases grammar resources.
+void cactusGrammarDestroy(CactusGrammarT grammar) {
+  _cactusGrammarDestroy(grammar);
+}
+
 /// Runs chat completion. Returns the assistant response.
 String cactusComplete(
   CactusModelT model,
@@ -633,6 +895,7 @@ String cactusComplete(
   String? toolsJson,
   void Function(String token, int tokenId)? onToken, {
   Uint8List? pcmData,
+  CactusGrammarT? grammar,
 }) {
   const bufferSize = 65536;
   final responseBuffer = calloc<Uint8>(bufferSize);
@@ -664,6 +927,7 @@ String cactusComplete(
       model, messagesPtr, responseBuffer.cast(), bufferSize,
       optionsPtr, toolsPtr, callbackPtr, nullptr,
       pcmBuffer, pcmSize,
+      grammar ?? nullptr,
     );
     if (result < 0) {
       throw Exception('Completion failed: ${cactusGetLastError()}');
@@ -1337,4 +1601,3 @@ void cactusLogSetCallback(void Function(int level, String component, String mess
   );
   _cactusLogSetCallback(_logCallable!.nativeFunction, nullptr);
 }
-

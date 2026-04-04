@@ -4,6 +4,29 @@ import cactus
 public typealias CactusModelT = UnsafeMutableRawPointer
 public typealias CactusIndexT = UnsafeMutableRawPointer
 public typealias CactusStreamTranscribeT = UnsafeMutableRawPointer
+public typealias CactusGrammarT = UnsafeMutableRawPointer
+
+public struct CactusGrammarJSONSchemaOptions {
+    public var anyWhitespace: Bool
+    public var indent: Int32
+    public var separators: (String, String)
+    public var strictMode: Bool
+    public var maxWhitespaceCount: Int32
+
+    public init(
+        anyWhitespace: Bool = true,
+        indent: Int32 = 2,
+        separators: (String, String) = (",", ":"),
+        strictMode: Bool = true,
+        maxWhitespaceCount: Int32 = 1
+    ) {
+        self.anyWhitespace = anyWhitespace
+        self.indent = indent
+        self.separators = separators
+        self.strictMode = strictMode
+        self.maxWhitespaceCount = maxWhitespaceCount
+    }
+}
 
 private let _frameworkInitialized: Void = {
     cactus_set_telemetry_environment("swift", nil, nil)
@@ -79,7 +102,7 @@ public func cactusStop(_ model: CactusModelT) {
 
 // MARK: - Inference
 
-public func cactusComplete(_ model: CactusModelT, _ messagesJson: String, _ optionsJson: String?, _ toolsJson: String?, _ onToken: ((String, UInt32) -> Void)?, _ pcmData: Data? = nil) throws -> String {
+public func cactusComplete(_ model: CactusModelT, _ messagesJson: String, _ optionsJson: String?, _ toolsJson: String?, _ onToken: ((String, UInt32) -> Void)?, _ pcmData: Data? = nil, _ grammar: CactusGrammarT? = nil) throws -> String {
     var buffer = [CChar](repeating: 0, count: _defaultBufferSize)
 
     let callbackContext = onToken.map { TokenCallbackContext(callback: $0) }
@@ -98,7 +121,8 @@ public func cactusComplete(_ model: CactusModelT, _ messagesJson: String, _ opti
                     toolsJson,
                     onToken != nil ? tokenCallbackBridge : nil,
                     contextPtr,
-                    pcmPtr.baseAddress?.assumingMemoryBound(to: UInt8.self), pcmData.count
+                    pcmPtr.baseAddress?.assumingMemoryBound(to: UInt8.self), pcmData.count,
+                    grammar
                 )
             }
         }
@@ -113,7 +137,8 @@ public func cactusComplete(_ model: CactusModelT, _ messagesJson: String, _ opti
                 toolsJson,
                 onToken != nil ? tokenCallbackBridge : nil,
                 contextPtr,
-                nil, 0
+                nil, 0,
+                grammar
             )
         }
     }
@@ -156,6 +181,103 @@ public func cactusPrefill(_ model: CactusModelT, _ messagesJson: String, _ optio
 
     if result < 0 { throw _err("Prefill failed") }
     return String(cString: buffer)
+}
+
+// MARK: - Grammar
+
+public func cactusGrammarInitGBNF(_ gbnf: String, _ startSymbol: String? = nil) throws -> CactusGrammarT {
+    guard let grammar = cactus_grammar_init_gbnf(gbnf, startSymbol) else {
+        throw _err("Failed to initialize GBNF grammar")
+    }
+    return grammar
+}
+
+public func cactusGrammarInitJSON() throws -> CactusGrammarT {
+    guard let grammar = cactus_grammar_init_json() else {
+        throw _err("Failed to initialize JSON grammar")
+    }
+    return grammar
+}
+
+public func cactusGrammarInitEmpty() throws -> CactusGrammarT {
+    guard let grammar = cactus_grammar_init_empty() else {
+        throw _err("Failed to initialize empty grammar")
+    }
+    return grammar
+}
+
+public func cactusGrammarInitUniversal() throws -> CactusGrammarT {
+    guard let grammar = cactus_grammar_init_universal() else {
+        throw _err("Failed to initialize universal grammar")
+    }
+    return grammar
+}
+
+public func cactusGrammarInitJSONSchema(
+    _ jsonSchema: String,
+    _ options: CactusGrammarJSONSchemaOptions = CactusGrammarJSONSchemaOptions()
+) throws -> CactusGrammarT {
+    try options.separators.0.withCString { itemSeparator in
+        try options.separators.1.withCString { keySeparator in
+            var nativeOptions = cactus_grammar_json_schema_options_t(
+                any_whitespace: options.anyWhitespace,
+                indent: options.indent,
+                separators: (itemSeparator, keySeparator),
+                strict_mode: options.strictMode,
+                max_whitespace_count: options.maxWhitespaceCount
+            )
+            guard let grammar = cactus_grammar_init_json_schema(jsonSchema, nativeOptions) else {
+                throw _err("Failed to initialize JSON schema grammar")
+            }
+            return grammar
+        }
+    }
+}
+
+public func cactusGrammarInitRegex(_ regex: String) throws -> CactusGrammarT {
+    guard let grammar = cactus_grammar_init_regex(regex) else {
+        throw _err("Failed to initialize regex grammar")
+    }
+    return grammar
+}
+
+public func cactusGrammarInitStructuralTag(_ structuralTagJson: String) throws -> CactusGrammarT {
+    guard let grammar = cactus_grammar_init_structural_tag(structuralTagJson) else {
+        throw _err("Failed to initialize structural tag grammar")
+    }
+    return grammar
+}
+
+public func cactusGrammarUnion(_ grammars: [CactusGrammarT]) throws -> CactusGrammarT {
+    var grammars = grammars
+    guard let grammar = grammars.withUnsafeMutableBufferPointer({ bufferPtr in
+        cactus_grammar_union(bufferPtr.baseAddress, bufferPtr.count)
+    }) else {
+        throw _err("Failed to union grammars")
+    }
+    return grammar
+}
+
+public func cactusGrammarConcatenate(_ grammars: [CactusGrammarT]) throws -> CactusGrammarT {
+    var grammars = grammars
+    guard let grammar = grammars.withUnsafeMutableBufferPointer({ bufferPtr in
+        cactus_grammar_concatenate(bufferPtr.baseAddress, bufferPtr.count)
+    }) else {
+        throw _err("Failed to concatenate grammars")
+    }
+    return grammar
+}
+
+public func cactusGrammarIsEmpty(_ grammar: CactusGrammarT) -> Bool {
+    cactus_grammar_is_empty(grammar)
+}
+
+public func cactusGrammarIsUniversal(_ grammar: CactusGrammarT) -> Bool {
+    cactus_grammar_is_universal(grammar)
+}
+
+public func cactusGrammarDestroy(_ grammar: CactusGrammarT) {
+    cactus_grammar_destroy(grammar)
 }
 
 public func cactusTokenize(_ model: CactusModelT, _ text: String) throws -> [UInt32] {

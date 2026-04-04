@@ -86,7 +86,9 @@ result_json = cactus_complete(
     messages_json: str,              # JSON array of {role, content}
     options_json: str | None,        # optional inference options
     tools_json: str | None,          # optional tool definitions
-    callback: Callable[[str, int], None] | None   # streaming token callback
+    callback: Callable[[str, int], None] | None,  # streaming token callback
+    pcm_data: bytes | None = None,   # optional 16-bit PCM audio buffer
+    grammar: int | None = None       # optional grammar handle
 ) -> str
 ```
 
@@ -99,6 +101,51 @@ result = json.loads(cactus_complete(model, messages_json, options, None, on_toke
 if result["cloud_handoff"]:
     # response already contains cloud result
     pass
+```
+
+### Grammar
+
+Grammar handles are plain `int` values (C pointers):
+
+```python
+class cactus_grammar_json_schema_options_t(ctypes.Structure)
+
+cactus_grammar_json_schema_default_options() -> cactus_grammar_json_schema_options_t
+cactus_grammar_init_gbnf(gbnf: str, start_symbol: str | None = None) -> int
+cactus_grammar_init_json() -> int
+cactus_grammar_init_empty() -> int
+cactus_grammar_init_universal() -> int
+cactus_grammar_init_json_schema(
+    json_schema: str,
+    options: cactus_grammar_json_schema_options_t | None = None
+) -> int
+cactus_grammar_init_regex(regex: str) -> int
+cactus_grammar_init_structural_tag(structural_tag_json: str) -> int
+cactus_grammar_union(grammars: list[int]) -> int
+cactus_grammar_concatenate(grammars: list[int]) -> int
+cactus_grammar_is_empty(grammar: int) -> bool
+cactus_grammar_is_universal(grammar: int) -> bool
+cactus_grammar_destroy(grammar: int)
+```
+
+```python
+schema = r'''
+{
+  "type": "object",
+  "properties": {
+    "name": {"type": "string"},
+    "age": {"type": "integer"}
+  },
+  "required": ["name", "age"],
+  "additionalProperties": false
+}
+'''
+
+grammar = cactus_grammar_init_json_schema(schema)
+try:
+    result = json.loads(cactus_complete(model, messages_json, None, None, None, grammar=grammar))
+finally:
+    cactus_grammar_destroy(grammar)
 ```
 
 **Response format:**
