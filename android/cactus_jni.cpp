@@ -92,9 +92,9 @@ Java_com_cactus_CactusJNI_nativeStop(JNIEnv*, jobject, jlong handle) {
 
 JNIEXPORT jstring JNICALL
 Java_com_cactus_CactusJNI_nativeComplete(JNIEnv* env, jobject, jlong handle,
-                                          jstring messagesJson, jstring optionsJson,
-                                          jstring toolsJson, jobject callback,
-                                          jbyteArray pcmData) {
+                                           jstring messagesJson, jstring optionsJson,
+                                           jstring toolsJson, jobject callback,
+                                           jbyteArray pcmData, jlong grammar) {
     if (handle == 0) { throwCactusException(env, "Model not initialized"); return nullptr; }
 
     const char* messages = jstring_to_cstr(env, messagesJson);
@@ -136,7 +136,7 @@ Java_com_cactus_CactusJNI_nativeComplete(JNIEnv* env, jobject, jlong handle,
         ctx,
         pcmBuffer,
         pcmSize,
-        nullptr
+        reinterpret_cast<cactus_grammar_t>(grammar)
     );
 
     delete ctx;
@@ -155,8 +155,8 @@ Java_com_cactus_CactusJNI_nativeComplete(JNIEnv* env, jobject, jlong handle,
 
 JNIEXPORT jstring JNICALL
 Java_com_cactus_CactusJNI_nativePrefill(JNIEnv* env, jobject, jlong handle,
-                                         jstring messagesJson, jstring optionsJson,
-                                         jstring toolsJson, jbyteArray pcmData) {
+                                          jstring messagesJson, jstring optionsJson,
+                                          jstring toolsJson, jbyteArray pcmData) {
     if (handle == 0) { throwCactusException(env, "Model not initialized"); return nullptr; }
 
     const char* messages = jstring_to_cstr(env, messagesJson);
@@ -196,6 +196,122 @@ Java_com_cactus_CactusJNI_nativePrefill(JNIEnv* env, jobject, jlong handle,
 
     if (result < 0) { throwOnError(env); return nullptr; }
     return env->NewStringUTF(buffer.data());
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_cactus_CactusJNI_nativeGrammarInitGBNF(JNIEnv* env, jobject, jstring gbnf, jstring startSymbol) {
+    const char* gbnfStr = jstring_to_cstr(env, gbnf);
+    const char* startSymbolStr = jstring_to_cstr(env, startSymbol);
+    auto grammar = reinterpret_cast<jlong>(cactus_grammar_init_gbnf(gbnfStr, startSymbolStr));
+    release_jstring(env, gbnf, gbnfStr);
+    release_jstring(env, startSymbol, startSymbolStr);
+    return grammar;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_cactus_CactusJNI_nativeGrammarInitJSON(JNIEnv*, jobject) {
+    return reinterpret_cast<jlong>(cactus_grammar_init_json());
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_cactus_CactusJNI_nativeGrammarInitEmpty(JNIEnv*, jobject) {
+    return reinterpret_cast<jlong>(cactus_grammar_init_empty());
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_cactus_CactusJNI_nativeGrammarInitUniversal(JNIEnv*, jobject) {
+    return reinterpret_cast<jlong>(cactus_grammar_init_universal());
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_cactus_CactusJNI_nativeGrammarInitJSONSchema(JNIEnv* env, jobject,
+                                                       jstring jsonSchema,
+                                                       jboolean anyWhitespace,
+                                                       jint indent,
+                                                       jstring itemSeparator,
+                                                       jstring keyValueSeparator,
+                                                       jboolean strictMode,
+                                                       jint maxWhitespaceCount) {
+    const char* jsonSchemaStr = jstring_to_cstr(env, jsonSchema);
+    const char* itemSeparatorStr = jstring_to_cstr(env, itemSeparator);
+    const char* keyValueSeparatorStr = jstring_to_cstr(env, keyValueSeparator);
+
+    cactus_grammar_json_schema_options_t options = {
+        anyWhitespace == JNI_TRUE,
+        indent,
+        {itemSeparatorStr, keyValueSeparatorStr},
+        strictMode == JNI_TRUE,
+        maxWhitespaceCount,
+    };
+    auto grammar = reinterpret_cast<jlong>(cactus_grammar_init_json_schema(jsonSchemaStr, options));
+
+    release_jstring(env, jsonSchema, jsonSchemaStr);
+    release_jstring(env, itemSeparator, itemSeparatorStr);
+    release_jstring(env, keyValueSeparator, keyValueSeparatorStr);
+    return grammar;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_cactus_CactusJNI_nativeGrammarInitRegex(JNIEnv* env, jobject, jstring regex) {
+    const char* regexStr = jstring_to_cstr(env, regex);
+    auto grammar = reinterpret_cast<jlong>(cactus_grammar_init_regex(regexStr));
+    release_jstring(env, regex, regexStr);
+    return grammar;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_cactus_CactusJNI_nativeGrammarInitStructuralTag(JNIEnv* env, jobject, jstring structuralTagJson) {
+    const char* structuralTagStr = jstring_to_cstr(env, structuralTagJson);
+    auto grammar = reinterpret_cast<jlong>(cactus_grammar_init_structural_tag(structuralTagStr));
+    release_jstring(env, structuralTagJson, structuralTagStr);
+    return grammar;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_cactus_CactusJNI_nativeGrammarUnion(JNIEnv* env, jobject, jlongArray grammars) {
+    if (grammars == nullptr) {
+        return reinterpret_cast<jlong>(cactus_grammar_union(nullptr, 0));
+    }
+
+    jsize count = env->GetArrayLength(grammars);
+    jlong* handles = env->GetLongArrayElements(grammars, nullptr);
+    std::vector<cactus_grammar_t> grammarHandles(static_cast<size_t>(count));
+    for (jsize i = 0; i < count; ++i) {
+        grammarHandles[static_cast<size_t>(i)] = reinterpret_cast<cactus_grammar_t>(handles[i]);
+    }
+    env->ReleaseLongArrayElements(grammars, handles, JNI_ABORT);
+    return reinterpret_cast<jlong>(cactus_grammar_union(grammarHandles.data(), grammarHandles.size()));
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_cactus_CactusJNI_nativeGrammarConcatenate(JNIEnv* env, jobject, jlongArray grammars) {
+    if (grammars == nullptr) {
+        return reinterpret_cast<jlong>(cactus_grammar_concatenate(nullptr, 0));
+    }
+
+    jsize count = env->GetArrayLength(grammars);
+    jlong* handles = env->GetLongArrayElements(grammars, nullptr);
+    std::vector<cactus_grammar_t> grammarHandles(static_cast<size_t>(count));
+    for (jsize i = 0; i < count; ++i) {
+        grammarHandles[static_cast<size_t>(i)] = reinterpret_cast<cactus_grammar_t>(handles[i]);
+    }
+    env->ReleaseLongArrayElements(grammars, handles, JNI_ABORT);
+    return reinterpret_cast<jlong>(cactus_grammar_concatenate(grammarHandles.data(), grammarHandles.size()));
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_cactus_CactusJNI_nativeGrammarIsEmpty(JNIEnv*, jobject, jlong grammar) {
+    return cactus_grammar_is_empty(reinterpret_cast<cactus_grammar_t>(grammar)) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_cactus_CactusJNI_nativeGrammarIsUniversal(JNIEnv*, jobject, jlong grammar) {
+    return cactus_grammar_is_universal(reinterpret_cast<cactus_grammar_t>(grammar)) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_cactus_CactusJNI_nativeGrammarDestroy(JNIEnv*, jobject, jlong grammar) {
+    cactus_grammar_destroy(reinterpret_cast<cactus_grammar_t>(grammar));
 }
 
 JNIEXPORT jstring JNICALL

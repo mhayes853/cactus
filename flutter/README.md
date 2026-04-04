@@ -88,6 +88,27 @@ final resultJson = cactusComplete(model, messages, options, null, (token, tokenI
 print(resultJson);
 ```
 
+### Grammar-Constrained Completion
+
+```dart
+final schema = r'''
+{
+  "type": "object",
+  "properties": {
+    "name": {"type": "string"},
+    "age": {"type": "integer"}
+  },
+  "required": ["name", "age"],
+  "additionalProperties": false
+}
+''';
+
+final grammar = cactusGrammarInitJSONSchema(schema);
+final resultJson = cactusComplete(model, messages, null, null, null, grammar: grammar);
+print(resultJson);
+cactusGrammarDestroy(grammar);
+```
+
 ### Prefill
 
 Pre-processes input text and populates the KV cache without generating output tokens. This reduces latency for subsequent calls to `cactusComplete`.
@@ -98,6 +119,7 @@ String cactusPrefill(
   String messagesJson,
   String? optionsJson,
   String? toolsJson,
+  {Uint8List? pcmData,}
 )
 ```
 
@@ -283,6 +305,7 @@ All functions are top-level and mirror the C FFI directly. Functions that return
 typedef CactusModelT            = Pointer<Void>;
 typedef CactusIndexT            = Pointer<Void>;
 typedef CactusStreamTranscribeT = Pointer<Void>;
+typedef CactusGrammarT          = Pointer<Void>;
 ```
 
 ### Init / Lifecycle
@@ -303,6 +326,7 @@ String cactusPrefill(
   String messagesJson,
   String? optionsJson,
   String? toolsJson,
+  {Uint8List? pcmData,}
 )
 ```
 
@@ -315,7 +339,41 @@ String cactusComplete(
   String? optionsJson,
   String? toolsJson,
   void Function(String token, int tokenId)? callback,
+  {Uint8List? pcmData, CactusGrammarT? grammar,}
 )
+```
+
+### Grammar
+
+```dart
+typedef CactusGrammarT = Pointer<Void>;
+
+class CactusGrammarJsonSchemaOptions {
+  const CactusGrammarJsonSchemaOptions({
+    bool anyWhitespace = true,
+    int indent = 2,
+    String itemSeparator = ',',
+    String keyValueSeparator = ':',
+    bool strictMode = true,
+    int maxWhitespaceCount = 1,
+  });
+}
+
+CactusGrammarT cactusGrammarInitGBNF(String gbnf, [String? startSymbol])
+CactusGrammarT cactusGrammarInitJSON()
+CactusGrammarT cactusGrammarInitEmpty()
+CactusGrammarT cactusGrammarInitUniversal()
+CactusGrammarT cactusGrammarInitJSONSchema(
+  String jsonSchema, [
+  CactusGrammarJsonSchemaOptions options = const CactusGrammarJsonSchemaOptions(),
+])
+CactusGrammarT cactusGrammarInitRegex(String regex)
+CactusGrammarT cactusGrammarInitStructuralTag(String structuralTagJson)
+CactusGrammarT cactusGrammarUnion(List<CactusGrammarT> grammars)
+CactusGrammarT cactusGrammarConcatenate(List<CactusGrammarT> grammars)
+bool cactusGrammarIsEmpty(CactusGrammarT grammar)
+bool cactusGrammarIsUniversal(CactusGrammarT grammar)
+void cactusGrammarDestroy(CactusGrammarT grammar)
 ```
 
 ### Transcription

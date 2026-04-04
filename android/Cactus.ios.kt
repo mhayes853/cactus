@@ -34,7 +34,7 @@ actual fun cactusTelemetryFlush() { cactus_telemetry_flush() }
 actual fun cactusTelemetryShutdown() { cactus_telemetry_shutdown() }
 
 @OptIn(ExperimentalForeignApi::class)
-actual fun cactusComplete(model: Long, messagesJson: String, optionsJson: String?, toolsJson: String?, callback: CactusTokenCallback?, pcmData: ByteArray?): String {
+actual fun cactusComplete(model: Long, messagesJson: String, optionsJson: String?, toolsJson: String?, callback: CactusTokenCallback?, pcmData: ByteArray?, grammar: Long?): String {
     memScoped {
         val buffer = allocArray<ByteVar>(65536)
         val callbackRef = callback?.let { StableRef.create(it) }
@@ -56,7 +56,8 @@ actual fun cactusComplete(model: Long, messagesJson: String, optionsJson: String
                 },
                 callbackRef?.asCPointer(),
                 pcmPtr?.reinterpret(),
-                pcmData?.size?.toULong() ?: 0u
+                pcmData?.size?.toULong() ?: 0u,
+                grammar?.toCPointer()
             )
             if (result < 0) {
                 val error = cactus_get_last_error()?.toKString() ?: "Unknown error"
@@ -90,6 +91,104 @@ actual fun cactusPrefill(model: Long, messagesJson: String, optionsJson: String?
         }
         return buffer.toKString()
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun cactusGrammarInitGBNF(gbnf: String, startSymbol: String?): Long {
+    val ptr = cactus_grammar_init_gbnf(gbnf, startSymbol)
+        ?: throw RuntimeException(cactus_get_last_error()?.toKString() ?: "Failed to initialize GBNF grammar")
+    return ptr.rawValue.toLong()
+}
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun cactusGrammarInitJSON(): Long {
+    val ptr = cactus_grammar_init_json()
+        ?: throw RuntimeException(cactus_get_last_error()?.toKString() ?: "Failed to initialize JSON grammar")
+    return ptr.rawValue.toLong()
+}
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun cactusGrammarInitEmpty(): Long {
+    val ptr = cactus_grammar_init_empty()
+        ?: throw RuntimeException(cactus_get_last_error()?.toKString() ?: "Failed to initialize empty grammar")
+    return ptr.rawValue.toLong()
+}
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun cactusGrammarInitUniversal(): Long {
+    val ptr = cactus_grammar_init_universal()
+        ?: throw RuntimeException(cactus_get_last_error()?.toKString() ?: "Failed to initialize universal grammar")
+    return ptr.rawValue.toLong()
+}
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun cactusGrammarInitJSONSchema(jsonSchema: String, options: CactusGrammarJsonSchemaOptions): Long {
+    memScoped {
+        val separators = cValuesOf(options.itemSeparator.cstr.ptr, options.keyValueSeparator.cstr.ptr)
+        val nativeOptions = cactus_grammar_json_schema_options_t(
+            any_whitespace = options.anyWhitespace,
+            indent = options.indent,
+            separators = separators,
+            strict_mode = options.strictMode,
+            max_whitespace_count = options.maxWhitespaceCount,
+        )
+        val ptr = cactus_grammar_init_json_schema(jsonSchema, nativeOptions)
+            ?: throw RuntimeException(cactus_get_last_error()?.toKString() ?: "Failed to initialize JSON schema grammar")
+        return ptr.rawValue.toLong()
+    }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun cactusGrammarInitRegex(regex: String): Long {
+    val ptr = cactus_grammar_init_regex(regex)
+        ?: throw RuntimeException(cactus_get_last_error()?.toKString() ?: "Failed to initialize regex grammar")
+    return ptr.rawValue.toLong()
+}
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun cactusGrammarInitStructuralTag(structuralTagJson: String): Long {
+    val ptr = cactus_grammar_init_structural_tag(structuralTagJson)
+        ?: throw RuntimeException(cactus_get_last_error()?.toKString() ?: "Failed to initialize structural tag grammar")
+    return ptr.rawValue.toLong()
+}
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun cactusGrammarUnion(grammars: LongArray): Long {
+    memScoped {
+        val nativeGrammars = allocArray<COpaquePointerVar>(grammars.size)
+        grammars.forEachIndexed { index, grammar ->
+            nativeGrammars[index] = grammar.toCPointer()
+        }
+        val ptr = cactus_grammar_union(nativeGrammars.reinterpret(), grammars.size.toULong())
+            ?: throw RuntimeException(cactus_get_last_error()?.toKString() ?: "Failed to union grammars")
+        return ptr.rawValue.toLong()
+    }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun cactusGrammarConcatenate(grammars: LongArray): Long {
+    memScoped {
+        val nativeGrammars = allocArray<COpaquePointerVar>(grammars.size)
+        grammars.forEachIndexed { index, grammar ->
+            nativeGrammars[index] = grammar.toCPointer()
+        }
+        val ptr = cactus_grammar_concatenate(nativeGrammars.reinterpret(), grammars.size.toULong())
+            ?: throw RuntimeException(cactus_get_last_error()?.toKString() ?: "Failed to concatenate grammars")
+        return ptr.rawValue.toLong()
+    }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun cactusGrammarIsEmpty(grammar: Long): Boolean =
+    cactus_grammar_is_empty(grammar.toCPointer())
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun cactusGrammarIsUniversal(grammar: Long): Boolean =
+    cactus_grammar_is_universal(grammar.toCPointer())
+
+@OptIn(ExperimentalForeignApi::class)
+actual fun cactusGrammarDestroy(grammar: Long) {
+    cactus_grammar_destroy(grammar.toCPointer())
 }
 
 @OptIn(ExperimentalForeignApi::class)

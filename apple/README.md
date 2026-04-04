@@ -134,6 +134,27 @@ let resultJson = try cactusComplete(model, messages, options, nil as String?) { 
 print(resultJson)
 ```
 
+### Grammar-Constrained Completion
+
+```swift
+let schema = """
+{
+  "type": "object",
+  "properties": {
+    "name": {"type": "string"},
+    "age": {"type": "integer"}
+  },
+  "required": ["name", "age"],
+  "additionalProperties": false
+}
+"""
+
+let grammar = try cactusGrammarInitJSONSchema(schema)
+let resultJson = try cactusComplete(model, messages, nil, nil, nil, nil, grammar)
+print(resultJson)
+cactusGrammarDestroy(grammar)
+```
+
 ### Prefill
 
 Pre-processes input text and populates the KV cache without generating output tokens. This reduces latency for subsequent calls to `cactusComplete`.
@@ -143,7 +164,8 @@ func cactusPrefill(
     _ model: CactusModelT,
     _ messagesJson: String,
     _ optionsJson: String?,
-    _ toolsJson: String?
+    _ toolsJson: String?,
+    _ pcmData: Data? = nil
 ) throws -> String
 ```
 
@@ -323,6 +345,7 @@ All functions are top-level and mirror the C FFI directly.
 public typealias CactusModelT           = UnsafeMutableRawPointer
 public typealias CactusIndexT           = UnsafeMutableRawPointer
 public typealias CactusStreamTranscribeT = UnsafeMutableRawPointer
+public typealias CactusGrammarT         = UnsafeMutableRawPointer
 ```
 
 All `throws` functions throw `NSError` (domain `"cactus"`) on failure.
@@ -344,7 +367,8 @@ func cactusPrefill(
     _ model: CactusModelT,
     _ messagesJson: String,
     _ optionsJson: String?,
-    _ toolsJson: String?
+    _ toolsJson: String?,
+    _ pcmData: Data? = nil
 ) throws -> String
 ```
 
@@ -356,8 +380,40 @@ func cactusComplete(
     _ messagesJson: String,
     _ optionsJson: String?,
     _ toolsJson: String?,
-    _ callback: ((String, UInt32) -> Void)?
+    _ callback: ((String, UInt32) -> Void)?,
+    _ pcmData: Data? = nil,
+    _ grammar: CactusGrammarT? = nil
 ) throws -> String
+```
+
+### Grammar
+
+```swift
+struct CactusGrammarJSONSchemaOptions {
+    var anyWhitespace: Bool = true
+    var indent: Int32 = 2
+    var separators: (String, String) = (",", ":")
+    var strictMode: Bool = true
+    var maxWhitespaceCount: Int32 = 1
+
+    static let `default` = CactusGrammarJSONSchemaOptions()
+}
+
+func cactusGrammarInitGBNF(_ gbnf: String, _ startSymbol: String? = nil) throws -> CactusGrammarT
+func cactusGrammarInitJSON() throws -> CactusGrammarT
+func cactusGrammarInitEmpty() throws -> CactusGrammarT
+func cactusGrammarInitUniversal() throws -> CactusGrammarT
+func cactusGrammarInitJSONSchema(
+    _ jsonSchema: String,
+    _ options: CactusGrammarJSONSchemaOptions = .default
+) throws -> CactusGrammarT
+func cactusGrammarInitRegex(_ regex: String) throws -> CactusGrammarT
+func cactusGrammarInitStructuralTag(_ structuralTagJson: String) throws -> CactusGrammarT
+func cactusGrammarUnion(_ grammars: [CactusGrammarT]) throws -> CactusGrammarT
+func cactusGrammarConcatenate(_ grammars: [CactusGrammarT]) throws -> CactusGrammarT
+func cactusGrammarIsEmpty(_ grammar: CactusGrammarT) -> Bool
+func cactusGrammarIsUniversal(_ grammar: CactusGrammarT) -> Bool
+func cactusGrammarDestroy(_ grammar: CactusGrammarT)
 ```
 
 ### Transcription

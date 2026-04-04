@@ -17,8 +17,20 @@ private object CactusJNI {
     @JvmStatic external fun nativeDestroy(handle: Long)
     @JvmStatic external fun nativeReset(handle: Long)
     @JvmStatic external fun nativeStop(handle: Long)
-    @JvmStatic external fun nativeComplete(handle: Long, messagesJson: String, optionsJson: String?, toolsJson: String?, callback: CactusTokenCallback?, pcmData: ByteArray?): String
+    @JvmStatic external fun nativeComplete(handle: Long, messagesJson: String, optionsJson: String?, toolsJson: String?, callback: CactusTokenCallback?, pcmData: ByteArray?, grammar: Long): String
     @JvmStatic external fun nativePrefill(handle: Long, messagesJson: String, optionsJson: String?, toolsJson: String?, pcmData: ByteArray?): String
+    @JvmStatic external fun nativeGrammarInitGBNF(gbnf: String, startSymbol: String?): Long
+    @JvmStatic external fun nativeGrammarInitJSON(): Long
+    @JvmStatic external fun nativeGrammarInitEmpty(): Long
+    @JvmStatic external fun nativeGrammarInitUniversal(): Long
+    @JvmStatic external fun nativeGrammarInitJSONSchema(jsonSchema: String, anyWhitespace: Boolean, indent: Int, itemSeparator: String, keyValueSeparator: String, strictMode: Boolean, maxWhitespaceCount: Int): Long
+    @JvmStatic external fun nativeGrammarInitRegex(regex: String): Long
+    @JvmStatic external fun nativeGrammarInitStructuralTag(structuralTagJson: String): Long
+    @JvmStatic external fun nativeGrammarUnion(grammars: LongArray): Long
+    @JvmStatic external fun nativeGrammarConcatenate(grammars: LongArray): Long
+    @JvmStatic external fun nativeGrammarIsEmpty(grammar: Long): Boolean
+    @JvmStatic external fun nativeGrammarIsUniversal(grammar: Long): Boolean
+    @JvmStatic external fun nativeGrammarDestroy(grammar: Long)
     @JvmStatic external fun nativeTranscribe(handle: Long, audioPath: String?, prompt: String?, optionsJson: String?, callback: CactusTokenCallback?, pcmData: ByteArray?): String
     @JvmStatic external fun nativeEmbed(handle: Long, text: String, normalize: Boolean): FloatArray
     @JvmStatic external fun nativeRagQuery(handle: Long, query: String, topK: Int): String
@@ -54,10 +66,69 @@ actual fun cactusSetTelemetryEnvironment(cacheDir: String) = CactusJNI.nativeSet
 actual fun cactusSetAppId(appId: String) = CactusJNI.nativeSetAppId(appId)
 actual fun cactusTelemetryFlush() = CactusJNI.nativeTelemetryFlush()
 actual fun cactusTelemetryShutdown() = CactusJNI.nativeTelemetryShutdown()
-actual fun cactusComplete(model: Long, messagesJson: String, optionsJson: String?, toolsJson: String?, callback: CactusTokenCallback?, pcmData: ByteArray?): String =
-    CactusJNI.nativeComplete(model, messagesJson, optionsJson, toolsJson, callback, pcmData)
+actual fun cactusComplete(model: Long, messagesJson: String, optionsJson: String?, toolsJson: String?, callback: CactusTokenCallback?, pcmData: ByteArray?, grammar: Long?): String =
+    CactusJNI.nativeComplete(model, messagesJson, optionsJson, toolsJson, callback, pcmData, grammar ?: 0L)
 actual fun cactusPrefill(model: Long, messagesJson: String, optionsJson: String?, toolsJson: String?, pcmData: ByteArray?): String =
     CactusJNI.nativePrefill(model, messagesJson, optionsJson, toolsJson, pcmData)
+actual fun cactusGrammarInitGBNF(gbnf: String, startSymbol: String?): Long {
+    val h = CactusJNI.nativeGrammarInitGBNF(gbnf, startSymbol)
+    if (h == 0L) throw RuntimeException(CactusJNI.nativeGetLastError().ifEmpty { "Failed to initialize GBNF grammar" })
+    return h
+}
+actual fun cactusGrammarInitJSON(): Long {
+    val h = CactusJNI.nativeGrammarInitJSON()
+    if (h == 0L) throw RuntimeException(CactusJNI.nativeGetLastError().ifEmpty { "Failed to initialize JSON grammar" })
+    return h
+}
+actual fun cactusGrammarInitEmpty(): Long {
+    val h = CactusJNI.nativeGrammarInitEmpty()
+    if (h == 0L) throw RuntimeException(CactusJNI.nativeGetLastError().ifEmpty { "Failed to initialize empty grammar" })
+    return h
+}
+actual fun cactusGrammarInitUniversal(): Long {
+    val h = CactusJNI.nativeGrammarInitUniversal()
+    if (h == 0L) throw RuntimeException(CactusJNI.nativeGetLastError().ifEmpty { "Failed to initialize universal grammar" })
+    return h
+}
+actual fun cactusGrammarInitJSONSchema(jsonSchema: String, options: CactusGrammarJsonSchemaOptions): Long {
+    val h = CactusJNI.nativeGrammarInitJSONSchema(
+        jsonSchema,
+        options.anyWhitespace,
+        options.indent,
+        options.itemSeparator,
+        options.keyValueSeparator,
+        options.strictMode,
+        options.maxWhitespaceCount,
+    )
+    if (h == 0L) throw RuntimeException(CactusJNI.nativeGetLastError().ifEmpty { "Failed to initialize JSON schema grammar" })
+    return h
+}
+actual fun cactusGrammarInitRegex(regex: String): Long {
+    val h = CactusJNI.nativeGrammarInitRegex(regex)
+    if (h == 0L) throw RuntimeException(CactusJNI.nativeGetLastError().ifEmpty { "Failed to initialize regex grammar" })
+    return h
+}
+actual fun cactusGrammarInitStructuralTag(structuralTagJson: String): Long {
+    val h = CactusJNI.nativeGrammarInitStructuralTag(structuralTagJson)
+    if (h == 0L) throw RuntimeException(CactusJNI.nativeGetLastError().ifEmpty { "Failed to initialize structural tag grammar" })
+    return h
+}
+actual fun cactusGrammarUnion(grammars: LongArray): Long {
+    val h = CactusJNI.nativeGrammarUnion(grammars)
+    if (h == 0L) throw RuntimeException(CactusJNI.nativeGetLastError().ifEmpty { "Failed to union grammars" })
+    return h
+}
+actual fun cactusGrammarConcatenate(grammars: LongArray): Long {
+    val h = CactusJNI.nativeGrammarConcatenate(grammars)
+    if (h == 0L) throw RuntimeException(CactusJNI.nativeGetLastError().ifEmpty { "Failed to concatenate grammars" })
+    return h
+}
+actual fun cactusGrammarIsEmpty(grammar: Long): Boolean =
+    CactusJNI.nativeGrammarIsEmpty(grammar)
+actual fun cactusGrammarIsUniversal(grammar: Long): Boolean =
+    CactusJNI.nativeGrammarIsUniversal(grammar)
+actual fun cactusGrammarDestroy(grammar: Long) =
+    CactusJNI.nativeGrammarDestroy(grammar)
 actual fun cactusTranscribe(model: Long, audioPath: String?, prompt: String?, optionsJson: String?, callback: CactusTokenCallback?, pcmData: ByteArray?): String =
     CactusJNI.nativeTranscribe(model, audioPath, prompt, optionsJson, callback, pcmData)
 actual fun cactusEmbed(model: Long, text: String, normalize: Boolean): FloatArray =
