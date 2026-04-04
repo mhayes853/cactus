@@ -49,6 +49,13 @@ An opaque pointer type representing a streaming transcription session.
 typedef void* cactus_stream_transcribe_t;
 ```
 
+### `cactus_grammar_t`
+An opaque pointer type representing a reusable grammar constraint for `cactus_complete`. Create a grammar with one of the `cactus_grammar_init_*` functions, pass it to `cactus_complete`, then release it with `cactus_grammar_destroy`.
+
+```c
+typedef void* cactus_grammar_t;
+```
+
 ### `cactus_token_callback`
 Callback function type for streaming token generation. Called for each generated token during completion.
 
@@ -95,18 +102,21 @@ cactus_model_t rag_model = cactus_init("../../weights/lfm2-rag", "./documents", 
 ```
 
 ### `cactus_complete`
-Performs text completion with optional streaming and tool support.
+Performs text completion with optional streaming, tool support, inline PCM audio input, and an optional grammar constraint.
 
 ```c
 int cactus_complete(
-    cactus_model_t model,           // Model handle
-    const char* messages_json,      // JSON array of messages
-    char* response_buffer,          // Buffer for response JSON
-    size_t buffer_size,             // Size of response buffer
-    const char* options_json,       // Optional generation options (can be NULL)
-    const char* tools_json,         // Optional tools definition (can be NULL)
-    cactus_token_callback callback, // Optional streaming callback (can be NULL)
-    void* user_data                 // User data for callback (can be NULL)
+    cactus_model_t model,            // Model handle
+    const char* messages_json,       // JSON array of messages
+    char* response_buffer,           // Buffer for response JSON
+    size_t buffer_size,              // Size of response buffer
+    const char* options_json,        // Optional generation options (can be NULL)
+    const char* tools_json,          // Optional tools definition (can be NULL)
+    cactus_token_callback callback,  // Optional streaming callback (can be NULL)
+    void* user_data,                 // User data for callback (can be NULL)
+    const uint8_t* pcm_buffer,       // Optional raw PCM audio buffer (can be NULL)
+    size_t pcm_buffer_size,          // Size of PCM buffer in bytes (0 when unused)
+    cactus_grammar_t grammar         // Optional grammar constraint (can be NULL)
 );
 ```
 
@@ -287,7 +297,7 @@ const char* messages = "[{\"role\": \"user\", \"content\": \"Tell me a story\"}]
 
 char response[8192];
 int result = cactus_complete(model, messages, response, sizeof(response),
-                             NULL, NULL, streaming_callback, NULL);
+                             NULL, NULL, streaming_callback, NULL, NULL, 0, NULL);
 ```
 
 ### `cactus_prefill`
@@ -371,7 +381,7 @@ const char* completion_messages = R"([
     { "role": "user", "content": "What about SF?" }
 ])";
 char response[4096];
-cactus_complete(model, completion_messages, response, sizeof(response), NULL, tools, NULL, NULL);
+cactus_complete(model, completion_messages, response, sizeof(response), NULL, tools, NULL, NULL, NULL, 0, NULL);
 ```
 
 ### `cactus_tokenize`
@@ -1088,7 +1098,7 @@ void control_callback(const char* token, uint32_t token_id, void* user_data) {
 
 struct ControlData control = {model, 0, 50};
 cactus_complete(model, messages, response, sizeof(response),
-                NULL, NULL, control_callback, &control);
+                NULL, NULL, control_callback, &control, NULL, 0, NULL);
 ```
 
 ### `cactus_reset`
@@ -1159,6 +1169,207 @@ void cactus_destroy(cactus_model_t model);
 ```
 
 **Important:** Always call this when done with a model to prevent memory leaks.
+
+## Grammar APIs
+
+Grammar APIs let you constrain model output to a context free grammar (CFG) such as JSON. There's built-in APIs to create grammars from [GBNF](https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md), JSON schemas, regexes, and more. You can pass a `cactus_grammar_t` to `cactus_complete` to constrain the generation.
+
+**Example:**
+
+```cpp
+const char* schema = R"({
+    "type": "object",
+    "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "age": { "type": "integer" },
+        "bio": { "type": "string", "minLength": 1, "maxLength": 200 }
+    },
+    "required": ["name", "age", "bio"],
+    "additionalProperties": false
+})";
+
+cactus_grammar_t grammar = cactus_grammar_init_json_schema(
+    schema,
+    CACTUS_GRAMMAR_JSON_SCHEMA_DEFAULT_OPTIONS
+);
+
+const char* messages = R"([
+    {"role": "system", "content": "You are an author."},
+    {"role": "user", "content": "Create a fictional character that feels spiritually free from grammar constraints."}
+])";
+
+char response[4096];
+cactus_complete(
+    model,
+    messages,
+    response,
+    sizeof(response),
+    NULL,    // options_json
+    NULL,    // tools_json
+    NULL,    // callback
+    NULL,    // user_data
+    NULL,    // pcm_buffer
+    0,       // pcm_buffer_size
+    grammar  // grammar constraint
+);
+
+// Will always be in the format: { "name": "...", "age": ..., "bio": "..." }
+std::println("{}", response);
+
+cactus_grammar_destroy(grammar);
+```
+
+### `cactus_grammar_init_gbnf`
+Creates a grammar from a [GBNF](https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md) definition.
+
+```c
+cactus_grammar_t cactus_grammar_init_gbnf(
+    const char* gbnf,
+    const char* start_symbol
+);
+```
+
+**Example:**
+
+```c
+const char* gbnf = R"(root ::= "hello" | "goodbye")";
+cactus_grammar_t grammar = cactus_grammar_init_gbnf(gbnf, "root");
+```
+
+**Returns:** Grammar handle on success, `NULL` on failure
+
+- `gbnf`: GBNF source text. Must not be `NULL`.
+- `start_symbol`: Optional start rule name. Defaults to `"root"` when `NULL`.
+
+### `cactus_grammar_init_json`
+Creates a grammar that accepts valid JSON values.
+
+```c
+cactus_grammar_t cactus_grammar_init_json(void);
+```
+
+**Returns:** A grammar handle.
+
+### `cactus_grammar_init_empty`
+Creates the empty grammar, which accepts no strings.
+
+```c
+cactus_grammar_t cactus_grammar_init_empty(void);
+```
+
+**Returns:** A grammar handle.
+
+Passing an empty grammar to `cactus_complete` without any tools will return an error response.
+
+### `cactus_grammar_init_universal`
+Creates a grammar that accepts any string.
+
+```c
+cactus_grammar_t cactus_grammar_init_universal(void);
+```
+
+**Returns:** A grammar handle.
+
+### `cactus_grammar_json_schema_options_t`
+Options for `cactus_grammar_init_json_schema`.
+
+```c
+typedef struct cactus_grammar_json_schema_options_t {
+    bool any_whitespace;
+    int indent;
+    const char* separators[2];
+    bool strict_mode;
+    int max_whitespace_count;
+} cactus_grammar_json_schema_options_t;
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `any_whitespace` | bool | `true` | Allow arbitrary valid JSON whitespace. When `true`, `indent` and `separators` are ignored. |
+| `indent` | int | `2` | Preferred indentation width used when `any_whitespace` is `false`. |
+| `separators` | array | `{",", ":"}` | JSON item and key/value separators used when `any_whitespace` is `false`. Both strings must be present. |
+| `strict_mode` | bool | `true` | Whether or not to forbid generation of properties that are not explicitly in the schema. |
+| `max_whitespace_count` | int | `1` | Maximum whitespace run length. `-1` means unlimited. |
+
+You can also use the `CACTUS_GRAMMAR_JSON_SCHEMA_DEFAULT_OPTIONS` macro to construct an instance of the default options.
+
+```cpp
+const auto options = CACTUS_GRAMMAR_JSON_SCHEMA_DEFAULT_OPTIONS;
+```
+
+### `cactus_grammar_init_json_schema`
+Creates a grammar from a JSON Schema document.
+
+```c
+cactus_grammar_t cactus_grammar_init_json_schema(
+    const char* json_schema,
+    cactus_grammar_json_schema_options_t options
+);
+```
+
+**Returns:** A grammar handle.
+
+- `json_schema`: JSON Schema source text. Must not be `NULL`.
+- `options`: Formatting and strictness controls for the generated grammar.
+
+### `cactus_grammar_init_regex`
+Creates a grammar from a regular expression.
+
+```c
+cactus_grammar_t cactus_grammar_init_regex(const char* regex);
+```
+
+**Returns:** A grammar handle.
+
+### `cactus_grammar_init_structural_tag`
+Creates a grammar from an xgrammar structural-tag JSON specification.
+
+See [here](https://xgrammar.mlc.ai/docs/tutorials/structural_tag.html) for supported tag types.
+
+```c
+cactus_grammar_t cactus_grammar_init_structural_tag(const char* structural_tag_json);
+```
+
+**Returns:** A grammar handle.
+
+### `cactus_grammar_union`
+Creates a grammar that accepts anything accepted by any input grammar.
+
+```c
+cactus_grammar_t cactus_grammar_union(cactus_grammar_t* grammars, size_t num_grammars);
+```
+
+**Returns:** A grammar handle.
+
+### `cactus_grammar_concatenate`
+Creates a grammar that accepts the concatenation of the input grammars in order.
+
+```c
+cactus_grammar_t cactus_grammar_concatenate(cactus_grammar_t* grammars, size_t num_grammars);
+```
+
+**Returns:** A grammar handle.
+
+### `cactus_grammar_is_empty`
+Checks whether a grammar is the empty grammar.
+
+```c
+bool cactus_grammar_is_empty(cactus_grammar_t grammar);
+```
+
+### `cactus_grammar_is_universal`
+Checks whether a grammar is the universal grammar.
+
+```c
+bool cactus_grammar_is_universal(cactus_grammar_t grammar);
+```
+
+### `cactus_grammar_destroy`
+Releases all resources associated with a grammar.
+
+```c
+void cactus_grammar_destroy(cactus_grammar_t grammar);
+```
 
 ## Utility Functions
 
@@ -1410,7 +1621,7 @@ int main() {
 
     char response[4096];
     int result = cactus_complete(model, messages, response,
-                                 sizeof(response), NULL, NULL, NULL, NULL);
+                                 sizeof(response), NULL, NULL, NULL, NULL, NULL, 0, NULL);
     if (result >= 0) {
         printf("Response: %s\n", response);
     }
@@ -1435,7 +1646,7 @@ int main() {
 
     char response[8192];
     int result = cactus_complete(vlm, messages, response, sizeof(response),
-                                 NULL, NULL, NULL, NULL);
+                                 NULL, NULL, NULL, NULL, NULL, 0, NULL);
     if (result >= 0) {
         printf("%s\n", response);
     }
@@ -1464,7 +1675,7 @@ const char* messages = "[{\"role\": \"user\", \"content\": \"What's the weather 
 
 char response[4096];
 int result = cactus_complete(model, messages, response, sizeof(response),
-                             NULL, tools, NULL, NULL);
+                             NULL, tools, NULL, NULL, NULL, 0, NULL);
 printf("Response: %s\n", response);
 ```
 
