@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 
 namespace cactus {
@@ -398,7 +399,7 @@ static xgrammar::VocabType to_xgrammar_vocab_type(VocabType vocab_type) {
 
 } // anonymous namespace
 
-GrammarMatcher::GrammarMatcher(const Grammar* grammar, const GrammarVocabulary& vocab)
+GrammarMatcher::GrammarMatcher(const Grammar* grammar, const GrammarVocabulary& vocab, int max_threads)
     : matcher(nullptr), tokenizer_info(nullptr) {
     if (grammar->is_empty()) {
         throw std::runtime_error("Cannot create GrammarMatcher with empty grammar");
@@ -411,7 +412,7 @@ GrammarMatcher::GrammarMatcher(const Grammar* grammar, const GrammarVocabulary& 
         stop_token_ids_int32,
         vocab.add_prefix_space
     };
-    auto compiler = xgrammar::GrammarCompiler(xgrammar_tokenizer_info);
+    auto compiler = xgrammar::GrammarCompiler(xgrammar_tokenizer_info, max_threads);
 
     auto compiled_grammar = compiler.CompileGrammar(grammar->raw_value());
     matcher = xgrammar::GrammarMatcher(compiled_grammar);
@@ -425,7 +426,7 @@ void GrammarMatcher::reset() {
 bool GrammarMatcher::accept(uint32_t token_id, bool log_rejection) {
     const bool accepted = matcher.AcceptToken(token_id);
     if (!accepted && log_rejection) {
-        CACTUS_LOG_WARN("model decode", "Token id: " << token_id << " was not accepted by grammar matcher.");
+        CACTUS_LOG_WARN("grammar matcher", "Token id: " << token_id << " was not accepted by grammar matcher.");
     }
     return accepted;
 }
