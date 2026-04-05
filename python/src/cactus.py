@@ -609,7 +609,11 @@ def cactus_grammar_init_json():
 
 
 def cactus_grammar_init_empty():
-    """Creates the empty grammar."""
+    """
+    Creates the empty grammar, which accepts no strings.
+
+    Passing an empty grammar to cactus_complete without any tools will return an error response.
+    """
     handle = _lib.cactus_grammar_init_empty()
     if not handle:
         raise RuntimeError(_err("Failed to initialize empty grammar"))
@@ -617,7 +621,7 @@ def cactus_grammar_init_empty():
 
 
 def cactus_grammar_init_universal():
-    """Creates the universal grammar."""
+    """Creates a grammar that accepts any string."""
     handle = _lib.cactus_grammar_init_universal()
     if not handle:
         raise RuntimeError(_err("Failed to initialize universal grammar"))
@@ -643,7 +647,11 @@ def cactus_grammar_init_regex(regex):
 
 
 def cactus_grammar_init_structural_tag(structural_tag_json):
-    """Creates a grammar from a structural-tag JSON specification."""
+    """
+    Creates a grammar from an xgrammar structural-tag JSON specification.
+
+    See https://xgrammar.mlc.ai/docs/tutorials/structural_tag.html for supported tag types.
+    """
     handle = _lib.cactus_grammar_init_structural_tag(_enc(structural_tag_json))
     if not handle:
         raise RuntimeError(_err("Failed to initialize structural tag grammar"))
@@ -679,7 +687,7 @@ def cactus_grammar_is_universal(grammar):
 
 
 def cactus_grammar_destroy(grammar):
-    """Releases grammar resources."""
+    """Releases all resources associated with a grammar."""
     _lib.cactus_grammar_destroy(grammar)
 
 

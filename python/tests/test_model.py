@@ -3,11 +3,6 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-ASSETS_DIR = PROJECT_ROOT / "tests" / "assets"
-
 from src.downloads import ensure_model
 from src.cactus import (
     cactus_init,
@@ -17,8 +12,15 @@ from src.cactus import (
     cactus_image_embed,
     cactus_audio_embed,
     cactus_transcribe,
+    cactus_grammar_init_json_schema,
+    cactus_grammar_json_schema_default_options,
+    cactus_grammar_destroy,
 )
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+ASSETS_DIR = PROJECT_ROOT / "tests" / "assets"
 
 def _has_asset(name):
     return (ASSETS_DIR / name).exists()
@@ -70,6 +72,42 @@ class TestVLMModel(unittest.TestCase):
         self.assertIsInstance(result, dict)
         self.assertTrue(result.get("success", False))
         self.assertGreater(len(result.get("response", "")), 0)
+
+    def test_grammar_constrained_json_schema(self):
+        schema = json.dumps({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "minLength": 1},
+                "age": {"type": "integer"},
+                "bio": {"type": "string", "minLength": 1}
+            },
+            "required": ["name", "age", "bio"],
+            "additionalProperties": False
+        })
+
+        grammar = cactus_grammar_init_json_schema(schema, cactus_grammar_json_schema_default_options())
+        self.assertIsNotNone(grammar)
+
+        try:
+            messages = json.dumps([{"role": "user", "content": "Create a fictional character."}])
+            response = cactus_complete(self.model, messages, None, None, None, grammar=grammar)
+            result = json.loads(response)
+            print(f"\n  grammar constrained: {json.dumps(result, indent=2)}")
+
+            self.assertIsInstance(result, dict)
+            self.assertTrue(result.get("success", False))
+
+            response_text = result.get("response", "")
+            self.assertGreater(len(response_text), 0)
+
+            parsed = json.loads(response_text)
+            self.assertIsInstance(parsed.get("name"), str)
+            self.assertGreater(len(parsed["name"]), 0)
+            self.assertIsInstance(parsed.get("bio"), str)
+            self.assertGreater(len(parsed["bio"]), 0)
+            self.assertIsInstance(parsed.get("age"), int)
+        finally:
+            cactus_grammar_destroy(grammar)
 
 
 class TestWhisperModel(unittest.TestCase):
