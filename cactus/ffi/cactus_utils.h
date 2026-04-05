@@ -1505,6 +1505,50 @@ inline std::string serialize_function_calls(const std::vector<std::string>& call
     return oss.str();
 }
 
+inline int validate_audio_params(
+    const char* component,
+    void* model,
+    char* response_buffer, size_t buffer_size,
+    const char* audio_file_path,
+    const uint8_t* pcm_buffer, size_t pcm_buffer_size) {
+    if (!model) {
+        std::string err = last_error_message.empty() ? "Model not initialized." : last_error_message;
+        CACTUS_LOG_ERROR(component, err);
+        handle_error_response(err, response_buffer, buffer_size);
+        return -1;
+    }
+    if (!response_buffer || buffer_size == 0) {
+        CACTUS_LOG_ERROR(component, "Invalid parameters: response_buffer or buffer_size");
+        handle_error_response("Invalid parameters", response_buffer, buffer_size);
+        return -1;
+    }
+    if (!audio_file_path && (!pcm_buffer || pcm_buffer_size == 0)) {
+        CACTUS_LOG_ERROR(component, "No audio input provided");
+        handle_error_response("Either audio_file_path or pcm_buffer must be provided", response_buffer, buffer_size);
+        return -1;
+    }
+    if (audio_file_path && pcm_buffer && pcm_buffer_size > 0) {
+        CACTUS_LOG_ERROR(component, "Both audio_file_path and pcm_buffer provided");
+        handle_error_response("Cannot provide both audio_file_path and pcm_buffer", response_buffer, buffer_size);
+        return -1;
+    }
+    if (pcm_buffer && pcm_buffer_size > 0 && (pcm_buffer_size < 2 || pcm_buffer_size % 2 != 0)) {
+        CACTUS_LOG_ERROR(component, "Invalid pcm_buffer_size");
+        handle_error_response("pcm_buffer_size must be even and at least 2 bytes", response_buffer, buffer_size);
+        return -1;
+    }
+    return 0;
+}
+
+inline std::vector<float> pcm_to_float(const uint8_t* pcm_buffer, size_t pcm_buffer_size) {
+    const int16_t* samples = reinterpret_cast<const int16_t*>(pcm_buffer);
+    size_t n = pcm_buffer_size / 2;
+    std::vector<float> out(n);
+    for (size_t i = 0; i < n; ++i)
+        out[i] = static_cast<float>(samples[i]) / 32768.0f;
+    return out;
+}
+
 } // namespace ffi
 } // namespace cactus
 

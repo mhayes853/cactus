@@ -12,174 +12,21 @@
 #include <string>
 #include <vector>
 
-namespace {
-
-size_t shape_elements(const std::vector<int>& shape) {
-    if (shape.empty()) return 0;
-    size_t total = 1;
-    for (int d : shape) {
-        if (d <= 0) return 0;
-        total *= static_cast<size_t>(d);
-    }
-    return total;
-}
-
+size_t shape_elements(const std::vector<int>& shape);
 bool pack_parakeet_features_for_npu(
     const std::vector<__fp16>& time_major_f16,
     size_t frames,
     size_t num_mels,
     const std::vector<int>& input_shape,
-    std::vector<__fp16>& packed)
-{
-    if (input_shape.empty()) return false;
-    const size_t total = shape_elements(input_shape);
-    if (total == 0) return false;
-    packed.assign(total, static_cast<__fp16>(0.0f));
-
-    auto tm = [&](size_t t, size_t m) -> __fp16 {
-        return time_major_f16[t * num_mels + m];
-    };
-
-    if (input_shape.size() == 4) {
-        const size_t s0 = static_cast<size_t>(input_shape[0]);
-        const size_t s1 = static_cast<size_t>(input_shape[1]);
-        const size_t s2 = static_cast<size_t>(input_shape[2]);
-        const size_t s3 = static_cast<size_t>(input_shape[3]);
-        if (s0 != 1) return false;
-
-        if (s1 == 1 && s2 >= frames && s3 == num_mels) {
-            for (size_t t = 0; t < frames; ++t) {
-                for (size_t m = 0; m < num_mels; ++m) {
-                    packed[(t * s3) + m] = tm(t, m);
-                }
-            }
-            return true;
-        }
-        if (s1 >= frames && s2 == num_mels && s3 == 1) {
-            for (size_t t = 0; t < frames; ++t) {
-                for (size_t m = 0; m < num_mels; ++m) {
-                    packed[((t * s2 + m) * s3)] = tm(t, m);
-                }
-            }
-            return true;
-        }
-        if (s1 == num_mels && s2 >= frames && s3 == 1) {
-            for (size_t t = 0; t < frames; ++t) {
-                for (size_t m = 0; m < num_mels; ++m) {
-                    packed[((m * s2 + t) * s3)] = tm(t, m);
-                }
-            }
-            return true;
-        }
-        if (s1 == 1 && s2 == num_mels && s3 >= frames) {
-            for (size_t t = 0; t < frames; ++t) {
-                for (size_t m = 0; m < num_mels; ++m) {
-                    packed[(m * s3) + t] = tm(t, m);
-                }
-            }
-            return true;
-        }
-        return false;
-    }
-
-    if (input_shape.size() == 3) {
-        const size_t s0 = static_cast<size_t>(input_shape[0]);
-        const size_t s1 = static_cast<size_t>(input_shape[1]);
-        const size_t s2 = static_cast<size_t>(input_shape[2]);
-
-        if (s0 == 1 && s1 >= frames && s2 == num_mels) {
-            for (size_t t = 0; t < frames; ++t) {
-                for (size_t m = 0; m < num_mels; ++m) {
-                    packed[t * s2 + m] = tm(t, m);
-                }
-            }
-            return true;
-        }
-        if (s0 == 1 && s1 == num_mels && s2 >= frames) {
-            for (size_t t = 0; t < frames; ++t) {
-                for (size_t m = 0; m < num_mels; ++m) {
-                    packed[m * s2 + t] = tm(t, m);
-                }
-            }
-            return true;
-        }
-        if (s0 >= frames && s1 == num_mels && s2 == 1) {
-            for (size_t t = 0; t < frames; ++t) {
-                for (size_t m = 0; m < num_mels; ++m) {
-                    packed[(t * s1 + m) * s2] = tm(t, m);
-                }
-            }
-            return true;
-        }
-        if (s0 == num_mels && s1 >= frames && s2 == 1) {
-            for (size_t t = 0; t < frames; ++t) {
-                for (size_t m = 0; m < num_mels; ++m) {
-                    packed[(m * s1 + t) * s2] = tm(t, m);
-                }
-            }
-            return true;
-        }
-        return false;
-    }
-
-    if (input_shape.size() == 2) {
-        const size_t s0 = static_cast<size_t>(input_shape[0]);
-        const size_t s1 = static_cast<size_t>(input_shape[1]);
-
-        if (s0 >= frames && s1 == num_mels) {
-            for (size_t t = 0; t < frames; ++t) {
-                for (size_t m = 0; m < num_mels; ++m) {
-                    packed[t * s1 + m] = tm(t, m);
-                }
-            }
-            return true;
-        }
-        if (s0 == num_mels && s1 >= frames) {
-            for (size_t t = 0; t < frames; ++t) {
-                for (size_t m = 0; m < num_mels; ++m) {
-                    packed[m * s1 + t] = tm(t, m);
-                }
-            }
-            return true;
-        }
-        return false;
-    }
-
-    return false;
-}
-
+    std::vector<__fp16>& packed);
 bool infer_npu_encoder_output_shape(
     const std::vector<int>& output_shape,
     size_t elements_written,
     size_t fallback_hidden_dim,
     size_t& time_steps,
-    size_t& hidden_dim)
-{
-    if (elements_written == 0) return false;
+    size_t& hidden_dim);
 
-    std::vector<size_t> dims;
-    dims.reserve(output_shape.size());
-    for (int d : output_shape) {
-        if (d > 0) dims.push_back(static_cast<size_t>(d));
-    }
-
-    if (dims.size() >= 2) {
-        time_steps = dims[dims.size() - 2];
-        hidden_dim = dims[dims.size() - 1];
-    } else if (dims.size() == 1) {
-        hidden_dim = dims[0];
-        if (hidden_dim == 0 || (elements_written % hidden_dim) != 0) return false;
-        time_steps = elements_written / hidden_dim;
-    } else {
-        hidden_dim = fallback_hidden_dim;
-        if (hidden_dim == 0 || (elements_written % hidden_dim) != 0) return false;
-        time_steps = elements_written / hidden_dim;
-    }
-
-    if (time_steps == 0 || hidden_dim == 0) return false;
-    if (time_steps * hidden_dim > elements_written) return false;
-    return true;
-}
+namespace {
 
 std::vector<__fp16> copy_buffer_to_fp16(const BufferDesc& buffer) {
     std::vector<__fp16> out(buffer.total_size, static_cast<__fp16>(0.0f));
