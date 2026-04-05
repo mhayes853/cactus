@@ -319,6 +319,9 @@ _lib.cactus_grammar_init_empty.restype = cactus_grammar_t
 _lib.cactus_grammar_init_universal.argtypes = []
 _lib.cactus_grammar_init_universal.restype = cactus_grammar_t
 
+_lib.cactus_grammar_json_schema_default_options.argtypes = []
+_lib.cactus_grammar_json_schema_default_options.restype = cactus_grammar_json_schema_options_t
+
 _lib.cactus_grammar_init_json_schema.argtypes = [
     ctypes.c_char_p,
     cactus_grammar_json_schema_options_t,
@@ -527,14 +530,7 @@ def _enc(s):
 
 def cactus_grammar_json_schema_default_options():
     """Returns the default JSON schema grammar options."""
-    separators = (ctypes.c_char_p * 2)(b",", b":")
-    return cactus_grammar_json_schema_options_t(
-        any_whitespace=True,
-        indent=2,
-        separators=separators,
-        strict_mode=True,
-        max_whitespace_count=1,
-    )
+    return _lib.cactus_grammar_json_schema_default_options()
 
 
 def cactus_get_last_error():

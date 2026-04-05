@@ -390,13 +390,15 @@ func cactusComplete(
 
 ```swift
 struct CactusGrammarJSONSchemaOptions {
-    var anyWhitespace: Bool = true
-    var indent: Int32 = 2
-    var separators: (String, String) = (",", ":")
-    var strictMode: Bool = true
-    var maxWhitespaceCount: Int32 = 1
+    init()
 
-    static let `default` = CactusGrammarJSONSchemaOptions()
+    init(
+        anyWhitespace: Bool,
+        indent: Int32,
+        separators: (String, String),
+        strictMode: Bool,
+        maxWhitespaceCount: Int32
+    )
 }
 
 func cactusGrammarInitGBNF(_ gbnf: String, _ startSymbol: String? = nil) throws -> CactusGrammarT
@@ -405,7 +407,7 @@ func cactusGrammarInitEmpty() throws -> CactusGrammarT
 func cactusGrammarInitUniversal() throws -> CactusGrammarT
 func cactusGrammarInitJSONSchema(
     _ jsonSchema: String,
-    _ options: CactusGrammarJSONSchemaOptions = .default
+    _ options: CactusGrammarJSONSchemaOptions = CactusGrammarJSONSchemaOptions()
 ) throws -> CactusGrammarT
 func cactusGrammarInitRegex(_ regex: String) throws -> CactusGrammarT
 func cactusGrammarInitStructuralTag(_ structuralTagJson: String) throws -> CactusGrammarT

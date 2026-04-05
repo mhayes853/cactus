@@ -39,6 +39,10 @@ static bool handle_bool_exception(const char* operation, const std::string& erro
 
 extern "C" {
 
+cactus_grammar_json_schema_options_t cactus_grammar_json_schema_default_options() {
+    return { true, 2, {",", ":"}, true, 1, };
+}
+
 cactus_grammar_t cactus_grammar_init_gbnf(const char* gbnf, const char* start_symbol) {
     if (!gbnf) {
         return handle_exception("cactus_grammar_init_gbnf", "gbnf is null");
