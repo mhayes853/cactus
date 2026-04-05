@@ -1,13 +1,16 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.18)
 project(Cactus LANGUAGES CXX)
+
+include(${CMAKE_SOURCE_DIR}/../cmake/CactusXGrammar.cmake)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 set(SOURCE_DIR ${CMAKE_SOURCE_DIR}/../cactus)
 set(CACTUS_CURL_ROOT "${CMAKE_SOURCE_DIR}/../libs/curl" CACHE PATH "Path to vendored libcurl artifacts")
-set(CACTUS_XGRAMMAR_ROOT "${CMAKE_SOURCE_DIR}/../libs/xgrammar" CACHE PATH "Path to vendored xgrammar artifacts")
+set(CACTUS_XGRAMMAR_ROOT "${CMAKE_SOURCE_DIR}/../libs/xgrammar" CACHE PATH "Path to xgrammar source checkout")
 set(CACTUS_XGRAMMAR_INCLUDE_DIR "${CACTUS_XGRAMMAR_ROOT}/include")
+cactus_add_xgrammar_subdirectory("${CACTUS_XGRAMMAR_ROOT}" "${CMAKE_BINARY_DIR}/xgrammar-build")
 
 set(_CACTUS_VERSION_FILE "${CMAKE_SOURCE_DIR}/../CACTUS_VERSION")
 if(EXISTS "${_CACTUS_VERSION_FILE}")
@@ -89,14 +92,10 @@ set(COMMON_INCLUDE_DIRS
 
 target_include_directories(cactus PRIVATE ${COMMON_INCLUDE_DIRS})
 target_include_directories(cactus_static PRIVATE ${COMMON_INCLUDE_DIRS})
-target_include_directories(cactus SYSTEM PRIVATE ${CACTUS_XGRAMMAR_INCLUDE_DIR})
-target_include_directories(cactus_static SYSTEM PRIVATE ${CACTUS_XGRAMMAR_INCLUDE_DIR})
-
 target_link_libraries(cactus ${LOG_LIB} android)
 
 set(CACTUS_CURL_INCLUDE_DIR "${CACTUS_CURL_ROOT}/include")
 set(CACTUS_CURL_LIBRARY_ANDROID "${CACTUS_CURL_ROOT}/android/${ANDROID_ABI}/libcurl.a")
-set(CACTUS_XGRAMMAR_LIBRARY_ANDROID "${CACTUS_XGRAMMAR_ROOT}/android/${ANDROID_ABI}/libxgrammar.a")
 set(CACTUS_MBEDTLS_ROOT "${CMAKE_SOURCE_DIR}/mbedtls/${ANDROID_ABI}")
 if(NOT EXISTS "${CACTUS_MBEDTLS_ROOT}")
     set(CACTUS_MBEDTLS_ROOT "${CMAKE_SOURCE_DIR}/../libs/mbedtls/android/${ANDROID_ABI}")
@@ -127,15 +126,10 @@ else()
     message(FATAL_ERROR "Vendored Android libcurl not found. Expected: ${CACTUS_CURL_INCLUDE_DIR}/curl/curl.h and ${CACTUS_CURL_LIBRARY_ANDROID}")
 endif()
 
-if(EXISTS "${CACTUS_XGRAMMAR_INCLUDE_DIR}/xgrammar/xgrammar.h" AND EXISTS "${CACTUS_XGRAMMAR_LIBRARY_ANDROID}")
-    message(STATUS "Using vendored xgrammar for Android: ${CACTUS_XGRAMMAR_LIBRARY_ANDROID}")
-    target_compile_definitions(cactus PRIVATE CACTUS_USE_XGRAMMAR=1)
-    target_compile_definitions(cactus_static PRIVATE CACTUS_USE_XGRAMMAR=1)
-    target_link_libraries(cactus "${CACTUS_XGRAMMAR_LIBRARY_ANDROID}")
-    target_link_libraries(cactus_static "${CACTUS_XGRAMMAR_LIBRARY_ANDROID}")
-else()
-    message(FATAL_ERROR "Vendored Android xgrammar not found. Expected: ${CACTUS_XGRAMMAR_INCLUDE_DIR}/xgrammar/xgrammar.h and ${CACTUS_XGRAMMAR_LIBRARY_ANDROID}")
-endif()
+target_compile_definitions(cactus PRIVATE CACTUS_USE_XGRAMMAR=1)
+target_compile_definitions(cactus_static PRIVATE CACTUS_USE_XGRAMMAR=1)
+target_link_libraries(cactus xgrammar)
+target_link_libraries(cactus_static xgrammar)
 
 set(COMMON_COMPILE_DEFINITIONS
     PLATFORM_CPU_ONLY=1

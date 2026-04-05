@@ -41,7 +41,7 @@ echo "Build type: $CMAKE_BUILD_TYPE"
 echo "Using $n_cpu CPU cores"
 echo "Android CMakeLists.txt: $ANDROID_DIR/CMakeLists.txt"
 echo "Vendored libcurl root: $CACTUS_CURL_ROOT"
-echo "Vendored xgrammar root: $CACTUS_XGRAMMAR_ROOT"
+echo "XGrammar source root: $CACTUS_XGRAMMAR_ROOT"
 
 cmake -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TOOLCHAIN_FILE" \
       -DANDROID_ABI="$ABI" \
@@ -62,6 +62,12 @@ cp "$BUILD_DIR/lib/libcactus_static.a" "$ANDROID_DIR/libcactus.a" 2>/dev/null ||
    cp "$BUILD_DIR/libcactus_static.a" "$ANDROID_DIR/libcactus.a" 2>/dev/null || \
    { echo "Warning: Could not find libcactus_static.a"; }
 
+cp "$BUILD_DIR/xgrammar-build/libxgrammar.a" "$ANDROID_DIR/libxgrammar.a" 2>/dev/null || \
+   cp "$BUILD_DIR/lib/libxgrammar.a" "$ANDROID_DIR/libxgrammar.a" 2>/dev/null || \
+   cp "$BUILD_DIR/libxgrammar.a" "$ANDROID_DIR/libxgrammar.a" 2>/dev/null || \
+   { echo "Warning: Could not find libxgrammar.a"; }
+
 echo "Build complete!"
 echo "Shared library location: $ANDROID_DIR/libcactus.so"
 echo "Static library location: $ANDROID_DIR/libcactus.a"
+echo "XGrammar static library location: $ANDROID_DIR/libxgrammar.a"

@@ -9,7 +9,7 @@ fn main() {
 
     let build_dir = build_native_library(&cactus_src);
     link_native_library(&build_dir);
-    link_vendored_xgrammar(&cactus_src);
+    link_xgrammar_library(&build_dir);
     link_platform_dependencies();
     link_clang_runtime_for_sme2();
 
@@ -108,31 +108,15 @@ fn link_native_library(build_dir: &Path) {
     println!("cargo:rustc-link-lib=static=cactus");
 }
 
-fn link_vendored_xgrammar(cactus_src: &Path) {
-    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
-    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
-    let xgrammar_dir = match (target_os.as_str(), target_arch.as_str()) {
-        ("macos", _) => cactus_src
-            .join("..")
-            .join("libs")
-            .join("xgrammar")
-            .join("macos"),
-        ("linux", "aarch64") => cactus_src
-            .join("..")
-            .join("libs")
-            .join("xgrammar")
-            .join("linux")
-            .join("aarch64"),
-        _ => panic!("unsupported vendored xgrammar target: {target_os} {target_arch}"),
-    };
-    let xgrammar_lib = xgrammar_dir.join("libxgrammar.a");
+fn link_xgrammar_library(build_dir: &Path) {
+    let xgrammar_lib = build_dir.join("libxgrammar.a");
     assert!(
         xgrammar_lib.exists(),
-        "missing vendored xgrammar archive at {}",
+        "missing built xgrammar archive at {}",
         xgrammar_lib.display()
     );
 
-    println!("cargo:rustc-link-search=native={}", xgrammar_dir.display());
+    println!("cargo:rustc-link-search=native={}", build_dir.display());
     println!("cargo:rustc-link-lib=static=xgrammar");
 }
 

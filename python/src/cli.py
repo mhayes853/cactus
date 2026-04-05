@@ -92,6 +92,29 @@ def run_command(cmd, cwd=None, check=True):
     return result
 
 
+def ensure_xgrammar_submodule():
+    """Ensure the xgrammar submodule and its nested submodules exist."""
+    default_root = PROJECT_ROOT / "libs" / "xgrammar"
+    xgrammar_root = Path(os.getenv("CACTUS_XGRAMMAR_ROOT", str(default_root))).expanduser().resolve()
+    required_paths = [
+        xgrammar_root / "CMakeLists.txt",
+        xgrammar_root / "3rdparty" / "dlpack" / "include" / "dlpack" / "dlpack.h",
+    ]
+    if all(path.exists() for path in required_paths):
+        return True
+
+    print_color(YELLOW, "Initializing XGrammar submodule...")
+    result = subprocess.run(
+        ['git', 'submodule', 'update', '--init', '--recursive', 'libs/xgrammar'],
+        cwd=PROJECT_ROOT,
+    )
+    if result.returncode != 0:
+        print_color(RED, "Failed to initialize libs/xgrammar")
+        return False
+
+    return True
+
+
 def ensure_vad_weights(model_id, weights_dir, precision='INT8'):
     """Bundle Silero VAD weights into <weights_dir>/vad/ for ASR models."""
     is_asr = (
@@ -631,21 +654,15 @@ def check_libcurl():
     return False
 
 
-def get_vendored_xgrammar_library():
-    system = platform.system()
-    machine = platform.machine().lower()
-
-    if system == 'Darwin':
-        return PROJECT_ROOT / 'libs' / 'xgrammar' / 'macos' / 'libxgrammar.a'
-
-    if system == 'Linux' and machine in {'aarch64', 'arm64'}:
-        return PROJECT_ROOT / 'libs' / 'xgrammar' / 'linux' / 'aarch64' / 'libxgrammar.a'
-
-    return None
+def get_built_xgrammar_library(build_dir: Path):
+    return build_dir / 'libxgrammar.a'
 
 
 def cmd_build(args):
     """Build the Cactus library and chat binary."""
+    if not ensure_xgrammar_submodule():
+        return 1
+
     if getattr(args, 'apple', False):
         return cmd_build_apple(args)
     if getattr(args, 'android', False):
@@ -673,8 +690,11 @@ def cmd_build(args):
     cactus_dir = PROJECT_ROOT / "cactus"
     lib_path = cactus_dir / "build" / "libcactus.a"
     vendored_curl = PROJECT_ROOT / "libs" / "curl" / "macos" / "libcurl.a"
-    vendored_xgrammar = get_vendored_xgrammar_library()
-    vendored_xgrammar_include = PROJECT_ROOT / "libs" / "xgrammar" / "include"
+    xgrammar_root = Path(os.getenv("CACTUS_XGRAMMAR_ROOT", str(PROJECT_ROOT / "libs" / "xgrammar"))).expanduser().resolve()
+    built_xgrammar = get_built_xgrammar_library(cactus_dir / "build")
+    xgrammar_include = xgrammar_root / "include"
+    xgrammar_dlpack_include = xgrammar_root / "3rdparty" / "dlpack" / "include"
+    xgrammar_picojson_include = xgrammar_root / "3rdparty" / "picojson"
 
     print_color(YELLOW, "Building Cactus library...")
     build_script = cactus_dir / "build.sh"
@@ -704,21 +724,22 @@ def cmd_build(args):
             print_color(RED, f"Error: vendored libcurl not found at {vendored_curl}")
             print("Build it first and place it in libs/curl/macos/libcurl.a")
             return 1
-        if vendored_xgrammar is None or not vendored_xgrammar.exists():
-            print_color(RED, f"Error: vendored xgrammar not found at {vendored_xgrammar}")
-            print("Build it first and place it in libs/xgrammar/macos/libxgrammar.a")
+        if not built_xgrammar.exists():
+            print_color(RED, f"Error: built xgrammar not found at {built_xgrammar}")
             return 1
         compiler = "clang++"
         cmd = [
             compiler, "-std=c++20", "-O3",
             "-DACCELERATE_NEW_LAPACK",
             f"-I{PROJECT_ROOT}",
-            f"-I{vendored_xgrammar_include}",
+            f"-I{xgrammar_include}",
+            f"-I{xgrammar_dlpack_include}",
+            f"-I{xgrammar_picojson_include}",
             str(chat_cpp),
             str(lib_path),
             "-o", "chat",
             str(vendored_curl),
-            str(vendored_xgrammar),
+            str(built_xgrammar),
             "-framework", "Accelerate",
             "-framework", "CoreML",
             "-framework", "Foundation",
@@ -727,19 +748,20 @@ def cmd_build(args):
             "-framework", "CFNetwork",
         ]
     else:
-        if vendored_xgrammar is None or not vendored_xgrammar.exists():
-            print_color(RED, f"Error: vendored xgrammar not found for {platform.system()} {platform.machine()}")
-            print("Build it first and place it in libs/xgrammar/linux/aarch64/libxgrammar.a")
+        if not built_xgrammar.exists():
+            print_color(RED, f"Error: built xgrammar not found at {built_xgrammar}")
             return 1
         compiler = "g++"
         cmd = [
             compiler, "-std=c++20", "-O3",
             f"-I{PROJECT_ROOT}",
-            f"-I{vendored_xgrammar_include}",
+            f"-I{xgrammar_include}",
+            f"-I{xgrammar_dlpack_include}",
+            f"-I{xgrammar_picojson_include}",
             str(chat_cpp),
             str(lib_path),
             "-o", "chat",
-            str(vendored_xgrammar),
+            str(built_xgrammar),
             "-lcurl",
             "-pthread"
         ]
@@ -795,7 +817,9 @@ def cmd_build(args):
                 compiler, "-std=c++20", "-O3",
                 "-DACCELERATE_NEW_LAPACK",
                 f"-I{PROJECT_ROOT}",
-                f"-I{vendored_xgrammar_include}",
+                f"-I{xgrammar_include}",
+                f"-I{xgrammar_dlpack_include}",
+                f"-I{xgrammar_picojson_include}",
             ]
             if sdl2_available:
                 cmd.extend(["-DHAVE_SDL2", sdl2_include])
@@ -804,7 +828,7 @@ def cmd_build(args):
                 str(lib_path),
                 "-o", "asr",
                 str(vendored_curl),
-                str(vendored_xgrammar),
+                str(built_xgrammar),
                 "-framework", "Accelerate",
                 "-framework", "CoreML",
                 "-framework", "Foundation",
@@ -815,14 +839,15 @@ def cmd_build(args):
             if sdl2_available:
                 cmd.extend(sdl2_lib.split())
         else:
-            if vendored_xgrammar is None or not vendored_xgrammar.exists():
-                print_color(RED, f"Error: vendored xgrammar not found for {platform.system()} {platform.machine()}")
-                print("Build it first and place it in libs/xgrammar/linux/aarch64/libxgrammar.a")
+            if not built_xgrammar.exists():
+                print_color(RED, f"Error: built xgrammar not found at {built_xgrammar}")
                 return 1
             cmd = [
                 compiler, "-std=c++20", "-O3",
                 f"-I{PROJECT_ROOT}",
-                f"-I{vendored_xgrammar_include}",
+                f"-I{xgrammar_include}",
+                f"-I{xgrammar_dlpack_include}",
+                f"-I{xgrammar_picojson_include}",
             ]
             if sdl2_available:
                 cmd.extend(["-DHAVE_SDL2", sdl2_include])
@@ -830,7 +855,7 @@ def cmd_build(args):
                 str(asr_cpp),
                 str(lib_path),
                 "-o", "asr",
-                str(vendored_xgrammar),
+                str(built_xgrammar),
                 "-lcurl",
                 "-pthread"
             ])
@@ -851,6 +876,9 @@ def cmd_build_apple(args):
     """Build Cactus for Apple platforms (iOS/macOS)."""
     print_color(BLUE, "Building Cactus for Apple platforms...")
     print("=" * 40)
+
+    if not ensure_xgrammar_submodule():
+        return 1
 
     if platform.system() != "Darwin":
         print_color(RED, "Error: Apple builds require macOS")
@@ -874,6 +902,9 @@ def cmd_build_android(args):
     """Build Cactus for Android."""
     print_color(BLUE, "Building Cactus for Android...")
     print("=" * 32)
+
+    if not ensure_xgrammar_submodule():
+        return 1
 
     build_script = PROJECT_ROOT / "android" / "build.sh"
     if not build_script.exists():
@@ -917,6 +948,9 @@ def cmd_build_python(args):
     """Build Cactus shared library for Python FFI."""
     print_color(BLUE, "Building Cactus for Python...")
     print("=" * 30)
+
+    if not ensure_xgrammar_submodule():
+        return 1
 
     if not check_command('cmake'):
         print_color(RED, "Error: CMake is not installed")

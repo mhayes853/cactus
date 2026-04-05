@@ -16,6 +16,24 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+ensure_xgrammar_submodule() {
+    local xgrammar_root="$PROJECT_ROOT/libs/xgrammar"
+    local xgrammar_file="$xgrammar_root/CMakeLists.txt"
+    local dlpack_header="$xgrammar_root/3rdparty/dlpack/include/dlpack/dlpack.h"
+
+    if [ -f "$xgrammar_file" ] && [ -f "$dlpack_header" ]; then
+        return 0
+    fi
+
+    echo -e "${BLUE}Initializing XGrammar submodule...${NC}"
+    if git -C "$PROJECT_ROOT" submodule update --init --recursive libs/xgrammar; then
+        echo -e "${GREEN}✓ XGrammar submodule ready${NC}"
+    else
+        echo -e "${RED}Failed to initialize libs/xgrammar${NC}"
+        return 1
+    fi
+}
+
 echo "Setting up Cactus development environment..."
 echo "============================================="
 echo ""
@@ -67,7 +85,7 @@ fi
 source "$VENV_DIR/bin/activate"
 
 echo ""
-echo -e "${BLUE}Step 3: Installing Python dependencies...${NC}"
+echo -e "${BLUE}Step 4: Installing Python dependencies...${NC}"
 
 python3 -m pip install --upgrade pip -q
 
@@ -94,7 +112,7 @@ if [ -f "$PARENT_REQUIREMENTS" ] && [ "$PARENT_REQUIREMENTS" != "$REQUIREMENTS_F
 fi
 
 echo ""
-echo -e "${BLUE}Step 4: Installing cactus CLI tools...${NC}"
+echo -e "${BLUE}Step 5: Installing cactus CLI tools...${NC}"
 
 if python3 -m pip install -e "$PROJECT_ROOT/python" --quiet; then
     echo -e "${GREEN}✓ Cactus CLI installed${NC}"

@@ -18,7 +18,7 @@ git clone https://github.com/cactus-compute/cactus && cd cactus && source ./setu
 cactus build --android
 ```
 
-Build output: `android/libcactus.so` (and `android/libcactus.a`)
+Build output: `android/libcactus.so` (and `android/libcactus.a`, `android/libxgrammar.a`)
 <!-- --8<-- [end:install] -->
 
 see the main [README.md](../README.md) for how to use CLI & download weight
@@ -33,18 +33,6 @@ The build auto-detects `libs/curl`. You can override with:
 
 ```bash
 CACTUS_CURL_ROOT=/absolute/path/to/curl cactus build --android
-```
-
-### Vendored XGrammar (device builds)
-
-To bundle XGrammar locally for Android device builds, place artifacts using:
-
-`libs/xgrammar/android/arm64-v8a/libxgrammar.a`, `libs/xgrammar/include/xgrammar/*.h`, `libs/xgrammar/include/dlpack/*.h`, and `libs/xgrammar/include/picojson/picojson.h`
-
-The build auto-detects `libs/xgrammar`. You can override with:
-
-```bash
-CACTUS_XGRAMMAR_ROOT=/absolute/path/to/xgrammar cactus build --android
 ```
 
 ## Integration

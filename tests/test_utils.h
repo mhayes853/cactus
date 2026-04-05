@@ -3,7 +3,7 @@
 
 #include "../cactus/cactus.h"
 #include "../cactus/ffi/cactus_ffi.h"
-#include "../libs/xgrammar/include/picojson/picojson.h"
+#include <picojson.h>
 #include <cctype>
 #include <vector>
 #include <string>
