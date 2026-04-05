@@ -33,5 +33,12 @@ set(XGRAMMAR_ENABLE_INTERNAL_CHECK OFF)
         set(XGRAMMAR_ENABLE_COVERAGE OFF CACHE BOOL "" FORCE)
         set(XGRAMMAR_ENABLE_INTERNAL_CHECK OFF CACHE BOOL "" FORCE)
         add_subdirectory("${xgrammar_root}" "${binary_dir}" EXCLUDE_FROM_ALL)
+
+        if(APPLE AND CMAKE_GENERATOR STREQUAL "Xcode")
+            target_compile_options(xgrammar PRIVATE
+                -Wno-shorten-64-to-32
+                -Wno-error=shorten-64-to-32
+            )
+        endif()
     endif()
 endfunction()
