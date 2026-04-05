@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <variant>
@@ -300,7 +301,11 @@ private:
 
 class GrammarMatcher {
 public:
-    GrammarMatcher(const Grammar* grammar, const GrammarVocabulary& tokenizer_info);
+    GrammarMatcher(
+        const Grammar* grammar,
+        const GrammarVocabulary& tokenizer_info,
+        int max_threads = std::thread::hardware_concurrency()
+    );
     ~GrammarMatcher() = default;
 
     void reset();
