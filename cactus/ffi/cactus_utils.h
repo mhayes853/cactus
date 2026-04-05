@@ -387,6 +387,7 @@ std::vector<cactus::ffi::ToolFunction> select_relevant_tools(
     size_t top_k);
 
 #include "gemma_tools.h"
+#include "lfm2_tools.h"
 
 namespace cactus {
 namespace ffi {
@@ -1139,72 +1140,6 @@ inline InferenceOptions parse_inference_options_json(const std::string& json) {
     return options;
 }
 
-static inline std::string trim_lfm2_slice(const std::string& value, size_t begin, size_t end) {
-    return trim_string(value.substr(begin, end - begin));
-}
-
-static inline void append_lfm2_call(const std::string& entry,
-                                   std::vector<std::string>& function_calls) {
-    if (entry.empty()) return;
-
-    std::string trimmed_entry = trim_lfm2_slice(entry, 0, entry.size());
-    if (trimmed_entry.empty()) return;
-
-    size_t paren_pos = trimmed_entry.find('(');
-    if (paren_pos == std::string::npos) return;
-
-    std::string func_name = trim_lfm2_slice(trimmed_entry, 0, paren_pos);
-    std::string args_str = trim_lfm2_slice(trimmed_entry, paren_pos + 1, trimmed_entry.size());
-
-    if (!args_str.empty() && args_str.back() == ')') {
-        args_str.pop_back();
-        args_str = trim_lfm2_slice(args_str, 0, args_str.size());
-    }
-
-    std::string json_call = "{\"name\":\"" + func_name + "\",\"arguments\":{";
-
-    size_t arg_pos = 0;
-    bool first_arg = true;
-    while (arg_pos < args_str.length()) {
-        while (arg_pos < args_str.length() && std::isspace(static_cast<unsigned char>(args_str[arg_pos]))) {
-            arg_pos++;
-        }
-
-        size_t eq_pos = args_str.find('=', arg_pos);
-        if (eq_pos == std::string::npos) break;
-
-        std::string arg_name = args_str.substr(arg_pos, eq_pos - arg_pos);
-
-        size_t val_start = eq_pos + 1;
-        size_t val_end = val_start;
-
-        if (val_start < args_str.length() && args_str[val_start] == '"') {
-            val_start++;
-            val_end = args_str.find('"', val_start);
-            if (val_end == std::string::npos) break;
-        } else {
-            val_end = args_str.find(',', val_start);
-            if (val_end == std::string::npos) val_end = args_str.length();
-        }
-
-        std::string arg_value = args_str.substr(val_start, val_end - val_start);
-
-        if (!first_arg) json_call += ",";
-        json_call += "\"" + arg_name + "\":\"" + arg_value + "\"";
-        first_arg = false;
-
-        arg_pos = args_str.find(',', val_end);
-        if (arg_pos != std::string::npos) {
-            arg_pos++;
-        } else {
-            break;
-        }
-    }
-
-    json_call += "}}";
-    function_calls.push_back(json_call);
-}
-
 inline void parse_function_calls_from_response(const std::string& response_text,
                                                std::string& regular_response,
                                                std::vector<std::string>& function_calls) {
@@ -1253,71 +1188,7 @@ inline void parse_function_calls_from_response(const std::string& response_text,
 
         if (tool_end_pos != std::string::npos) {
             std::string tool_content = regular_response.substr(content_start, tool_end_pos - content_start);
-            std::string content = tool_content;
-            size_t trim_start = 0;
-            while (trim_start < content.size() && std::isspace(static_cast<unsigned char>(content[trim_start]))) {
-                trim_start++;
-            }
-
-            if (trim_start < content.size()) {
-                size_t trim_end = content.size() - 1;
-                while (trim_end > trim_start && std::isspace(static_cast<unsigned char>(content[trim_end]))) {
-                    trim_end--;
-                }
-                content = content.substr(trim_start, trim_end - trim_start + 1);
-            } else {
-                content.clear();
-            }
-
-            if (!content.empty() && content.front() == '[' && content.back() == ']') {
-                std::string inner = content.substr(1, content.size() - 2);
-
-                size_t inner_first = inner.find_first_not_of(" \t\n\r");
-                if (inner_first != std::string::npos && inner[inner_first] == '{') {
-                    size_t pos = inner_first;
-                    while (pos < inner.size()) {
-                        if (inner[pos] == '{') {
-                            int brace_depth = 1;
-                            size_t obj_start = pos;
-                            pos++;
-                            while (pos < inner.size() && brace_depth > 0) {
-                                if (inner[pos] == '{') brace_depth++;
-                                else if (inner[pos] == '}') brace_depth--;
-                                pos++;
-                            }
-                            if (brace_depth == 0) {
-                                std::string json_obj = inner.substr(obj_start, pos - obj_start);
-                                if (json_obj.find("\"name\"") != std::string::npos) {
-                                    function_calls.push_back(json_obj);
-                                }
-                            }
-                        } else {
-                            pos++;
-                        }
-                    }
-                } else {
-                    size_t start = 0;
-                    int paren_depth = 0;
-
-                    for (size_t i = 0; i < inner.size(); ++i) {
-                        char c = inner[i];
-                        if (c == '(') {
-                            paren_depth++;
-                        } else if (c == ')' && paren_depth > 0) {
-                            paren_depth--;
-                        } else if (c == ',' && paren_depth == 0) {
-                            append_lfm2_call(inner.substr(start, i - start), function_calls);
-                            start = i + 1;
-                        }
-                    }
-
-                    if (start < inner.size()) {
-                        append_lfm2_call(inner.substr(start), function_calls);
-                    }
-                }
-            } else if (!content.empty()) {
-                append_lfm2_call(content, function_calls);
-            }
+            parse_lfm2_function_calls(tool_content, function_calls);
 
             regular_response.erase(tool_start_pos, tool_end_pos + TOOL_CALL_END.length() - tool_start_pos);
         } else {

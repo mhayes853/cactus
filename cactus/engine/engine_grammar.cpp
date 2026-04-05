@@ -249,8 +249,7 @@ static Grammar lfm2_style_tool_call_grammar(const std::vector<ToolDefinition>& t
     value ::= string | number | boolean | none | list | dict
     list ::= "[" (value ("," value)*)? "]"
     dict ::= "{" (dict_item ("," dict_item)*)? "}"
-    dict_item ::= dict_key ":" value
-    dict_key ::= string | ident
+    dict_item ::= string ":" value
     boolean ::= "True" | "False"
     none ::= "None" | "null"
     number ::= "-"? int frac? exp?
