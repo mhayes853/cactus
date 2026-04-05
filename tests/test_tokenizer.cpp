@@ -5,16 +5,15 @@
 #include <memory>
 #include <stdexcept>
 
-using cactus::engine::TokenizerInfo;
+using cactus::engine::GrammarVocabulary;
 
 namespace {
 
 struct TokenizerFixture {
     std::unique_ptr<cactus::engine::Tokenizer> tokenizer;
-    TokenizerInfo tokenizer_info;
+    GrammarVocabulary vocab;
 
-    TokenizerFixture()
-        : tokenizer_info() {
+    TokenizerFixture() : vocab() {
         const char* model_path = std::getenv("CACTUS_TEST_MODEL");
         if (!model_path) {
             throw std::runtime_error("CACTUS_TEST_MODEL is not set");
@@ -24,12 +23,12 @@ struct TokenizerFixture {
         if (!tokenizer) {
             throw std::runtime_error("Failed to load tokenizer from test model files");
         }
-        tokenizer_info = tokenizer->get_tokenizer_info();
+        vocab = tokenizer->get_grammar_vocabulary();
     }
 };
 
 static bool test_sentencepiece_byte_fallback_decodes_to_text(const TokenizerFixture& fixture) {
-    const auto& vocab = fixture.tokenizer_info.encoded_vocab;
+    const auto& vocab = fixture.vocab.encoded_vocab;
 
     uint32_t quote_id = 0;
     uint32_t g_id = 0;

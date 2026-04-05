@@ -203,7 +203,7 @@ void reset_grammar_matcher(CactusModelHandle::GrammarMatcherHandle& grammar_matc
 CactusModelHandle::GrammarMatcherHandle grammar_matcher_handle(
     const CactusGrammarHandle* user_grammar_handle,
     const PreparedPrompt& prompt,
-    const TokenizerInfo& tokenizer_info
+    const GrammarVocabulary& vocab
 ) {
     cactus::engine::Grammar decode_grammar = Grammar::model_decode_grammar(
         user_grammar_handle ? *user_grammar_handle->grammar : Grammar::universal(),
@@ -217,7 +217,7 @@ CactusModelHandle::GrammarMatcherHandle grammar_matcher_handle(
     }
 
     CactusModelHandle::GrammarMatcherHandle handle;
-    handle.matcher = std::make_unique<GrammarMatcher>(&decode_grammar, tokenizer_info);
+    handle.matcher = std::make_unique<GrammarMatcher>(&decode_grammar, vocab);
     handle.user_grammar_handle = user_grammar_handle;
     handle.force_tools = prompt.options.force_tools;
     handle.thinking_supported = prompt.thinking_supported;
@@ -528,7 +528,7 @@ int cactus_complete(
                 handle->grammar_matcher_handle = grammar_matcher_handle(
                     user_grammar_handle,
                     prompt,
-                    tokenizer->get_tokenizer_info()
+                    tokenizer->get_grammar_vocabulary()
                 );
             } catch (const std::runtime_error& e) {
                 handle_error_response(e.what(), response_buffer, buffer_size);
