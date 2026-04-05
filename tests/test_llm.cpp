@@ -760,7 +760,7 @@ bool test_json_schema_grammar_outputs_person() {
         "additionalProperties": false
     })";
 
-    cactus_grammar_t grammar = cactus_grammar_init_json_schema(person_schema, CACTUS_GRAMMAR_JSON_SCHEMA_DEFAULT_OPTIONS);
+    cactus_grammar_t grammar = cactus_grammar_init_json_schema(person_schema, cactus_grammar_json_schema_default_options());
     if (!grammar) {
         std::cerr << "[✗] Failed to initialize JSON Schema grammar\n";
         cactus_destroy(model);

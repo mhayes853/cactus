@@ -1190,7 +1190,7 @@ const char* schema = R"({
 
 cactus_grammar_t grammar = cactus_grammar_init_json_schema(
     schema,
-    CACTUS_GRAMMAR_JSON_SCHEMA_DEFAULT_OPTIONS
+    cactus_grammar_json_schema_default_options()
 );
 
 const char* messages = R"([
@@ -1291,10 +1291,13 @@ typedef struct cactus_grammar_json_schema_options_t {
 | `strict_mode` | bool | `true` | Whether or not to forbid generation of properties that are not explicitly in the schema. |
 | `max_whitespace_count` | int | `1` | Maximum whitespace run length. `-1` means unlimited. |
 
-You can also use the `CACTUS_GRAMMAR_JSON_SCHEMA_DEFAULT_OPTIONS` macro to construct an instance of the default options.
+You can also call `cactus_grammar_json_schema_default_options` to construct an instance of the default options.
 
 ```cpp
-const auto options = CACTUS_GRAMMAR_JSON_SCHEMA_DEFAULT_OPTIONS;
+cactus_grammar_t grammar = cactus_grammar_init_json_schema(
+    schema, 
+    cactus_grammar_json_schema_default_options()
+);
 ```
 
 ### `cactus_grammar_init_json_schema`

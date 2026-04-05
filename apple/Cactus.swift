@@ -13,12 +13,24 @@ public struct CactusGrammarJSONSchemaOptions {
     public var strictMode: Bool
     public var maxWhitespaceCount: Int32
 
+    public init() {
+        let native = cactus_grammar_json_schema_default_options()
+        self.anyWhitespace = native.any_whitespace
+        self.indent = native.indent
+        self.separators = (
+            String(cString: native.separators.0!),
+            String(cString: native.separators.1!)
+        )
+        self.strictMode = native.strict_mode
+        self.maxWhitespaceCount = native.max_whitespace_count
+    }
+
     public init(
-        anyWhitespace: Bool = true,
-        indent: Int32 = 2,
-        separators: (String, String) = (",", ":"),
-        strictMode: Bool = true,
-        maxWhitespaceCount: Int32 = 1
+        anyWhitespace: Bool,
+        indent: Int32,
+        separators: (String, String),
+        strictMode: Bool,
+        maxWhitespaceCount: Int32
     ) {
         self.anyWhitespace = anyWhitespace
         self.indent = indent
