@@ -9,16 +9,15 @@ using cactus::engine::Config;
 using cactus::engine::Grammar;
 using cactus::engine::GrammarMatcher;
 using cactus::engine::ToolDefinition;
-using cactus::engine::TokenizerInfo;
+using cactus::engine::GrammarVocabulary;
 
 namespace {
 
 struct GrammarFixture {
     std::unique_ptr<cactus::engine::Tokenizer> tokenizer;
-    TokenizerInfo tokenizer_info;
+    GrammarVocabulary vocab;
 
-    GrammarFixture()
-        : tokenizer_info() {
+    GrammarFixture() : vocab() {
         const char* model_path = std::getenv("CACTUS_TEST_MODEL");
         if (!model_path) {
             throw std::runtime_error("CACTUS_TEST_MODEL is not set");
@@ -28,7 +27,7 @@ struct GrammarFixture {
         if (!tokenizer) {
             throw std::runtime_error("Failed to load tokenizer from test model files");
         }
-        tokenizer_info = tokenizer->get_tokenizer_info();
+        vocab = tokenizer->get_grammar_vocabulary();
     }
 };
 
@@ -46,7 +45,7 @@ static bool accept_text(GrammarMatcher& matcher, const GrammarFixture& fixture, 
 }
 
 static bool accepts_complete_text(const Grammar& grammar, const GrammarFixture& fixture, const std::string& text) {
-    GrammarMatcher matcher(&grammar, fixture.tokenizer_info);
+    GrammarMatcher matcher(&grammar, fixture.vocab);
     if (!accept_text(matcher, fixture, text)) {
         return false;
     }
@@ -54,12 +53,12 @@ static bool accepts_complete_text(const Grammar& grammar, const GrammarFixture& 
 }
 
 static bool rejects_text(const Grammar& grammar, const GrammarFixture& fixture, const std::string& text) {
-    GrammarMatcher matcher(&grammar, fixture.tokenizer_info);
+    GrammarMatcher matcher(&grammar, fixture.vocab);
     return !accept_text(matcher, fixture, text);
 }
 
 static bool rejects_eos_after_text(const Grammar& grammar, const GrammarFixture& fixture, const std::string& text) {
-    GrammarMatcher matcher(&grammar, fixture.tokenizer_info);
+    GrammarMatcher matcher(&grammar, fixture.vocab);
     if (!accept_text(matcher, fixture, text)) {
         return true;
     }
@@ -709,7 +708,7 @@ static bool test_model_decode_gemma4_rejects_extra_channel_close_tag(const Gramm
 
 static bool test_grammar_matcher_reset_restores_initial_state(const GrammarFixture& fixture) {
     Grammar grammar = Grammar::gbnf("root ::= \"hello\"");
-    GrammarMatcher matcher(&grammar, fixture.tokenizer_info);
+    GrammarMatcher matcher(&grammar, fixture.vocab);
 
     if (!accept_text(matcher, fixture, "hello")) {
         return false;

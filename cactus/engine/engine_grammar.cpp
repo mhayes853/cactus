@@ -8,6 +8,32 @@
 namespace cactus {
 namespace engine {
 
+GrammarVocabulary Tokenizer::get_grammar_vocabulary() const {
+    std::vector<uint32_t> stop_token_ids = {get_eos_token()};
+    std::string default_stop = get_default_stop_sequence();
+    if (!default_stop.empty()) {
+        std::vector<uint32_t> encoded = encode(default_stop);
+        if (encoded.size() == 1 && std::find(stop_token_ids.begin(), stop_token_ids.end(), encoded[0]) == stop_token_ids.end()) {
+            stop_token_ids.push_back(encoded[0]);
+        }
+    }
+
+    VocabType vocab_type = VocabType::RAW;
+
+    const auto has_none = runtime_config_.decoder == TokenizerRuntimeConfig::Decoder::NONE
+        && runtime_config_.normalizer == TokenizerRuntimeConfig::Normalizer::NONE;
+    const auto is_byte_level = runtime_config_.decoder == TokenizerRuntimeConfig::Decoder::BYTE_LEVEL
+        || runtime_config_.normalizer == TokenizerRuntimeConfig::Normalizer::BYTE_LEVEL;
+    if (runtime_config_.byte_fallback) {
+        vocab_type = VocabType::BYTE_FALLBACK;
+    } else if (is_byte_level || has_none) {
+        vocab_type = VocabType::BYTE_LEVEL;
+    }
+
+    const auto& encoded_vocab = get_encoded_vocab();
+    return GrammarVocabulary{encoded_vocab, vocab_type, encoded_vocab.size(), stop_token_ids, get_add_prefix_space()};
+}
+
 Grammar::Grammar() : grammar(xgrammar::NullObj{}), is_universal_(false) {}
 
 Grammar::Grammar(xgrammar::Grammar raw_grammar)
@@ -373,18 +399,18 @@ static xgrammar::VocabType to_xgrammar_vocab_type(VocabType vocab_type) {
 
 } // anonymous namespace
 
-GrammarMatcher::GrammarMatcher(const Grammar* grammar, const TokenizerInfo& tokenizer_info)
+GrammarMatcher::GrammarMatcher(const Grammar* grammar, const GrammarVocabulary& vocab)
     : matcher(nullptr), tokenizer_info(nullptr) {
     if (grammar->is_empty()) {
         throw std::runtime_error("Cannot create GrammarMatcher with empty grammar");
     }
-    std::vector<int32_t> stop_token_ids_int32(tokenizer_info.stop_token_ids.begin(), tokenizer_info.stop_token_ids.end());
+    std::vector<int32_t> stop_token_ids_int32(vocab.stop_token_ids.begin(), vocab.stop_token_ids.end());
     xgrammar::TokenizerInfo xgrammar_tokenizer_info{
-        tokenizer_info.encoded_vocab,
-        to_xgrammar_vocab_type(tokenizer_info.vocab_type),
-        static_cast<int>(tokenizer_info.vocab_size),
+        vocab.encoded_vocab,
+        to_xgrammar_vocab_type(vocab.vocab_type),
+        static_cast<int>(vocab.vocab_size),
         stop_token_ids_int32,
-        tokenizer_info.add_prefix_space
+        vocab.add_prefix_space
     };
     auto compiler = xgrammar::GrammarCompiler(xgrammar_tokenizer_info);
 

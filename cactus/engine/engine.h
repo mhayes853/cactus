@@ -61,7 +61,7 @@ enum class VocabType {
     BYTE_FALLBACK
 };
 
-struct TokenizerInfo {
+struct GrammarVocabulary {
     std::vector<std::string> encoded_vocab;
     VocabType vocab_type = VocabType::RAW;
     size_t vocab_size;
@@ -300,13 +300,14 @@ private:
 
 class GrammarMatcher {
 public:
-    GrammarMatcher(const Grammar* grammar, const TokenizerInfo& tokenizer_info);
+    GrammarMatcher(const Grammar* grammar, const GrammarVocabulary& tokenizer_info);
     ~GrammarMatcher() = default;
 
     void reset();
     bool accept(uint32_t token_id, bool log_rejection = true);
     bool next_bitmask(std::vector<int32_t>& token_bitmask, size_t logits_buffer_size);
 
+private:
     xgrammar::GrammarMatcher matcher;
     xgrammar::TokenizerInfo tokenizer_info;
 };
@@ -363,7 +364,7 @@ public:
     virtual uint32_t get_unk_token() const = 0;
     virtual uint32_t get_bos_token() const = 0;
     virtual uint32_t get_eos_token() const = 0;
-    virtual TokenizerInfo get_tokenizer_info() const;
+    virtual GrammarVocabulary get_grammar_vocabulary() const;
     virtual bool get_add_prefix_space() const { return false; }
     virtual bool has_chat_template() const { return has_chat_template_; }
     virtual bool is_thinking_supported() const { return false; }

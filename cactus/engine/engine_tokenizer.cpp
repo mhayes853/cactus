@@ -146,32 +146,6 @@ void load_special_tokens_map(const std::string& config_file, std::unordered_map<
     }
 }
 
-TokenizerInfo Tokenizer::get_tokenizer_info() const {
-    std::vector<uint32_t> stop_token_ids = {get_eos_token()};
-    std::string default_stop = get_default_stop_sequence();
-    if (!default_stop.empty()) {
-        std::vector<uint32_t> encoded = encode(default_stop);
-        if (encoded.size() == 1 && std::find(stop_token_ids.begin(), stop_token_ids.end(), encoded[0]) == stop_token_ids.end()) {
-            stop_token_ids.push_back(encoded[0]);
-        }
-    }
-
-    VocabType vocab_type = VocabType::RAW;
-
-    const auto has_none = runtime_config_.decoder == TokenizerRuntimeConfig::Decoder::NONE
-        && runtime_config_.normalizer == TokenizerRuntimeConfig::Normalizer::NONE;
-    const auto is_byte_level = runtime_config_.decoder == TokenizerRuntimeConfig::Decoder::BYTE_LEVEL
-        || runtime_config_.normalizer == TokenizerRuntimeConfig::Normalizer::BYTE_LEVEL;
-    if (runtime_config_.byte_fallback) {
-        vocab_type = VocabType::BYTE_FALLBACK;
-    } else if (is_byte_level || has_none) {
-        vocab_type = VocabType::BYTE_LEVEL;
-    }
-
-    const auto& encoded_vocab = get_encoded_vocab();
-    return TokenizerInfo{encoded_vocab, vocab_type, encoded_vocab.size(), stop_token_ids, get_add_prefix_space()};
-}
-
 std::unique_ptr<Tokenizer> create_tokenizer_from_model_dir(const std::string& model_dir) {
     const std::string vocab_file = model_dir + "/vocab.txt";
     const std::string merges_file = model_dir + "/merges.txt";
