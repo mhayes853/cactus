@@ -156,7 +156,7 @@ static bool test_universal_grammar_accepts_anything(const GrammarFixture& fixtur
         && accepts_complete_text(grammar, fixture, "line one\nline two\nline three");
 }
 
-static bool test_union_with_universal_returns_universal(const GrammarFixture& fixture) {
+static bool test_union_with_universal_returns_universal() {
     Grammar universal = Grammar::universal();
     Grammar specific = Grammar::gbnf("root ::= \"hello\"");
     return Grammar::unite({specific, universal}).is_universal();
@@ -407,7 +407,7 @@ static bool test_lfm2_style_tool_call_accepts_pythonic_literals(const GrammarFix
     return accepts_complete_text(
         grammar,
         fixture,
-        "<|tool_call_start|>[send_message(recipient=\"Blob\",message={attempts:2,urgent:True,aliases:[\"A\",\"B\"],metadata:{active:False,score:-1.25e2,note:null}})]<|tool_call_end|>"
+        "<|tool_call_start|>[send_message(recipient=\"Blob\",message={\"attempts\":2,\"urgent\":True,\"aliases\":[\"A\",\"B\"],\"metadata\":{\"active\":False,\"score\":-1.25e2,\"note\":null}})]<|tool_call_end|>"
     );
 }
 
@@ -744,7 +744,7 @@ int main() {
         runner.run_test("regex_language", test_regex_accepts_expected_text(fixture));
         runner.run_test("json_schema_language", test_json_schema_accepts_expected_text(fixture));
         runner.run_test("universal", test_universal_grammar_accepts_anything(fixture));
-        runner.run_test("union_with_universal_returns_universal", test_union_with_universal_returns_universal(fixture));
+        runner.run_test("union_with_universal_returns_universal", test_union_with_universal_returns_universal());
         runner.run_test("concat_with_leading_universal_returns_universal", test_concat_with_leading_universal_returns_universal(fixture));
         runner.run_test("concat_ignores_grammars_after_universal", test_concat_ignores_grammars_after_universal(fixture));
         runner.run_test("structural_tag_language", test_structural_tag_accepts_and_rejects_expected_text(fixture));
