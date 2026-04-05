@@ -29,7 +29,7 @@ echo "Using $n_cpu CPU cores"
 echo "Static library: $BUILD_STATIC"
 echo "XCFramework: $BUILD_XCFRAMEWORK"
 echo "Vendored libcurl root: $CACTUS_CURL_ROOT"
-echo "Vendored xgrammar root: $CACTUS_XGRAMMAR_ROOT"
+echo "XGrammar source root: $CACTUS_XGRAMMAR_ROOT"
 
 function cp_headers() {
     mkdir -p "$ROOT_DIR/apple/$1/$2/cactus.framework/Headers"
@@ -141,6 +141,8 @@ function build_static_library() {
 
     mkdir -p "$APPLE_DIR"
     cp "$BUILD_DIR/libcactus.a" "$APPLE_DIR/libcactus-device.a"
+    cp "$BUILD_DIR/xgrammar-build/libxgrammar.a" "$APPLE_DIR/libxgrammar-device.a" 2>/dev/null || \
+        cp "$BUILD_DIR/libxgrammar.a" "$APPLE_DIR/libxgrammar-device.a"
     echo "Device static library built: $APPLE_DIR/libcactus-device.a"
     
     echo "Building static library for iOS simulator..."
@@ -168,6 +170,8 @@ function build_static_library() {
     cmake --build "$BUILD_DIR_SIM" --config "$CMAKE_BUILD_TYPE" -j "$n_cpu" >/dev/null
 
     cp "$BUILD_DIR_SIM/libcactus.a" "$APPLE_DIR/libcactus-simulator.a"
+    cp "$BUILD_DIR_SIM/xgrammar-build/libxgrammar.a" "$APPLE_DIR/libxgrammar-simulator.a" 2>/dev/null || \
+        cp "$BUILD_DIR_SIM/libxgrammar.a" "$APPLE_DIR/libxgrammar-simulator.a"
     echo "Simulator static library built: $APPLE_DIR/libcactus-simulator.a"
 }
 
@@ -280,6 +284,8 @@ if [ "$BUILD_STATIC" = "true" ]; then
     echo "Static libraries:"
     echo "  Device: $APPLE_DIR/libcactus-device.a"
     echo "  Simulator: $APPLE_DIR/libcactus-simulator.a"
+    echo "  XGrammar device: $APPLE_DIR/libxgrammar-device.a"
+    echo "  XGrammar simulator: $APPLE_DIR/libxgrammar-simulator.a"
 fi
 
 if [ "$BUILD_XCFRAMEWORK" = "true" ]; then

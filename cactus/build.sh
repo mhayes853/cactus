@@ -42,3 +42,6 @@ make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
 echo "Cactus library built successfully!"
 echo "Library location: $(pwd)/libcactus.a"
+if [ -f "$(pwd)/libxgrammar.a" ]; then
+    echo "XGrammar location: $(pwd)/libxgrammar.a"
+fi

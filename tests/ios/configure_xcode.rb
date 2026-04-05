@@ -271,7 +271,9 @@ puts "Using static library: #{static_lib_path}"
 curl_root = ENV['CACTUS_CURL_ROOT']
 xgrammar_root = ENV['CACTUS_XGRAMMAR_ROOT']
 vendored_curl_lib = nil
-vendored_xgrammar_lib = nil
+xgrammar_static_lib = device_type == 'simulator' ?
+  File.join(apple_dir, 'libxgrammar-simulator.a') :
+  File.join(apple_dir, 'libxgrammar-device.a')
 if curl_root && !curl_root.empty?
   vendored_curl_lib = device_type == 'simulator' ?
     File.join(curl_root, 'ios', 'simulator', 'libcurl.a') :
@@ -284,16 +286,10 @@ if curl_root && !curl_root.empty?
   end
 end
 
-if xgrammar_root && !xgrammar_root.empty?
-  vendored_xgrammar_lib = device_type == 'simulator' ?
-    File.join(xgrammar_root, 'ios', 'simulator', 'libxgrammar.a') :
-    File.join(xgrammar_root, 'ios', 'device', 'libxgrammar.a')
-  if File.exist?(vendored_xgrammar_lib)
-    puts "Using vendored iOS xgrammar: #{vendored_xgrammar_lib}"
-  else
-    vendored_xgrammar_lib = nil
-    puts "Vendored iOS xgrammar not found under CACTUS_XGRAMMAR_ROOT=#{xgrammar_root}; continuing without explicit xgrammar link"
-  end
+if File.exist?(xgrammar_static_lib)
+  puts "Using built xgrammar library: #{xgrammar_static_lib}"
+else
+  fail_with("XGrammar static library not found at: #{xgrammar_static_lib}")
 end
 
 target.frameworks_build_phase.files.to_a.each do |build_file|
@@ -325,6 +321,14 @@ target.build_configurations.each do |config|
     if File.exist?(File.join(xgrammar_include, 'xgrammar', 'xgrammar.h'))
       config.build_settings['HEADER_SEARCH_PATHS'] << xgrammar_include unless config.build_settings['HEADER_SEARCH_PATHS'].include?(xgrammar_include)
     end
+    xgrammar_dlpack_include = File.join(xgrammar_root, '3rdparty', 'dlpack', 'include')
+    if File.exist?(File.join(xgrammar_dlpack_include, 'dlpack', 'dlpack.h'))
+      config.build_settings['HEADER_SEARCH_PATHS'] << xgrammar_dlpack_include unless config.build_settings['HEADER_SEARCH_PATHS'].include?(xgrammar_dlpack_include)
+    end
+    xgrammar_picojson_include = File.join(xgrammar_root, '3rdparty', 'picojson')
+    if File.exist?(File.join(xgrammar_picojson_include, 'picojson.h'))
+      config.build_settings['HEADER_SEARCH_PATHS'] << xgrammar_picojson_include unless config.build_settings['HEADER_SEARCH_PATHS'].include?(xgrammar_picojson_include)
+    end
   end
 
   config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++20'
@@ -341,15 +345,13 @@ target.build_configurations.each do |config|
   config.build_settings['OTHER_LDFLAGS'] ||= ['$(inherited)']
   config.build_settings['OTHER_LDFLAGS'].reject! { |flag| flag.to_s.include?('libcactus') }
   config.build_settings['OTHER_LDFLAGS'] << static_lib_path
+  config.build_settings['OTHER_LDFLAGS'] << xgrammar_static_lib unless config.build_settings['OTHER_LDFLAGS'].include?(xgrammar_static_lib)
 
   ['-framework CoreML', '-framework Foundation', '-framework Accelerate', '-framework Security', '-framework SystemConfiguration', '-framework CFNetwork'].each do |framework|
     config.build_settings['OTHER_LDFLAGS'] << framework unless config.build_settings['OTHER_LDFLAGS'].include?(framework)
   end
   if vendored_curl_lib
     config.build_settings['OTHER_LDFLAGS'] << vendored_curl_lib unless config.build_settings['OTHER_LDFLAGS'].include?(vendored_curl_lib)
-  end
-  if vendored_xgrammar_lib
-    config.build_settings['OTHER_LDFLAGS'] << vendored_xgrammar_lib unless config.build_settings['OTHER_LDFLAGS'].include?(vendored_xgrammar_lib)
   end
 end
 

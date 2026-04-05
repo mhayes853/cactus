@@ -26,6 +26,8 @@ Build outputs (in `apple/`):
 | `cactus-macos.xcframework/` | macOS framework |
 | `libcactus-device.a` | Static library for iOS device |
 | `libcactus-simulator.a` | Static library for iOS simulator |
+| `libxgrammar-device.a` | XGrammar static library for iOS device |
+| `libxgrammar-simulator.a` | XGrammar static library for iOS simulator |
 <!-- --8<-- [end:install] -->
 
 See the main [README.md](../README.md) for how to use CLI & download weights
@@ -49,16 +51,9 @@ CACTUS_CURL_ROOT=/absolute/path/to/curl cactus build --apple
 
 ### Vendored XGrammar (iOS + macOS)
 
-To bundle XGrammar from this repo, place artifacts under:
+XGrammar is tracked as the `libs/xgrammar` git submodule and built from source during `cactus build --apple`.
 
-- `libs/xgrammar/include/xgrammar/*.h`
-- `libs/xgrammar/include/dlpack/*.h`
-- `libs/xgrammar/include/picojson/picojson.h`
-- `libs/xgrammar/ios/device/libxgrammar.a`
-- `libs/xgrammar/ios/simulator/libxgrammar.a`
-- `libs/xgrammar/macos/libxgrammar.a`
-
-Build scripts auto-detect `libs/xgrammar`. Override with:
+The build initializes the submodule automatically when this repo is a git checkout. Override the source path with:
 
 ```bash
 CACTUS_XGRAMMAR_ROOT=/absolute/path/to/xgrammar cactus build --apple
@@ -76,10 +71,11 @@ CACTUS_XGRAMMAR_ROOT=/absolute/path/to/xgrammar cactus build --apple
 ### iOS/macOS: Static Library
 
 1. Add `libcactus-device.a` (or `libcactus-simulator.a`) to "Link Binary With Libraries"
-2. Create a folder with `cactus_ffi.h` and `module.modulemap`, add to Build Settings:
-   - "Header Search Paths" → path to folder
-   - "Import Paths" (Swift) → path to folder
-3. Copy `Cactus.swift` into your project
+2. Add `libxgrammar-device.a` (or `libxgrammar-simulator.a`) to "Link Binary With Libraries"
+3. Create a folder with `cactus_ffi.h` and `module.modulemap`, add to Build Settings:
+    - "Header Search Paths" → path to folder
+    - "Import Paths" (Swift) → path to folder
+4. Copy `Cactus.swift` into your project
 <!-- --8<-- [end:integration] -->
 
 ### Android (Swift SDK)

@@ -1,7 +1,7 @@
 #ifndef CACTUS_LFM2_TOOLS_H
 #define CACTUS_LFM2_TOOLS_H
 
-#include "../../libs/xgrammar/include/picojson/picojson.h"
+#include <picojson.h>
 
 #include <cctype>
 #include <cstring>

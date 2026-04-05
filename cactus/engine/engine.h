@@ -20,7 +20,7 @@
 #include <xgrammar/matcher.h>
 #include <xgrammar/object.h>
 #include <xgrammar/tokenizer_info.h>
-#include "../../libs/xgrammar/include/picojson/picojson.h"
+#include <picojson.h>
 
 #include "../graph/graph.h"
 

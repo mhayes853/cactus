@@ -18,7 +18,6 @@ apple/*.xcframework
 apple/libcactus.a
 *.a
 !libs/curl/**/*.a
-!libs/xgrammar/**/*.a
 venv
 
 __pycache__
