@@ -286,7 +286,7 @@ static Grammar model_tool_call_grammar(
         case Config::ModelType::LFM2:
             return lfm2_style_tool_call_grammar(tools);
         default:
-            return Grammar();
+            return Grammar::universal();
     }
 }
 
