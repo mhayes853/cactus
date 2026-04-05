@@ -117,7 +117,7 @@ EOF
 function build_static_library() {
     echo "Building static library for iOS device..."
     BUILD_DIR="$APPLE_DIR/build-static-device"
-    
+
     IOS_SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
     if [ -z "$IOS_SDK_PATH" ] || [ ! -d "$IOS_SDK_PATH" ]; then
         echo "Error: iOS SDK not found. Make sure Xcode is installed."
@@ -144,10 +144,10 @@ function build_static_library() {
     cp "$BUILD_DIR/xgrammar-build/libxgrammar.a" "$APPLE_DIR/libxgrammar-device.a" 2>/dev/null || \
         cp "$BUILD_DIR/libxgrammar.a" "$APPLE_DIR/libxgrammar-device.a"
     echo "Device static library built: $APPLE_DIR/libcactus-device.a"
-    
+
     echo "Building static library for iOS simulator..."
     BUILD_DIR_SIM="$APPLE_DIR/build-static-simulator"
-    
+
     IOS_SIM_SDK_PATH=$(xcrun --sdk iphonesimulator --show-sdk-path)
     if [ -z "$IOS_SIM_SDK_PATH" ] || [ ! -d "$IOS_SIM_SDK_PATH" ]; then
         echo "Error: iOS Simulator SDK not found. Make sure Xcode is installed."
@@ -179,6 +179,9 @@ function build_framework() {
     echo "Building framework for $4..."
     cd "$5"
 
+    CONFIG_LOG="$5/configure.log"
+    BUILD_LOG="$5/build.log"
+
     cmake -S "$ROOT_DIR/apple" \
         -B . \
         -GXcode \
@@ -191,12 +194,20 @@ function build_framework() {
         -DCACTUS_CURL_ROOT="$CACTUS_CURL_ROOT" \
         -DCACTUS_XGRAMMAR_ROOT="$CACTUS_XGRAMMAR_ROOT" \
         -DCMAKE_XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH=NO \
-        -DCMAKE_IOS_INSTALL_COMBINED=YES >/dev/null
+        -DCMAKE_IOS_INSTALL_COMBINED=YES >"$CONFIG_LOG" 2>&1 || {
+            echo "Framework configure failed; showing $CONFIG_LOG"
+            cat "$CONFIG_LOG"
+            exit 1
+        }
 
-    cmake --build . --config "$CMAKE_BUILD_TYPE" -j "$n_cpu" >/dev/null 2>&1
+    cmake --build . --config "$CMAKE_BUILD_TYPE" -j "$n_cpu" >"$BUILD_LOG" 2>&1 || {
+        echo "Framework build failed; showing $BUILD_LOG"
+        cat "$BUILD_LOG"
+        exit 1
+    }
 
     DEST_DIR="$ROOT_DIR/apple/$6/$4"
-    
+
     # Try different possible framework locations
     FRAMEWORK_SRC=""
     if [ -d "$CMAKE_BUILD_TYPE-$3/cactus.framework" ]; then
@@ -207,7 +218,7 @@ function build_framework() {
         # Find the framework in any subdirectory
         FRAMEWORK_SRC=$(find . -name "cactus.framework" -type d | head -n 1)
     fi
-    
+
     FRAMEWORK_DEST="$DEST_DIR/cactus.framework"
 
     rm -rf "$DEST_DIR"
@@ -231,25 +242,25 @@ function build_framework() {
 
 function build_ios_xcframework() {
     echo "Building iOS XCFramework..."
-    
+
     rm -rf "$ROOT_DIR/apple/cactus-ios.xcframework"
     rm -rf "$ROOT_DIR/apple/build-ios" "$ROOT_DIR/apple/build-ios-simulator"
     mkdir -p "$ROOT_DIR/apple/build-ios" "$ROOT_DIR/apple/build-ios-simulator"
 
     build_framework "iOS" "arm64" "iphoneos" "ios-arm64" "$ROOT_DIR/apple/build-ios" "cactus-ios.xcframework"
-    
+
     build_framework "iOS" "arm64" "iphonesimulator" "ios-arm64-simulator" "$ROOT_DIR/apple/build-ios-simulator" "cactus-ios.xcframework"
 
     create_ios_xcframework_info_plist
 
     rm -rf "$ROOT_DIR/apple/build-ios" "$ROOT_DIR/apple/build-ios-simulator"
-    
+
     echo "iOS XCFramework built: $ROOT_DIR/apple/cactus-ios.xcframework"
 }
 
 function build_macos_xcframework() {
     echo "Building macOS XCFramework..."
-    
+
     rm -rf "$ROOT_DIR/apple/cactus-macos.xcframework"
     rm -rf "$ROOT_DIR/apple/build-macos"
     mkdir -p "$ROOT_DIR/apple/build-macos"
@@ -259,7 +270,7 @@ function build_macos_xcframework() {
     create_macos_xcframework_info_plist
 
     rm -rf "$ROOT_DIR/apple/build-macos"
-    
+
     echo "macOS XCFramework built: $ROOT_DIR/apple/cactus-macos.xcframework"
 }
 
