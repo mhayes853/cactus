@@ -162,31 +162,6 @@ static bool test_union_with_universal_returns_universal() {
     return Grammar::unite({specific, universal}).is_universal();
 }
 
-static bool test_concat_with_leading_universal_returns_universal(const GrammarFixture& fixture) {
-    Grammar grammar = Grammar::concatenate({
-        Grammar(),
-        Grammar::universal(),
-        Grammar::gbnf("root ::= \"hello\"")
-    });
-
-    return grammar.is_universal()
-        && accepts_complete_text(grammar, fixture, "")
-        && accepts_complete_text(grammar, fixture, "anything goes here");
-}
-
-static bool test_concat_ignores_grammars_after_universal(const GrammarFixture& fixture) {
-    Grammar grammar = Grammar::concatenate({
-        Grammar::gbnf("root ::= \"hello\"") ,
-        Grammar::universal(),
-        Grammar::gbnf("root ::= \" world\"")
-    });
-
-    return accepts_complete_text(grammar, fixture, "hello")
-        && accepts_complete_text(grammar, fixture, "hello there")
-        && accepts_complete_text(grammar, fixture, "hello world")
-        && rejects_text(grammar, fixture, "goodbye");
-}
-
 static std::string tool_call_structural_tag_json() {
     return R"({
         "type": "structural_tag",
@@ -745,8 +720,6 @@ int main() {
         runner.run_test("json_schema_language", test_json_schema_accepts_expected_text(fixture));
         runner.run_test("universal", test_universal_grammar_accepts_anything(fixture));
         runner.run_test("union_with_universal_returns_universal", test_union_with_universal_returns_universal());
-        runner.run_test("concat_with_leading_universal_returns_universal", test_concat_with_leading_universal_returns_universal(fixture));
-        runner.run_test("concat_ignores_grammars_after_universal", test_concat_ignores_grammars_after_universal(fixture));
         runner.run_test("structural_tag_language", test_structural_tag_accepts_and_rejects_expected_text(fixture));
         runner.run_test("qwen_style_tool_call_single", test_qwen_style_tool_call_accepts_single_tool_call(fixture));
         runner.run_test("qwen_style_tool_call_repeated", test_qwen_style_tool_call_accepts_repeated_tool_calls(fixture));

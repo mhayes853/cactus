@@ -306,11 +306,6 @@ Grammar Grammar::concatenate(const std::vector<Grammar>& grammars) {
     handles.reserve(grammars.size());
     for (const auto& grammar : grammars) {
         if (grammar.is_empty()) continue;
-        if (grammar.is_universal()) {
-            if (handles.empty()) return grammar;
-            handles.push_back(grammar.raw_value());
-            break;
-        }
         handles.push_back(grammar.raw_value());
     }
     return handles.empty() ? Grammar() : Grammar(xgrammar::Grammar::Concat(handles));
