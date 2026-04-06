@@ -29,7 +29,7 @@ static inline bool is_lfm2_identifier_start(char c) {
 
 static inline bool is_lfm2_identifier_char(char c) {
     unsigned char uc = static_cast<unsigned char>(c);
-    return std::isalnum(uc) || c == '_';
+    return std::isalnum(uc) || c == '_' || c == '-';
 }
 
 struct Lfm2ParserState {

@@ -55,9 +55,26 @@ static bool test_lfm2_parser_preserves_mixed_argument_types() {
     return !args.contains("unset") && !args.contains("config");
 }
 
+static bool test_lfm2_parser_handles_hyphenated_tool_name() {
+    std::string response = "<|tool_call_start|>[emit-blob(text=\"blob\")]<|tool_call_end|>";
+    std::string regular_response;
+    std::vector<std::string> function_calls;
+    cactus::ffi::parse_function_calls_from_response(response, regular_response, function_calls);
+
+    picojson::value parsed;
+    std::string error;
+    picojson::parse(parsed, function_calls[0].begin(), function_calls[0].end(), &error);
+    if (!error.empty() || !parsed.is<picojson::object>() || !parsed.contains("name")) return false;
+
+    const picojson::value& name = parsed.get("name");
+    if (!name.is<std::string>() || name.get<std::string>() != "emit-blob") return false;
+    return true;
+}
+
 int main() {
     TestUtils::TestRunner runner("Tool Parsing Tests");
     runner.run_test("lfm2_mixed_argument_types", test_lfm2_parser_preserves_mixed_argument_types());
+    runner.run_test("lfm2_handles_hyphenated_tool_name", test_lfm2_parser_handles_hyphenated_tool_name());
     runner.print_summary();
     return runner.all_passed() ? 0 : 1;
 }
