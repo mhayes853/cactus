@@ -167,6 +167,49 @@ std::unique_ptr<Tokenizer> create_tokenizer_from_model_dir(const std::string& mo
     return tokenizer;
 }
 
+std::vector<std::string> split_with_special_tokens(const std::string& text,
+                                                    const std::unordered_map<std::string, uint32_t>& special_tokens) {
+    std::vector<std::string> result;
+    size_t start = 0;
+    while (start < text.size()) {
+        size_t best_match_pos = text.size();
+        size_t best_match_len = 0;
+        std::string best_special_token;
+
+        for (const auto& [special_token, token_id] : special_tokens) {
+            size_t pos = text.find(special_token, start);
+            if (pos != std::string::npos &&
+                (pos < best_match_pos || (pos == best_match_pos && special_token.length() > best_match_len))) {
+                best_match_pos = pos;
+                best_match_len = special_token.length();
+                best_special_token = special_token;
+            }
+        }
+
+        if (best_match_pos < text.size()) {
+            if (best_match_pos > start)
+                result.push_back(text.substr(start, best_match_pos - start));
+            result.push_back(best_special_token);
+            start = best_match_pos + best_match_len;
+        } else {
+            if (start < text.size())
+                result.push_back(text.substr(start));
+            break;
+        }
+    }
+    return result;
+}
+
+void Tokenizer::load_chat_template(const std::string& template_file) {
+    std::ifstream file(template_file);
+    if (!file.is_open()) {
+        has_chat_template_ = false;
+        return;
+    }
+    chat_template_ = std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    has_chat_template_ = !chat_template_.empty();
+}
+
 void Tokenizer::detect_model_type(const std::string& config_path) {
     std::ifstream file(config_path);
     if (!file.is_open()) {

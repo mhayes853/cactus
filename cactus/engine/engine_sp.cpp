@@ -362,6 +362,7 @@ std::vector<std::pair<std::string, uint32_t>> SPTokenizer::tokenize_with_trie(co
 }
 
 std::vector<std::string> SPTokenizer::split_with_special_tokens(const std::string& text) const {
+<<<<<<< cfg
     std::vector<std::string> result;
 
     size_t start = 0;
@@ -395,6 +396,9 @@ std::vector<std::string> SPTokenizer::split_with_special_tokens(const std::strin
     }
 
     return result;
+=======
+    return cactus::engine::split_with_special_tokens(text, special_tokens_);
+>>>>>>> main
 }
 
 std::vector<uint32_t> SPTokenizer::encode(const std::string& text) const {
@@ -449,6 +453,7 @@ void SPTokenizer::load_special_tokens(const std::string& config_file) {
     load_special_tokens_map(config_file, special_tokens_);
 }
 
+<<<<<<< cfg
 void SPTokenizer::load_chat_template(const std::string& template_file) {
     std::ifstream file(template_file);
     if (!file.is_open()) {
@@ -460,5 +465,7 @@ void SPTokenizer::load_chat_template(const std::string& template_file) {
     has_chat_template_ = !chat_template_.empty();
 }
 
+=======
+>>>>>>> main
 } // namespace engine
 } // namespace cactus
