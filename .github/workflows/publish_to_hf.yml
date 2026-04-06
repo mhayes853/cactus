@@ -70,21 +70,15 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.branch || steps.version.outputs.tag }}
-<<<<<<< cfg
-          submodules: recursive
-=======
->>>>>>> main
-
-      - uses: actions/checkout@v4
-        with:
           repository: cactus-compute/cactus-pro
           token: ${{ secrets.CACTUS_PRO_TOKEN }}
           path: cactus-pro
+          ref: ${{ github.event.inputs.branch || steps.version.outputs.tag }}
+          submodules: recursive
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Install dependencies
         run: pip install -r python/requirements.txt
