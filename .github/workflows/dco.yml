@@ -10,9 +10,10 @@ jobs:
     name: DCO Check
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          submodules: recursive
 
       - name: Check DCO
         uses: dco-action/check@v1

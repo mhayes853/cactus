@@ -69,6 +69,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           clean: false
+          submodules: recursive
 
       - name: Check for Python changes
         id: check_python
@@ -144,6 +145,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           clean: false
+          submodules: recursive
       - name: Run unit tests
         env:
           CACTUS_INDEX_PATH: ${{ runner.temp }}/cactus_index
@@ -210,6 +212,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           clean: false
+          submodules: recursive
       - name: Run exhaustive test
         env:
           CACTUS_NO_CLOUD_TELE: "1"

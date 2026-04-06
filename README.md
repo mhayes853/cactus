@@ -229,7 +229,7 @@ graph.hard_reset();
 │                                                                              │
 │ Step 1: clone and setup                                                      │
 │ git clone https://github.com/cactus-compute/cactus && cd cactus              │
-│ source ./setup  # initializes required submodules automatically              │
+│ source ./setup                                                               │
 │                                                                              │
 │ Step 2: use the commands                                                     │
 │──────────────────────────────────────────────────────────────────────────────│
