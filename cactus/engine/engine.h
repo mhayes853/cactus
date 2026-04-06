@@ -56,15 +56,15 @@ namespace engine {
 
 class Siglip2Preprocessor;
 
-enum class VocabType {
-    RAW,
-    BYTE_LEVEL,
-    BYTE_FALLBACK
-};
-
 struct GrammarVocabulary {
+    enum class Type {
+        RAW,
+        BYTE_LEVEL,
+        BYTE_FALLBACK
+    };
+
     std::vector<std::string> encoded_vocab;
-    VocabType vocab_type = VocabType::RAW;
+    Type vocab_type = Type::RAW;
     size_t vocab_size;
     std::vector<uint32_t> stop_token_ids;
     bool add_prefix_space = false;

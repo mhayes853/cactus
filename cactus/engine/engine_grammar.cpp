@@ -19,16 +19,16 @@ GrammarVocabulary Tokenizer::get_grammar_vocabulary() const {
         }
     }
 
-    VocabType vocab_type = VocabType::RAW;
+    GrammarVocabulary::Type vocab_type = GrammarVocabulary::Type::RAW;
 
     const auto has_none = runtime_config_.decoder == TokenizerRuntimeConfig::Decoder::NONE
         && runtime_config_.normalizer == TokenizerRuntimeConfig::Normalizer::NONE;
     const auto is_byte_level = runtime_config_.decoder == TokenizerRuntimeConfig::Decoder::BYTE_LEVEL
         || runtime_config_.normalizer == TokenizerRuntimeConfig::Normalizer::BYTE_LEVEL;
     if (runtime_config_.byte_fallback) {
-        vocab_type = VocabType::BYTE_FALLBACK;
+        vocab_type = GrammarVocabulary::Type::BYTE_FALLBACK;
     } else if (is_byte_level || has_none) {
-        vocab_type = VocabType::BYTE_LEVEL;
+        vocab_type = GrammarVocabulary::Type::BYTE_LEVEL;
     }
 
     const auto& encoded_vocab = get_encoded_vocab();
@@ -381,13 +381,13 @@ const xgrammar::Grammar& Grammar::raw_value() const {
 
 namespace {
 
-static xgrammar::VocabType to_xgrammar_vocab_type(VocabType vocab_type) {
+static xgrammar::VocabType to_xgrammar_vocab_type(GrammarVocabulary::Type vocab_type) {
     switch (vocab_type) {
-        case VocabType::RAW:
+        case GrammarVocabulary::Type::RAW:
             return xgrammar::VocabType::RAW;
-        case VocabType::BYTE_LEVEL:
+        case GrammarVocabulary::Type::BYTE_LEVEL:
             return xgrammar::VocabType::BYTE_LEVEL;
-        case VocabType::BYTE_FALLBACK:
+        case GrammarVocabulary::Type::BYTE_FALLBACK:
             return xgrammar::VocabType::BYTE_FALLBACK;
     }
 }
