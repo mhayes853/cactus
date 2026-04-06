@@ -32,11 +32,11 @@ static inline bool is_lfm2_identifier_char(char c) {
     return std::isalnum(uc) || c == '_' || c == '-';
 }
 
-struct Lfm2ParserState {
+struct LFM2ToolCallParserState {
     const std::string& text;
     size_t pos = 0;
 
-    Lfm2ParserState(const std::string& text) : text(text) {}
+    LFM2ToolCallParserState(const std::string& text) : text(text) {}
 
     bool at_end() const { return pos >= text.size(); }
     char peek() const { return at_end() ? '\0' : text[pos]; }
@@ -64,7 +64,7 @@ struct Lfm2ParserState {
     }
 };
 
-static inline bool parse_lfm2_identifier(Lfm2ParserState& state, std::string& out) {
+static inline bool parse_lfm2_identifier(LFM2ToolCallParserState& state, std::string& out) {
     state.skip_whitespace();
     if (state.at_end() || !is_lfm2_identifier_start(state.peek())) return false;
 
@@ -76,7 +76,7 @@ static inline bool parse_lfm2_identifier(Lfm2ParserState& state, std::string& ou
     return true;
 }
 
-static inline bool parse_lfm2_string(Lfm2ParserState& state, picojson::value& out) {
+static inline bool parse_lfm2_string(LFM2ToolCallParserState& state, picojson::value& out) {
     state.skip_whitespace();
     if (state.peek() != '"') return false;
 
@@ -109,7 +109,7 @@ static inline bool parse_lfm2_string(Lfm2ParserState& state, picojson::value& ou
     return false;
 }
 
-static inline bool parse_lfm2_number(Lfm2ParserState& state, picojson::value& out) {
+static inline bool parse_lfm2_number(LFM2ToolCallParserState& state, picojson::value& out) {
     state.skip_whitespace();
     size_t start = state.pos;
     if (state.peek() == '-') state.pos++;
@@ -161,9 +161,9 @@ static inline bool parse_lfm2_number(Lfm2ParserState& state, picojson::value& ou
     }
 }
 
-static inline bool parse_lfm2_value(Lfm2ParserState& state, picojson::value& out);
+static inline bool parse_lfm2_value(LFM2ToolCallParserState& state, picojson::value& out);
 
-static inline bool parse_lfm2_list(Lfm2ParserState& state, picojson::value& out) {
+static inline bool parse_lfm2_list(LFM2ToolCallParserState& state, picojson::value& out) {
     state.skip_whitespace();
     if (!state.consume_if('[')) return false;
 
@@ -188,7 +188,7 @@ static inline bool parse_lfm2_list(Lfm2ParserState& state, picojson::value& out)
     }
 }
 
-static inline bool parse_lfm2_dict(Lfm2ParserState& state, picojson::value& out) {
+static inline bool parse_lfm2_dict(LFM2ToolCallParserState& state, picojson::value& out) {
     state.skip_whitespace();
     if (!state.consume_if('{')) return false;
 
@@ -220,7 +220,7 @@ static inline bool parse_lfm2_dict(Lfm2ParserState& state, picojson::value& out)
     }
 }
 
-static inline bool parse_lfm2_value(Lfm2ParserState& state, picojson::value& out) {
+static inline bool parse_lfm2_value(LFM2ToolCallParserState& state, picojson::value& out) {
     state.skip_whitespace();
     if (state.at_end()) return false;
 
@@ -249,7 +249,7 @@ static inline bool parse_lfm2_call(const std::string& entry, std::string& out_js
     std::string trimmed_entry = trim_lfm2_slice(entry, 0, entry.size());
     if (trimmed_entry.empty()) return false;
 
-    Lfm2ParserState state(trimmed_entry);
+    LFM2ToolCallParserState state(trimmed_entry);
     std::string func_name;
     if (!parse_lfm2_identifier(state, func_name)) return false;
     if (!state.consume_if('(')) return false;
@@ -282,7 +282,7 @@ static inline bool parse_lfm2_call(const std::string& entry, std::string& out_js
     return true;
 }
 
-struct Lfm2TopLevelState {
+struct LFM2TopLevelParserState {
     const std::string& text;
     size_t pos = 0;
     int paren_depth = 0;
@@ -290,8 +290,9 @@ struct Lfm2TopLevelState {
     int brace_depth = 0;
     bool in_string = false;
     bool escape = false;
+    size_t obj_end_pos = 0;
 
-    Lfm2TopLevelState(const std::string& text) : text(text) {}
+    LFM2TopLevelParserState(const std::string& text) : text(text) {}
 
     bool at_end() const { return pos >= text.size(); }
 
@@ -304,6 +305,47 @@ struct Lfm2TopLevelState {
     bool starts_with_json_object_list() {
         skip_whitespace();
         return !at_end() && text[pos] == '{';
+    }
+
+    bool next_tool_call(std::string& out_json) {
+        size_t pos = obj_end_pos;
+        while (pos < text.size() && text[pos] != '{') {
+            pos++;
+        }
+        if (pos >= text.size() || text[pos] != '{') return false;
+
+        int brace_depth = 1;
+        size_t obj_start = pos;
+        pos++;
+        in_string = false;
+        escape = false;
+        while (pos < text.size() && brace_depth > 0) {
+            char c = text[pos];
+            if (escape) {
+                escape = false;
+            } else if (in_string) {
+                if (c == '\\') {
+                    escape = true;
+                } else if (c == '"') {
+                    in_string = false;
+                }
+            } else {
+                if (c == '"') {
+                    in_string = true;
+                } else if (c == '{') {
+                    brace_depth++;
+                } else if (c == '}') {
+                    brace_depth--;
+                }
+            }
+            pos++;
+        }
+        if (brace_depth == 0) {
+            out_json = text.substr(obj_start, pos - obj_start);
+            obj_end_pos = pos;
+            return true;
+        }
+        return false;
     }
 
     std::string next_entry() {
@@ -359,28 +401,13 @@ static inline void parse_lfm2_function_calls(const std::string& tool_content,
 
     if (!content.empty() && content.front() == '[' && content.back() == ']') {
         std::string inner = content.substr(1, content.size() - 2);
-        Lfm2TopLevelState state(inner);
+        LFM2TopLevelParserState state(inner);
 
         if (state.starts_with_json_object_list()) {
-            size_t pos = 0;
-            while (pos < inner.size()) {
-                if (inner[pos] == '{') {
-                    int brace_depth = 1;
-                    size_t obj_start = pos;
-                    pos++;
-                    while (pos < inner.size() && brace_depth > 0) {
-                        if (inner[pos] == '{') brace_depth++;
-                        else if (inner[pos] == '}') brace_depth--;
-                        pos++;
-                    }
-                    if (brace_depth == 0) {
-                        std::string json_obj = inner.substr(obj_start, pos - obj_start);
-                        if (json_obj.find("\"name\"") != std::string::npos) {
-                            function_calls.push_back(json_obj);
-                        }
-                    }
-                } else {
-                    pos++;
+            std::string json_obj;
+            while (state.next_tool_call(json_obj)) {
+                if (json_obj.find("\"name\"") != std::string::npos) {
+                    function_calls.push_back(json_obj);
                 }
             }
             return;
