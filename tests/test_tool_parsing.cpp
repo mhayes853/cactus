@@ -71,10 +71,42 @@ static bool test_lfm2_parser_handles_hyphenated_tool_name() {
     return true;
 }
 
+static bool test_lfm2_parser_ignores_braces_in_quoted_strings() {
+    std::string response = "<|tool_call_start|>[{\"name\":\"emit\",\"arguments\":{\"data\":{\"key\":\"a}b\"},\"items\":[\"x\",\"y]z\"]}}]<|tool_call_end|>";
+    std::string regular_response;
+    std::vector<std::string> function_calls;
+    cactus::ffi::parse_function_calls_from_response(response, regular_response, function_calls);
+
+    if (function_calls.size() != 1) return false;
+
+    picojson::value parsed;
+    std::string error;
+    picojson::parse(parsed, function_calls[0].begin(), function_calls[0].end(), &error);
+    if (!error.empty() || !parsed.is<picojson::object>()) return false;
+
+    if (!parsed.contains("name") || !parsed.get("name").is<std::string>()) return false;
+    if (parsed.get("name").get<std::string>() != "emit") return false;
+
+    const picojson::value& args = parsed.get("arguments");
+    if (!args.is<picojson::object>() || !args.contains("data")) return false;
+    const picojson::value& data = args.get("data");
+    if (!data.is<picojson::object>() || !data.contains("key")) return false;
+    if (!data.get("key").is<std::string>() || data.get("key").get<std::string>() != "a}b") return false;
+
+    if (!args.contains("items") || !args.get("items").is<picojson::array>()) return false;
+    const picojson::value& items = args.get("items");
+    if (!items.contains(0) || !items.contains(1) || items.contains(2)) return false;
+    if (!items.get(0).is<std::string>() || items.get(0).get<std::string>() != "x") return false;
+    if (!items.get(1).is<std::string>() || items.get(1).get<std::string>() != "y]z") return false;
+
+    return true;
+}
+
 int main() {
     TestUtils::TestRunner runner("Tool Parsing Tests");
     runner.run_test("lfm2_mixed_argument_types", test_lfm2_parser_preserves_mixed_argument_types());
     runner.run_test("lfm2_handles_hyphenated_tool_name", test_lfm2_parser_handles_hyphenated_tool_name());
+    runner.run_test("lfm2_ignores_braces_in_quoted_strings", test_lfm2_parser_ignores_braces_in_quoted_strings());
     runner.print_summary();
     return runner.all_passed() ? 0 : 1;
 }
