@@ -94,13 +94,16 @@ fn link_clang_runtime_for_sme2() {
 fn link_clang_runtime_for_sme2() {}
 
 fn build_native_library(cactus_src: &Path) -> PathBuf {
-    cmake::Config::new(cactus_src)
+    let mut config = cmake::Config::new(cactus_src);
+    config
         .define("BUILD_SHARED_LIBS", "OFF")
         .define("CMAKE_BUILD_TYPE", "Release")
-        .cxxflag(r#"-DCACTUS_DEFAULT_FRAMEWORK=\"rust\""#)
-        .build_target("cactus")
-        .build()
-        .join("build")
+        .cxxflag(r#"-DCACTUS_DEFAULT_FRAMEWORK=\"rust\""#);
+
+    #[cfg(target_os = "linux")]
+    config.cxxflag("-fno-lto");
+
+    config.build_target("cactus").build().join("build")
 }
 
 fn link_native_library(build_dir: &Path) {
