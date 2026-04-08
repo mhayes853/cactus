@@ -572,7 +572,7 @@ void cactus_sample_f32(const float* logits, uint32_t* output, size_t vocab_size,
 
     cactus_bitmask_f32(filtered_logits.data(), vocab_size, token_bitmask, token_bitmask_size);
 
-    if (temperature == 0.0f && top_p <= 0.0f && top_k == 0) {
+    if (temperature == 0.0f) {
         auto it = std::max_element(filtered_logits.begin(), filtered_logits.end());
         output[0] = static_cast<uint32_t>(std::distance(filtered_logits.begin(), it));
         return;
@@ -783,7 +783,7 @@ void cactus_sample_f16(const __fp16* logits, uint32_t* output, size_t vocab_size
 
     cactus_bitmask_f16(filtered_logits.data(), vocab_size, token_bitmask, token_bitmask_size);
 
-    if (temperature == 0.0f && top_p <= 0.0f && top_k == 0) {
+    if (temperature == 0.0f) {
         auto it = std::max_element(filtered_logits.begin(), filtered_logits.end());
         output[0] = static_cast<uint32_t>(std::distance(filtered_logits.begin(), it));
         return;

@@ -76,15 +76,28 @@ typedef CactusPrefillNative = Int32 Function(
     Pointer<Uint8> pcmBuffer,
     IntPtr pcmBufferSize);
 
-typedef CactusPrefillDart = Int32 Function(
+typedef CactusCompleteDart = int Function(
     CactusModelT model,
     Pointer<Utf8> messagesJson,
     Pointer<Utf8> responseBuffer,
-    IntPtr bufferSize,
+    int bufferSize,
+    Pointer<Utf8> optionsJson,
+    Pointer<Utf8> toolsJson,
+    Pointer<NativeFunction<TokenCallbackNative>> callback,
+    Pointer<Void> userData,
+    Pointer<Uint8> pcmBuffer,
+    int pcmBufferSize,
+    CactusGrammarT grammar);
+
+typedef CactusPrefillDart = int Function(
+    CactusModelT model,
+    Pointer<Utf8> messagesJson,
+    Pointer<Utf8> responseBuffer,
+    int bufferSize,
     Pointer<Utf8> optionsJson,
     Pointer<Utf8> toolsJson,
     Pointer<Uint8> pcmBuffer,
-    IntPtr pcmBufferSize);
+    int pcmBufferSize);
 
 typedef CactusTokenizeNative = Int32 Function(
     CactusModelT model,
@@ -226,19 +239,6 @@ typedef CactusInitDart = CactusModelT Function(
 typedef CactusDestroyDart = void Function(CactusModelT model);
 typedef CactusResetDart = void Function(CactusModelT model);
 typedef CactusStopDart = void Function(CactusModelT model);
-
-typedef CactusCompleteDart = int Function(
-    CactusModelT model,
-    Pointer<Utf8> messagesJson,
-    Pointer<Utf8> responseBuffer,
-    int bufferSize,
-    Pointer<Utf8> optionsJson,
-    Pointer<Utf8> toolsJson,
-    Pointer<NativeFunction<TokenCallbackNative>> callback,
-    Pointer<Void> userData,
-    Pointer<Uint8> pcmBuffer,
-    int pcmBufferSize,
-    CactusGrammarT grammar);
 
 typedef CactusGrammarInitGBNFNative = CactusGrammarT Function(
     Pointer<Utf8> gbnf, Pointer<Utf8> startSymbol);
