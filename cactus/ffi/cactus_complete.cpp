@@ -454,7 +454,8 @@ uint32_t decode(
     float* out_entropy,
     cactus::engine::GrammarMatcher* matcher = nullptr
 ) {
-    return model->decode(tokens, options.temperature, options.top_p, options.top_k, "", out_entropy, matcher);
+    return model->decode(tokens, options.temperature, options.top_p, options.top_k,
+                         "", out_entropy, options.min_p, options.repetition_penalty, matcher);
 }
 
 uint32_t generate_first_token(
@@ -570,7 +571,9 @@ int cactus_complete(
             next_token = handle->model->decode_with_audio(
                 prompt.tokens, prompt.audio_features,
                 prompt.options.temperature, prompt.options.top_p, prompt.options.top_k,
-                "", &first_token_entropy, nullptr, nullptr,
+                "", &first_token_entropy,
+                prompt.options.min_p, prompt.options.repetition_penalty,
+                nullptr, nullptr,
                 handle->grammar_matcher_handle.matcher.get());
         } else {
             auto prefill_result = do_prefill(handle, prompt, prompt.tokens);
@@ -640,7 +643,9 @@ int cactus_complete(
                     next_token = handle->model->decode_with_audio(
                         handle->processed_tokens, prompt.audio_features,
                         prompt.options.temperature, prompt.options.top_p, prompt.options.top_k,
-                        "", &token_entropy, nullptr, nullptr,
+                        "", &token_entropy,
+                        prompt.options.min_p, prompt.options.repetition_penalty,
+                        nullptr, nullptr,
                         handle->grammar_matcher_handle.matcher.get());
                 } else {
                     next_token = decode(

@@ -337,6 +337,8 @@ struct OpParams {
     size_t stride = 1;
     float temperature = 1.0f;
     float top_p = 1.0f;
+    float min_p = 0.15f;
+    float repetition_penalty = 1.1f;
     size_t top_k = 0;
     size_t random_seed = 0;
 
@@ -345,6 +347,7 @@ struct OpParams {
     size_t num_groups = 0;
     size_t dst_height = 0;
     size_t dst_width = 0;
+    bool align_corners = true;
     bool normalize_routing = false;
     size_t num_experts = 0;
     size_t num_experts_per_tok = 0;
@@ -531,7 +534,7 @@ public:
     void release_all_weight_pages();
     size_t embedding(const std::string& filename, size_t indices);
     size_t embedding(size_t embedding_tensor, size_t indices);
-    size_t bilinear_interpolation(size_t pos_embeds, size_t dst_height, size_t dst_width);
+    size_t bilinear_interpolation(size_t pos_embeds, size_t dst_height, size_t dst_width, bool align_corners = true);
 
     size_t layernorm(size_t input, size_t weight, size_t bias, float epsilon = 1e-5f);
     size_t layernorm(size_t input, size_t weight, float epsilon = 1e-5f);  // No bias version
@@ -620,6 +623,9 @@ public:
     size_t sample(size_t logits, float temperature = 0.6f, float top_p = 0.95f, size_t top_k = 20,
                   const std::unordered_map<uint32_t, float>& logit_bias = {},
                   const std::vector<int32_t>& token_bitmask = {});
+    size_t sample_with_options(size_t logits, float temperature, float top_p, float min_p, float repetition_penalty,
+                               size_t top_k, const std::unordered_map<uint32_t, float>& logit_bias = {},
+                               const std::vector<int32_t>& token_bitmask = {});
 
     size_t concat(size_t input1, size_t input2, int axis = 0);
     size_t cat(const std::vector<size_t>& inputs, int axis);
@@ -653,6 +659,7 @@ public:
     std::unordered_map<size_t, size_t> node_index_map_;
 
 private:
+    // Starts at 1 so that 0 can be used as a "no node" sentinel by callers.
     size_t next_node_id_;
     std::vector<std::unique_ptr<GraphFile::MappedFile>> mapped_files_;
     std::unordered_map<std::string, size_t> weight_cache_;

@@ -210,6 +210,7 @@ void Model::prefill_with_images(const std::vector<uint32_t>& tokens, const std::
 
 uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, float top_p,
                         size_t top_k, const std::string& profile_file, float* out_entropy,
+                        float min_p, float repetition_penalty,
                         cactus::engine::GrammarMatcher* matcher) {
 
     if (temperature < 0) {
@@ -241,7 +242,6 @@ uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, f
         logits_node_id = gb->tanh(logits_node_id);
         logits_node_id = gb->scalar_multiply(logits_node_id, config_.final_logit_softcapping);
     }
-
     const auto& logits_buffer = gb->get_output_buffer(logits_node_id);
 
     std::vector<int32_t> bitmask;
@@ -249,7 +249,7 @@ uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, f
         matcher->next_bitmask(bitmask, logits_buffer.shape.back());
     }
 
-    auto sampled_token_id = sample_token(gb, logits_node_id, temperature, top_p, top_k, nullptr, &bitmask);
+    auto sampled_token_id = sample_token(gb, logits_node_id, temperature, top_p, top_k, min_p, repetition_penalty, nullptr, &bitmask);
 
     gb->execute(profile_file);
 
@@ -258,14 +258,17 @@ uint32_t Model::decode(const std::vector<uint32_t>& tokens, float temperature, f
     post_execute_updates(gb, tokens.size());
     update_kv_cache(gb, tokens.size());
 
-    uint32_t token_id = *static_cast<uint32_t*>(gb->get_output(sampled_token_id));
+    auto* output_ptr = gb->get_output(sampled_token_id);
+    uint32_t result_token = *static_cast<uint32_t*>(output_ptr);
     if (matcher) {
-        matcher->accept(token_id);
+        matcher->accept(result_token);
     }
-    return token_id;
+    record_sampled_token(result_token);
+    return result_token;
 }
 
 size_t Model::sample_token(CactusGraph* gb, size_t logits_node_id, float temperature, float top_p, size_t top_k,
+                           float min_p, float repetition_penalty,
                            const std::unordered_map<uint32_t, float>* extra_bias,
                            const std::vector<int32_t>* token_bitmask) const {
     auto combined_bias = std::unordered_map<uint32_t, float>{};
@@ -277,10 +280,18 @@ size_t Model::sample_token(CactusGraph* gb, size_t logits_node_id, float tempera
             combined_bias[token_id] += boost;
         }
     }
-    return gb->sample(
+    if (!token_history_.empty() && repetition_penalty > 1.0f && std::isfinite(repetition_penalty)) {
+        float log_penalty = std::log(repetition_penalty);
+        for (uint32_t tok : token_history_) {
+            combined_bias[tok] -= log_penalty;
+        }
+    }
+    return gb->sample_with_options(
         logits_node_id,
         temperature,
         top_p,
+        min_p,
+        1.0f,
         top_k,
         combined_bias,
         token_bitmask ? *token_bitmask : std::vector<int32_t>{}
@@ -328,14 +339,17 @@ void Model::compute_entropy(CactusGraph* gb, size_t logits_node_id, float* out_e
     *out_entropy = static_cast<float>(entropy / max_entropy);
 }
 
-uint32_t Model::decode_with_audio(const std::vector<uint32_t>& tokens, const std::vector<float>& /*mel_bins*/, float temperature, float top_p, size_t top_k, const std::string& profile_file, float* out_entropy, float* /*out_token_time_start*/, float* /*out_token_time_end*/, GrammarMatcher* matcher){
-    return decode(tokens, temperature, top_p, top_k, profile_file, out_entropy, matcher);
+uint32_t Model::decode_with_audio(const std::vector<uint32_t>& tokens, const std::vector<float>& /*mel_bins*/, float temperature, float top_p, size_t top_k, const std::string& profile_file, float* out_entropy,
+                                  float min_p, float repetition_penalty,
+                                  float* /*out_token_time_start*/, float* /*out_token_time_end*/, GrammarMatcher* matcher){
+    return decode(tokens, temperature, top_p, top_k, profile_file, out_entropy, min_p, repetition_penalty, matcher);
 }
 
 uint32_t Model::decode_with_images(const std::vector<uint32_t>& tokens, const std::vector<std::string>& image_paths,
-                                     float temperature, float top_p, size_t top_k, const std::string& profile_file, float* out_entropy, GrammarMatcher* matcher) {
+                                      float temperature, float top_p, size_t top_k, const std::string& profile_file, float* out_entropy,
+                                      float min_p, float repetition_penalty, GrammarMatcher* matcher) {
     (void)image_paths;
-    return decode(tokens, temperature, top_p, top_k, profile_file, out_entropy, matcher);
+    return decode(tokens, temperature, top_p, top_k, profile_file, out_entropy, min_p, repetition_penalty, matcher);
 }
 
 std::vector<float> Model::get_image_embeddings(const std::string& /*image_path*/) {

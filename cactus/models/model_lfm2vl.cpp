@@ -397,6 +397,8 @@ uint32_t Lfm2VlModel::decode(const std::vector<uint32_t>& tokens,
                                size_t top_k,
                                const std::string& profile_file,
                                float* out_entropy,
+                               float min_p,
+                               float repetition_penalty,
                                cactus::engine::GrammarMatcher* matcher) {
     if (!initialized_ || !graph_handle_) {
         throw std::runtime_error("Model not initialized - call init() first");
@@ -415,7 +417,7 @@ uint32_t Lfm2VlModel::decode(const std::vector<uint32_t>& tokens,
     image_prefill_completed_ = false;
     last_token_count_ = tokens.size();
 
-    return language_model_.decode(tokens, temperature, top_p, top_k, profile_file, out_entropy, matcher);
+    return language_model_.decode(tokens, temperature, top_p, top_k, profile_file, out_entropy, min_p, repetition_penalty, matcher);
 }
 
 void Lfm2VlModel::prefill(const std::vector<uint32_t>& tokens, size_t chunk_size, const std::string& profile_file) {
@@ -512,6 +514,8 @@ uint32_t Lfm2VlModel::decode_with_images(
     size_t top_k,
     const std::string& profile_file,
     float* out_entropy,
+    float min_p,
+    float repetition_penalty,
     GrammarMatcher* matcher) {
 
     if (!initialized_ || !graph_handle_) {
@@ -522,7 +526,7 @@ uint32_t Lfm2VlModel::decode_with_images(
 
         image_prefill_completed_ = false;
         last_token_count_ = tokens.size();
-        return language_model_.decode(tokens, temperature, top_p, top_k, profile_file, out_entropy);
+        return language_model_.decode(tokens, temperature, top_p, top_k, profile_file, out_entropy, min_p, repetition_penalty, matcher);
     }
 
     if (temperature < 0) {
@@ -587,7 +591,8 @@ uint32_t Lfm2VlModel::decode_with_images(
         matcher->next_bitmask(bitmask, logits_buffer.shape.back());
     }
 
-    auto sampled_token_id = gb->sample(logits_node_id, temperature, top_p, top_k, {}, bitmask);
+    size_t sampled_token_id =
+        language_model_.sample_token(gb, logits_node_id, temperature, top_p, top_k, min_p, repetition_penalty, nullptr, &bitmask);
     if (!profile_file.empty()) {
         gb->execute(profile_file);
 
@@ -601,11 +606,13 @@ uint32_t Lfm2VlModel::decode_with_images(
     language_model_.post_execute_updates(gb, seq_len_for_updates);
     language_model_.update_kv_cache(gb, seq_len_for_updates);
 
-    uint32_t token_id = *static_cast<uint32_t*>(gb->get_output(sampled_token_id));
+    auto* output_ptr = gb->get_output(sampled_token_id);
+    uint32_t result = *static_cast<uint32_t*>(output_ptr);
     if (matcher) {
-        matcher->accept(token_id);
+        matcher->accept(result);
     }
-    return token_id;
+    language_model_.record_sampled_token(result);
+    return result;
 }
 
 }

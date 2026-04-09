@@ -286,10 +286,7 @@ public:
     virtual size_t forward_vision(CactusGraph* gb, 
                          const Siglip2Preprocessor::PreprocessedImage& preprocessed_image,
                          ComputeBackend backend);
-    std::vector<float> get_image_features(const std::string& image_path);
-    std::vector<float> get_image_features(const Siglip2Preprocessor::PreprocessedImage& preprocessed_image);
     std::vector<float> get_image_embedding(const std::string& image_path);
-    size_t get_image_features_node(const Siglip2Preprocessor::PreprocessedImage& preprocessed_image);
     Siglip2Preprocessor& get_preprocessor() { return preprocessor_; }
     const Siglip2Preprocessor& get_preprocessor() const { return preprocessor_; }
 
@@ -631,6 +628,7 @@ protected:
 
     uint32_t decode_with_audio(const std::vector<uint32_t>& tokens, const std::vector<float>& audio_features,
                                      float temperature = 0.0f, float top_p = 0.0f, size_t top_k = 0, const std::string& profile_file = "", float* out_entropy = nullptr,
+                                     float min_p = 0.15f, float repetition_penalty = 1.1f,
                                      float* out_token_time_start = nullptr, float* out_token_time_end = nullptr,
                                      GrammarMatcher* matcher = nullptr) override;
 
@@ -904,6 +902,7 @@ protected:
 
     uint32_t decode_with_audio(const std::vector<uint32_t>& tokens, const std::vector<float>& audio_features,
                                      float temperature = 0.0f, float top_p = 0.0f, size_t top_k = 0, const std::string& profile_file = "", float* out_entropy = nullptr,
+                                     float min_p = 0.15f, float repetition_penalty = 1.1f,
                                      float* out_token_time_start = nullptr, float* out_token_time_end = nullptr,
                                      GrammarMatcher* matcher = nullptr) override;
 
@@ -1036,6 +1035,7 @@ protected:
     uint32_t decode_with_audio(const std::vector<uint32_t>& tokens, const std::vector<float>& audio_features,
                                float temperature = 0.0f, float top_p = 0.0f, size_t top_k = 0,
                                const std::string& profile_file = "", float* out_entropy = nullptr,
+                               float min_p = 0.15f, float repetition_penalty = 1.1f,
                                float* out_token_time_start = nullptr, float* out_token_time_end = nullptr,
                                GrammarMatcher* matcher = nullptr) override;
     std::vector<float> get_audio_embeddings(const std::vector<float>& audio_features) override;
@@ -1186,6 +1186,7 @@ protected:
     uint32_t decode_with_audio(const std::vector<uint32_t>& tokens, const std::vector<float>& audio_features,
                                float temperature = 0.0f, float top_p = 0.0f, size_t top_k = 0,
                                const std::string& profile_file = "", float* out_entropy = nullptr,
+                               float min_p = 0.15f, float repetition_penalty = 1.1f,
                                float* out_token_time_start = nullptr, float* out_token_time_end = nullptr,
                                GrammarMatcher* matcher = nullptr) override;
     std::vector<float> get_audio_embeddings(const std::vector<float>& audio_features) override;
@@ -1314,6 +1315,8 @@ public:
                       size_t top_k = 0,
                       const std::string& profile_file = "",
                       float* out_entropy = nullptr,
+                      float min_p = 0.15f,
+                      float repetition_penalty = 1.1f,
                       cactus::engine::GrammarMatcher* matcher = nullptr) override;
 
     void prefill(const std::vector<uint32_t>& tokens, size_t chunk_size = 256, const std::string& profile_file = "") override;
@@ -1328,7 +1331,9 @@ public:
         float top_p = -1.0f,
         size_t top_k = 0,
         const std::string& profile_file = "",
-        float* out_entropy = nullptr, 
+        float* out_entropy = nullptr,
+        float min_p = 0.15f,
+        float repetition_penalty = 1.1f,
         GrammarMatcher* matcher = nullptr) override;
 
     void reset_cache() override;
