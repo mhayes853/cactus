@@ -859,17 +859,14 @@ size_t CactusGraph::conv2d_k3s2p1(size_t input, size_t weight, size_t bias) {
     if (xin.shape.size() != 4) {
         throw std::runtime_error("conv2d_k3s2p1 expects input [N, C_in, H, W]");
     }
-    if (w.shape.size() != 4) {
-        throw std::runtime_error("conv2d_k3s2p1 weight must be [C_out, C_in, 3, 3]");
-    }
 
     const size_t C_in = xin.shape[1];
     const size_t H = xin.shape[2];
     const size_t W = xin.shape[3];
     const size_t C_out = w.shape[0];
 
-    if (w.shape[1] != C_in || w.shape[2] != 3 || w.shape[3] != 3) {
-        throw std::runtime_error("conv2d_k3s2p1 weight must match [C_out, C_in, 3, 3]");
+    if (w.shape.size() != 4 || w.shape[1] != C_in || w.shape[2] != 3 || w.shape[3] != 3) {
+        throw std::runtime_error("conv2d_k3s2p1 weight must be [C_out, C_in, 3, 3]");
     }
     if (b.total_size != C_out) {
         throw std::runtime_error("conv2d_k3s2p1 bias size mismatch");
@@ -1649,19 +1646,16 @@ size_t CactusGraph::conv2d_k3s1p1(size_t input, size_t weight, size_t bias) {
     if (xin.shape.size() != 4) {
         throw std::runtime_error("conv2d_k3s1p1 expects input [N, C_in, H, W]");
     }
-    if (w.shape.size() != 4) {
-        throw std::runtime_error("conv2d_k3s1p1 weight must be [C_out, C_in, 3, 3]");
-    }
 
     const size_t N = xin.shape[0];
     const size_t C_in = xin.shape[1];
     const size_t H = xin.shape[2];
     const size_t W = xin.shape[3];
-    const size_t C_out = w.shape[0];
 
-    if (w.shape[1] != C_in || w.shape[2] != 3 || w.shape[3] != 3) {
-        throw std::runtime_error("conv2d_k3s1p1 weight must match [C_out, C_in, 3, 3]");
+    if (w.shape.size() != 4 || w.shape[1] != C_in || w.shape[2] != 3 || w.shape[3] != 3) {
+        throw std::runtime_error("conv2d_k3s1p1 weight must be [C_out, C_in, 3, 3]");
     }
+    const size_t C_out = w.shape[0];
     if (b.total_size != C_out) {
         throw std::runtime_error("conv2d_k3s1p1 bias size mismatch");
     }
@@ -1680,4 +1674,12 @@ size_t CactusGraph::stats_pool(size_t input) {
     size_t features = 1;
     for (size_t i = 1; i < xin.shape.size() - 1; ++i) features *= xin.shape[i];
     return add_node(OpType::STATS_POOL, {input}, {batch, features * 2});
+}
+
+size_t CactusGraph::weighted_stats_pool(size_t input, size_t weights) {
+    const auto& xin = get_output_buffer(input);
+    size_t batch = xin.shape[0];
+    size_t features = 1;
+    for (size_t i = 1; i < xin.shape.size() - 1; ++i) features *= xin.shape[i];
+    return add_node(OpType::WEIGHTED_STATS_POOL, {input, weights}, {batch, features * 2});
 }

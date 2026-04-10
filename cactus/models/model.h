@@ -1571,7 +1571,7 @@ public:
     bool init(const std::string& model_folder, size_t context_size = 0,
               const std::string& system_prompt = "", bool do_warmup = false) override;
 
-    std::vector<float> diarize(const float* pcm_f32, size_t num_samples, size_t step_samples = 16000);
+    std::vector<float> diarize(const float* pcm_f32, size_t num_samples, size_t step_samples = 16000, bool raw_powerset = false);
 
 protected:
     size_t build_attention(CactusGraph*, size_t, uint32_t, ComputeBackend, bool, size_t) override {
@@ -1631,6 +1631,8 @@ public:
               const std::string& system_prompt = "", bool do_warmup = false) override;
 
     std::vector<float> embed(const float* fbank_features, size_t num_features);
+    std::vector<float> embed(const float* fbank_features, size_t num_features,
+                              const float* mask_weights, size_t mask_num_frames);
 
 protected:
     size_t build_attention(CactusGraph*, size_t, uint32_t, ComputeBackend, bool, size_t) override {
@@ -1653,31 +1655,33 @@ protected:
 
 private:
     void build_graph(size_t num_frames);
+    void build_graph_masked(size_t num_frames);
 
     struct ResBlockWeights {
-        size_t conv1_w, conv2_w;
-        size_t bn1_w, bn1_b, bn1_mean, bn1_var;
-        size_t bn2_w, bn2_b, bn2_mean, bn2_var;
-        size_t shortcut_conv_w;
-        size_t shortcut_bn_w, shortcut_bn_b, shortcut_bn_mean, shortcut_bn_var;
+        size_t conv1_w, conv1_b;
+        size_t conv2_w, conv2_b;
+        size_t shortcut_conv_w, shortcut_conv_b;
         bool has_shortcut = false;
     };
 
-    static ResBlockWeights load_resblock(CactusGraph* gb, const std::string& prefix, bool has_shortcut);
-    static size_t build_resblock(CactusGraph* gb, size_t x, const ResBlockWeights& rb, bool stride2);
+    ResBlockWeights load_resblock(CactusGraph* gb, const std::string& prefix, bool has_shortcut);
+    size_t build_resblock(CactusGraph* gb, size_t x, const ResBlockWeights& rb, bool stride2);
+    size_t build_resnet_body(CactusGraph* gb, size_t x);
 
     struct WeightNodeIDs {
-        size_t conv1_w;
-        size_t bn1_w, bn1_b, bn1_mean, bn1_var;
+        size_t conv1_w, conv1_b;
         std::vector<ResBlockWeights> layer1, layer2, layer3, layer4;
         size_t seg1_w, seg1_b;
     } weight_nodes_;
 
     CactusGraph graph_;
     size_t audio_input_ = 0;
+    size_t mask_input_ = 0;
     size_t output_node_ = 0;
     size_t current_num_frames_ = 0;
+    bool current_masked_ = false;
     std::vector<__fp16> input_buf_;
+    std::vector<float> mask_buf_;
 };
 
 }
