@@ -31,10 +31,10 @@ endif()
 file(GLOB ENGINE_SOURCES "${SOURCE_DIR}/engine/*.cpp")
 file(GLOB GRAPH_SOURCES "${SOURCE_DIR}/graph/*.cpp")
 file(GLOB KERNEL_SOURCES "${SOURCE_DIR}/kernel/*.cpp")
-set(SME2_SOURCE "${SOURCE_DIR}/kernel/kernel_sme2.cpp")
 set(I8MM_SOURCE "${SOURCE_DIR}/kernel/kernel_i8mm.cpp")
-list(REMOVE_ITEM KERNEL_SOURCES "${SME2_SOURCE}")
+set(SME2_SOURCE "${SOURCE_DIR}/kernel/kernel_sme2.cpp")
 list(REMOVE_ITEM KERNEL_SOURCES "${I8MM_SOURCE}")
+list(REMOVE_ITEM KERNEL_SOURCES "${SME2_SOURCE}")
 file(GLOB FFI_SOURCES "${SOURCE_DIR}/ffi/*.cpp")
 file(GLOB MODEL_SOURCES "${SOURCE_DIR}/models/*.cpp" "${SOURCE_DIR}/models/gemma4/*.cpp")
 file(GLOB TELEMETRY_SOURCES "${SOURCE_DIR}/telemetry/*.cpp")
@@ -220,18 +220,22 @@ set(APPLE_COMMON_OPTIONS
 )
 
 if(ENABLE_SME2 STREQUAL "AUTO")
-    include(CheckCXXSourceCompiles)
-    set(CMAKE_REQUIRED_FLAGS "${SME2_MARCH_FLAG}")
-    check_cxx_source_compiles("
-        #include <arm_sme.h>
-        int main() { return 0; }
-    " COMPILER_SUPPORTS_SME2)
-    unset(CMAKE_REQUIRED_FLAGS)
-    if(COMPILER_SUPPORTS_SME2)
-        set(BUILD_SME2 1)
-        message(STATUS "Xcode supports SME2 - building SME2 kernels")
+    if(NOT EXISTS "${SME2_SOURCE}")
+        message(STATUS "SME2 kernel source missing - building without SME2")
     else()
-        message(STATUS "Xcode does not support SME2 - building without SME2")
+        include(CheckCXXSourceCompiles)
+        set(CMAKE_REQUIRED_FLAGS "${SME2_MARCH_FLAG}")
+        check_cxx_source_compiles("
+            #include <arm_sme.h>
+            int main() { return 0; }
+        " COMPILER_SUPPORTS_SME2)
+        unset(CMAKE_REQUIRED_FLAGS)
+        if(COMPILER_SUPPORTS_SME2)
+            set(BUILD_SME2 1)
+            message(STATUS "Xcode supports SME2 - building SME2 kernels")
+        else()
+            message(STATUS "Xcode does not support SME2 - building without SME2")
+        endif()
     endif()
 endif()
 
@@ -249,7 +253,7 @@ if(BUILD_SME2)
     target_compile_definitions(cactus PRIVATE CACTUS_COMPILE_SME2)
 endif()
 
-# I8MM support: all Apple Silicon supports I8MM
+# I8MM support: detected at runtime via sysctl, not all Apple Silicon has FEAT_I8MM
 add_library(cactus_i8mm_obj OBJECT ${I8MM_SOURCE})
 target_include_directories(cactus_i8mm_obj PRIVATE
     ${SOURCE_DIR} ${SOURCE_DIR}/engine ${SOURCE_DIR}/graph

@@ -172,7 +172,7 @@ struct Config {
     float rope_scaling_factor = 1.0f;
     float rope_mscale_all_dim = 0.0f;
 
-    enum class ModelType {QWEN = 0, GEMMA = 1, NOMIC = 3, LFM2 = 5, SIGLIP2 = 6, WHISPER = 7, MOONSHINE = 8, SILERO_VAD = 9, PARAKEET = 10, QWEN3P5 = 11, PARAKEET_TDT = 12, GEMMA3N = 13, YOUTU = 14, GEMMA4 = 15, PYANNOTE = 16, WESPEAKER = 17};
+    enum class ModelType {QWEN = 0, GEMMA = 1, NOMIC = 3, LFM2 = 5, SIGLIP2 = 6, WHISPER = 7, MOONSHINE = 8, SILERO_VAD = 9, PARAKEET = 10, QWEN3P5 = 11, PARAKEET_TDT = 12, GEMMA3N = 13, YOUTU = 14, GEMMA4 = 15, PYANNOTE = 16, WESPEAKER = 17, NEEDLE = 18};
     uint32_t predictor_hidden_dim = 0;
     uint32_t predictor_num_layers = 0;
     uint32_t tdt_joint_dim = 0;
@@ -199,6 +199,7 @@ struct Config {
     size_t default_top_k = 20;
     float default_max_tps = -1.0f;
     float default_cloud_handoff_threshold = 0.0f;
+    size_t default_rolling_entropy_window = 10;
 
     std::vector<std::string> layer_types;
     size_t conv_L_cache = 0;
@@ -343,6 +344,33 @@ struct ChatMessage {
     std::vector<ToolCallInfo> tool_calls;
 };
 
+inline std::string format_needle_query_text(const std::vector<ChatMessage>& messages) {
+    std::string system_text;
+    std::string user_query;
+
+    for (const auto& msg : messages) {
+        if (msg.role == "system") {
+            if (!system_text.empty()) {
+                system_text += "\n";
+            }
+            system_text += msg.content;
+        } else if (msg.role == "user") {
+            user_query = msg.content;
+        }
+    }
+
+    if (user_query.empty() && !messages.empty()) {
+        user_query = messages.back().content;
+    }
+    if (system_text.empty()) {
+        return user_query;
+    }
+    if (user_query.empty()) {
+        return system_text;
+    }
+    return system_text + "\n\n" + user_query;
+}
+
 struct TokenizerRuntimeConfig {
     enum class TokenizerType { UNKNOWN, BPE, SENTENCEPIECE };
     enum class VocabFormat { UNKNOWN, ID_TAB_TOKEN, LINE_TOKEN };
@@ -361,6 +389,26 @@ TokenizerRuntimeConfig load_tokenizer_runtime_config(const std::string& config_f
 void load_special_tokens_map(const std::string& config_file, std::unordered_map<std::string, uint32_t>& special_tokens);
 std::vector<std::string> split_with_special_tokens(const std::string& text, const std::unordered_map<std::string, uint32_t>& special_tokens);
 
+inline std::string extract_json_string(const std::string& json, size_t& pos) {
+    std::string value;
+    while (pos < json.size() && json[pos] != '"') {
+        if (json[pos] == '\\' && pos + 1 < json.size()) {
+            pos++;
+            if (json[pos] == 'n') value += '\n';
+            else if (json[pos] == 't') value += '\t';
+            else if (json[pos] == 'r') value += '\r';
+            else if (json[pos] == '"') value += '"';
+            else if (json[pos] == '\\') value += '\\';
+            else value += json[pos];
+        } else {
+            value += json[pos];
+        }
+        pos++;
+    }
+    if (pos < json.size()) pos++;
+    return value;
+}
+
 class Tokenizer {
 public:
     virtual ~Tokenizer() = default;
@@ -369,7 +417,7 @@ public:
     virtual std::string decode(const std::vector<uint32_t>& tokens) const = 0;
 
     virtual std::vector<uint32_t> apply_chat_template(const std::vector<ChatMessage>& messages, bool add_generation_prompt = true) const;
-    virtual std::string format_chat_prompt(const std::vector<ChatMessage>& messages, bool add_generation_prompt = true, const std::string& tools_json = "", bool enable_thinking_if_supported = true) const;
+    virtual std::string format_chat_prompt(const std::vector<ChatMessage>& messages, bool add_generation_prompt = true, const std::string& tools_json = "", bool enable_thinking_if_supported = false) const;
 
     virtual uint32_t get_vocab_size() const = 0;
     virtual uint32_t get_unk_token() const = 0;
@@ -390,7 +438,7 @@ public:
 protected:
     virtual const std::vector<std::string>& get_encoded_vocab() const = 0;
 
-    enum class ModelType { UNKNOWN, QWEN, QWEN3P5, GEMMA, GEMMA4, LFM2, BERT, WHISPER, PARAKEET, YOUTU};
+    enum class ModelType { UNKNOWN, QWEN, QWEN3P5, GEMMA, GEMMA4, LFM2, BERT, WHISPER, PARAKEET, YOUTU, NEEDLE};
     ModelType model_type_ = ModelType::UNKNOWN;
     enum class ModelVariant { DEFAULT, VLM, EXTRACT, RAG};
     ModelVariant model_variant_ = ModelVariant::DEFAULT;
@@ -410,11 +458,12 @@ protected:
 
     void detect_model_type(const std::string& config_path);
     void load_chat_template(const std::string& template_file);
-    std::string format_qwen_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json, bool enable_thinking_if_supported = true) const;
+    std::string format_qwen_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json, bool enable_thinking_if_supported = false) const;
     std::string format_gemma_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json) const;
-    std::string format_gemma4_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json, bool enable_thinking_if_supported = true) const;
+    std::string format_gemma4_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json, bool enable_thinking_if_supported = false) const;
     std::string format_lfm2_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json) const;
     std::string format_lfm2_vl_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json) const;
+    std::string format_needle_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json) const;
     std::string format_youtu_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json) const;
 };
 
@@ -514,11 +563,16 @@ private:
     uint32_t eos_token_id_;
     uint32_t pad_token_id_;
 
+    bool sp_bpe_mode_ = false;
+    bool sp_add_dummy_prefix_ = false;
+    bool sp_byte_fallback_ = false;
+
     void* vocab_mmap_ptr_;
     size_t vocab_mmap_size_;
 
     void build_trie();
     std::vector<std::pair<std::string, uint32_t>> tokenize_with_trie(const std::string& text) const;
+    std::vector<uint32_t> tokenize_with_bpe(const std::string& text) const;
     std::string preprocess_text(const std::string& text) const;
     std::string postprocess_text(const std::string& text) const;
     std::vector<std::string> split_by_unicode_spaces(const std::string& text) const;

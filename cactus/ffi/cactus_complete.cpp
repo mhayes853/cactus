@@ -15,9 +15,11 @@
 using namespace cactus::engine;
 using namespace cactus::ffi;
 
-static constexpr size_t ROLLING_ENTROPY_WINDOW = 10;
+static constexpr size_t DEFAULT_ROLLING_ENTROPY_WINDOW = 10;
 
 namespace {
+
+std::vector<std::pair<std::string, std::string>> extract_schema_property_types(const std::string& schema);
 
 std::string extract_last_user_query(const std::vector<ChatMessage>& messages) {
     for (auto it = messages.rbegin(); it != messages.rend(); ++it) {
@@ -26,6 +28,17 @@ std::string extract_last_user_query(const std::vector<ChatMessage>& messages) {
         }
     }
     return {};
+}
+
+std::vector<uint32_t> encode_needle_tools_suffix(Tokenizer* tokenizer, const std::string& formatted_tools) {
+    auto prefix = tokenizer->encode("<tools>");
+    auto body = tokenizer->encode(formatted_tools);
+    std::vector<uint32_t> tokens;
+    tokens.reserve(prefix.size() + body.size() + 1);
+    tokens.insert(tokens.end(), prefix.begin(), prefix.end());
+    tokens.insert(tokens.end(), body.begin(), body.end());
+    tokens.push_back(tokenizer->get_eos_token());
+    return tokens;
 }
 
 void inject_rag_context(CactusModelHandle* handle, std::vector<ChatMessage>& messages) {
@@ -64,6 +77,154 @@ void strip_thinking_from_cache(CactusModelHandle* handle,
     }
 }
 
+size_t find_json_block_end(const std::string& json, size_t start) {
+    if (start >= json.size() || json[start] != '{') {
+        return std::string::npos;
+    }
+
+    int depth = 1;
+    bool in_string = false;
+    bool escaped = false;
+    size_t pos = start + 1;
+    while (pos < json.size() && depth > 0) {
+        char c = json[pos];
+        if (in_string) {
+            if (escaped) {
+                escaped = false;
+            } else if (c == '\\') {
+                escaped = true;
+            } else if (c == '"') {
+                in_string = false;
+            }
+        } else {
+            if (c == '"') {
+                in_string = true;
+            } else if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+            }
+        }
+        ++pos;
+    }
+
+    return depth == 0 ? pos : std::string::npos;
+}
+
+std::string extract_json_object_field(const std::string& json, const std::string& key) {
+    std::string pattern = "\"" + key + "\":";
+    size_t key_pos = json.find(pattern);
+    if (key_pos == std::string::npos) {
+        return {};
+    }
+
+    size_t object_start = json.find('{', key_pos + pattern.size());
+    if (object_start == std::string::npos) {
+        return {};
+    }
+
+    size_t object_end = find_json_block_end(json, object_start);
+    if (object_end == std::string::npos) {
+        return {};
+    }
+
+    return json.substr(object_start, object_end - object_start);
+}
+
+std::vector<std::pair<std::string, std::string>> extract_schema_property_types(const std::string& schema) {
+    std::vector<std::pair<std::string, std::string>> properties;
+    std::string properties_object = extract_json_object_field(schema, "properties");
+    if (properties_object.empty() || properties_object.size() < 2) {
+        return properties;
+    }
+
+    size_t pos = 1;
+    while (pos + 1 < properties_object.size()) {
+        size_t key_start = properties_object.find('"', pos);
+        if (key_start == std::string::npos || key_start + 1 >= properties_object.size()) {
+            break;
+        }
+        size_t key_end = properties_object.find('"', key_start + 1);
+        if (key_end == std::string::npos) {
+            break;
+        }
+
+        std::string name = properties_object.substr(key_start + 1, key_end - key_start - 1);
+        size_t value_start = properties_object.find('{', key_end);
+        if (value_start == std::string::npos) {
+            break;
+        }
+        size_t value_end = find_json_block_end(properties_object, value_start);
+        if (value_end == std::string::npos) {
+            break;
+        }
+
+        std::string value = properties_object.substr(value_start, value_end - value_start);
+        std::string type = "string";
+        std::string type_pattern = "\"type\":\"";
+        size_t type_pos = value.find(type_pattern);
+        if (type_pos != std::string::npos) {
+            size_t type_start = type_pos + type_pattern.size();
+            size_t type_end = value.find('"', type_start);
+            if (type_end != std::string::npos) {
+                type = value.substr(type_start, type_end - type_start);
+            }
+        } else if (value.find("\"enum\"") != std::string::npos) {
+            type = "string";
+        } else if (value.find("\"properties\"") != std::string::npos) {
+            type = "object";
+        }
+
+        properties.emplace_back(std::move(name), std::move(type));
+        pos = value_end;
+    }
+
+    return properties;
+}
+
+std::string serialize_needle_tools_json(const std::vector<ToolFunction>& tools, const char* raw_tools_json) {
+    if (tools.empty()) {
+        return (raw_tools_json && std::strlen(raw_tools_json) > 0) ? raw_tools_json : "[]";
+    }
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < tools.size(); ++i) {
+        if (i > 0) {
+            oss << ",";
+        }
+
+        oss << "{\"name\":\"" << escape_json_string(tools[i].name) << "\"";
+        if (!tools[i].description.empty()) {
+            oss << ",\"description\":\"" << escape_json_string(tools[i].description) << "\"";
+        }
+
+        oss << ",\"parameters\":";
+        auto schema_it = tools[i].parameters.find("schema");
+        if (schema_it == tools[i].parameters.end()) {
+            oss << "{}";
+        } else {
+            auto properties = extract_schema_property_types(schema_it->second);
+            if (properties.empty()) {
+                oss << schema_it->second;
+            } else {
+                oss << "{";
+                for (size_t p = 0; p < properties.size(); ++p) {
+                    if (p > 0) {
+                        oss << ",";
+                    }
+                    oss << "\"" << escape_json_string(properties[p].first) << "\":"
+                        << "\"" << escape_json_string(properties[p].second) << "\"";
+                }
+                oss << "}";
+            }
+        }
+
+        oss << "}";
+    }
+    oss << "]";
+    return oss.str();
+}
 std::vector<std::vector<uint32_t>> build_stop_sequences(
     Tokenizer* tokenizer,
     const std::vector<std::string>& stop_sequences,
@@ -133,6 +294,7 @@ struct EntropyState {
     float total_sum = 0.0f;
     size_t total_count = 0;
     bool spike_handoff = false;
+    size_t window_size = DEFAULT_ROLLING_ENTROPY_WINDOW;
 
     void add(float entropy) {
         window.push_back(entropy);
@@ -140,7 +302,7 @@ struct EntropyState {
         total_sum += entropy;
         total_count++;
 
-        if (window.size() > ROLLING_ENTROPY_WINDOW) {
+        if (window.size() > window_size) {
             window_sum -= window.front();
             window.erase(window.begin());
         }
@@ -266,7 +428,6 @@ std::vector<std::vector<CactusModelHandle::ProcessedImage>> images_from_message(
     return message_signatures;
 }
 
-
 bool image_context_prefix_matches(
     const std::vector<std::vector<CactusModelHandle::ProcessedImage>>& prefix,
     const std::vector<std::vector<CactusModelHandle::ProcessedImage>>& full
@@ -280,6 +441,11 @@ bool prompt_context_matches(
     const PreparedPrompt& prompt
 ) {
     if (handle->processed_tokens.empty()) {
+        return false;
+    }
+    if (handle->model &&
+        handle->model->get_config().model_type == Config::ModelType::NEEDLE &&
+        prompt.tokens.size() != handle->processed_tokens.size() + 1) {
         return false;
     }
     if (prompt.context_token_count < handle->processed_tokens.size()) {
@@ -320,6 +486,8 @@ PreparedPrompt prepare_prompt(
         prompt.tools = parse_tools_json(tools_json);
     }
 
+    prompt.model_type = handle->model->get_config().model_type;
+
     if (prompt.options.tool_rag_top_k > 0 && prompt.tools.size() > prompt.options.tool_rag_top_k) {
         std::string query = extract_last_user_query(prompt.messages);
         if (!query.empty()) {
@@ -332,11 +500,22 @@ PreparedPrompt prepare_prompt(
         prompt.tool_definitions = cactus::engine::ToolDefinition::parse_tools_json(prompt.tools_json);
     }
 
+    if (prompt.model_type == Config::ModelType::NEEDLE && !prompt.tools.empty()) {
+        prompt.options.force_tools = true;
+    }
+
+    if (prompt.options.force_tools && !prompt.tools.empty() && prompt.options.temperature == 0.0f) {
+        prompt.options.temperature = 0.01f;
+    }
+
     auto* tokenizer = handle->model->get_tokenizer();
     prompt.thinking_supported =
         prompt.options.enable_thinking_if_supported && tokenizer->is_thinking_supported();
 
-    prompt.model_type = handle->model->get_config().model_type;
+    if (prompt.options.confidence_threshold < 0.0f) {
+        float model_default = handle->model->get_config().default_cloud_handoff_threshold;
+        prompt.options.confidence_threshold = (model_default > 0.0f) ? model_default : 0.7f;
+    }
 
     if (prompt.model_type == Config::ModelType::GEMMA4) {
         std::vector<float> audio_samples;
@@ -369,23 +548,31 @@ PreparedPrompt prepare_prompt(
     std::string formatted_tools;
     if (Config::is_gemma_family(prompt.model_type)) {
         formatted_tools = gemma::format_tools(prompt.tool_definitions, prompt.model_type == Config::ModelType::GEMMA4);
+    } else if (prompt.model_type == Config::ModelType::NEEDLE) {
+        formatted_tools = serialize_needle_tools_json(prompt.tools, tools_json);
     } else if (prompt.model_type == Config::ModelType::QWEN || prompt.model_type == Config::ModelType::QWEN3P5) {
         formatted_tools = serialize_tools_for_template(prompt.tools);
     } else {
         formatted_tools = prompt.tools_json;
     }
 
-    std::string full_prompt = tokenizer->format_chat_prompt(
-        prompt.messages,
-        add_generation_prompt,
-        formatted_tools,
-        prompt.thinking_supported
-    );
-    if (full_prompt.find("ERROR:") == 0) {
-        throw std::runtime_error(full_prompt.substr(6));
+    if (prompt.model_type == Config::ModelType::NEEDLE) {
+        std::string query_text = cactus::engine::format_needle_query_text(prompt.messages);
+        prompt.tokens = tokenizer->encode(query_text);
+        auto suffix_tokens = encode_needle_tools_suffix(tokenizer, formatted_tools);
+        prompt.tokens.insert(prompt.tokens.end(), suffix_tokens.begin(), suffix_tokens.end());
+    } else {
+        std::string full_prompt = tokenizer->format_chat_prompt(
+            prompt.messages,
+            add_generation_prompt,
+            formatted_tools,
+            prompt.options.enable_thinking_if_supported
+        );
+        if (full_prompt.find("ERROR:") == 0) {
+            throw std::runtime_error(full_prompt.substr(6));
+        }
+        prompt.tokens = tokenizer->encode(full_prompt);
     }
-
-    prompt.tokens = tokenizer->encode(full_prompt);
     prompt.context_token_count = prompt.tokens.size();
     prompt.images = images_from_message(prompt.messages);
     return prompt;
@@ -557,6 +744,21 @@ int cactus_complete(
 
         bool has_images = prompt.has_images();
         bool has_audio = prompt.has_audio();
+        const bool has_gemma4_mixed_media = prompt.model_type == Config::ModelType::GEMMA4 && has_images && has_audio;
+        auto decode_gemma4_mixed_media = [&](const std::vector<uint32_t>& tokens, float* out_entropy) -> uint32_t {
+            auto* gemma4_mm = dynamic_cast<Gemma4MmModel*>(handle->model.get());
+            if (!gemma4_mm) {
+                throw std::runtime_error("Gemma4 mixed-media decode requested on non-Gemma4 multimodal model");
+            }
+            return gemma4_mm->decode_with_media(
+                tokens,
+                prompt.image_paths,
+                prompt.audio_features,
+                prompt.options.temperature, prompt.options.top_p, prompt.options.top_k,
+                "", out_entropy,
+                prompt.options.min_p, prompt.options.repetition_penalty
+            );
+        };
 
         auto stop_token_sequences = build_stop_sequences(tokenizer, prompt.options.stop_sequences, prompt.model_type, !prompt.tools.empty());
 
@@ -566,7 +768,10 @@ int cactus_complete(
         uint32_t next_token;
         size_t prompt_tokens;
 
-        if (has_audio) {
+        if (has_gemma4_mixed_media) {
+            prompt_tokens = prompt.tokens.size();
+            next_token = decode_gemma4_mixed_media(prompt.tokens, &first_token_entropy);
+        } else if (has_audio) {
             prompt_tokens = prompt.tokens.size();
             next_token = handle->model->decode_with_audio(
                 prompt.tokens, prompt.audio_features,
@@ -611,6 +816,10 @@ int cactus_complete(
             request.local_output = local_output_hint;
             request.local_function_calls = local_calls_hint;
             request.has_images = has_images;
+            request.has_audio = has_audio;
+            if (has_audio && pcm_buffer != nullptr && pcm_buffer_size > 0) {
+                request.audio_pcm.assign(pcm_buffer, pcm_buffer + pcm_buffer_size);
+            }
             request.cloud_key = resolve_cloud_api_key(nullptr);
 
             cloud_future_started = true;
@@ -627,6 +836,10 @@ int cactus_complete(
         handle->processed_tokens.push_back(next_token);
 
         EntropyState entropy;
+        {
+            size_t cfg_window = handle->model->get_config().default_rolling_entropy_window;
+            if (cfg_window > 0) entropy.window_size = cfg_window;
+        }
         entropy.add(first_token_entropy);
 
         if (!matches_stop_sequence(generated_tokens, stop_token_sequences)) {
@@ -639,7 +852,9 @@ int cactus_complete(
                 if (handle->should_stop) break;
 
                 float token_entropy = 0.0f;
-                if (has_audio) {
+                if (has_gemma4_mixed_media) {
+                    next_token = decode_gemma4_mixed_media(handle->processed_tokens, &token_entropy);
+                } else if (has_audio) {
                     next_token = handle->model->decode_with_audio(
                         handle->processed_tokens, prompt.audio_features,
                         prompt.options.temperature, prompt.options.top_p, prompt.options.top_k,

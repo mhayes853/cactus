@@ -150,7 +150,11 @@ Grammar Grammar::structural_tag(const std::string& structural_tag_json) {
     throw std::get<xgrammar::StructuralTagError>(result);
 }
 
-static std::string qwen_tool_structural_tag_json(const std::vector<ToolDefinition>& tools) {
+static std::string json_tool_structural_tag_json(
+    const std::vector<ToolDefinition>& tools,
+    const std::string& begin_prefix,
+    const std::string& end_suffix
+) {
     picojson::array tags;
 
     for (const auto& tool : tools) {
@@ -166,11 +170,9 @@ static std::string qwen_tool_structural_tag_json(const std::vector<ToolDefinitio
         content["json_schema"] = tool.arguments_schema;
 
         picojson::object tag;
-        tag["begin"] = picojson::value(
-            std::string("<tool_call>\n{\"name\": \"") + tool.name + "\", \"arguments\": "
-        );
+        tag["begin"] = picojson::value(begin_prefix + tool.name + "\", \"arguments\": ");
         tag["content"] = picojson::value(content);
-        tag["end"] = picojson::value("}\n</tool_call>");
+        tag["end"] = picojson::value(end_suffix);
         tags.push_back(picojson::value(tag));
     }
 
@@ -187,7 +189,15 @@ static std::string qwen_tool_structural_tag_json(const std::vector<ToolDefinitio
 }
 
 static Grammar qwen_style_tool_call_grammar(const std::vector<ToolDefinition>& tools) {
-    return Grammar::structural_tag(qwen_tool_structural_tag_json(tools));
+    return Grammar::structural_tag(
+        json_tool_structural_tag_json(tools, "<tool_call>\n{\"name\": \"", "}\n</tool_call>")
+    );
+}
+
+static Grammar needle_style_tool_call_grammar(const std::vector<ToolDefinition>& tools) {
+    return Grammar::structural_tag(
+        json_tool_structural_tag_json(tools, "<tool_call>\n{\"name\": \"", "}")
+    );
 }
 
 static std::string gbnf_escape_literal(const std::string& value) {
@@ -278,6 +288,8 @@ static Grammar model_tool_call_grammar(
         case Config::ModelType::QWEN3P5:
         case Config::ModelType::YOUTU:
             return qwen_style_tool_call_grammar(tools);
+        case Config::ModelType::NEEDLE:
+            return needle_style_tool_call_grammar(tools);
         case Config::ModelType::GEMMA:
         case Config::ModelType::GEMMA3N:
             return gemma_style_tool_call_grammar(tools, false);

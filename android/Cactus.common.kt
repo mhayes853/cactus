@@ -13,6 +13,10 @@ data class CactusGrammarJsonSchemaOptions(
     val maxWhitespaceCount: Int = 1,
 )
 
+fun interface CactusLogCallback {
+    fun onLog(level: Int, component: String, message: String)
+}
+
 expect fun cactusInit(modelPath: String, corpusDir: String?, cacheIndex: Boolean): Long
 expect fun cactusDestroy(model: Long)
 expect fun cactusReset(model: Long)
@@ -54,3 +58,8 @@ expect fun cactusIndexGet(index: Long, ids: IntArray): String
 expect fun cactusIndexQuery(index: Long, embedding: FloatArray, optionsJson: String?): String
 expect fun cactusIndexCompact(index: Long): Int
 expect fun cactusIndexDestroy(index: Long)
+expect fun cactusDetectLanguage(model: Long, audioPath: String?, optionsJson: String?, pcmData: ByteArray?): String
+expect fun cactusDiarize(model: Long, audioPath: String?, optionsJson: String?, pcmData: ByteArray?): String
+expect fun cactusEmbedSpeaker(model: Long, audioPath: String?, optionsJson: String?, pcmData: ByteArray?, maskWeights: FloatArray? = null): String
+expect fun cactusLogSetLevel(level: Int)
+expect fun cactusLogSetCallback(callback: CactusLogCallback?)

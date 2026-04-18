@@ -137,6 +137,20 @@ int cactus_complete(
 ]
 ```
 
+**Messages with Audio (for multimodal models like Gemma4):**
+```json
+[
+    {"role": "user", "content": "Transcribe the audio.", "audio": ["/path/to/audio.wav"]}
+]
+```
+
+**Messages with Images and Audio:**
+```json
+[
+    {"role": "user", "content": "Describe the image and transcribe the audio.", "images": ["/path/to/image.jpg"], "audio": ["/path/to/audio.wav"]}
+]
+```
+
 **Options Format:**
 ```json
 {
@@ -154,7 +168,7 @@ int cactus_complete(
     "auto_handoff": true,
     "cloud_timeout_ms": 15000,
     "handoff_with_images": true,
-    "enable_thinking_if_supported": true
+    "enable_thinking_if_supported": false
 }
 ```
 
@@ -174,7 +188,7 @@ int cactus_complete(
 | `auto_handoff` | bool | true | Automatically attempt cloud handoff when confidence is low |
 | `cloud_timeout_ms` | int | 15000 | Timeout in milliseconds for cloud handoff requests |
 | `handoff_with_images` | bool | true | Allow cloud handoff for requests that include images |
-| `enable_thinking_if_supported` | bool | true | Enable chain-of-thought thinking blocks for models that support it |
+| `enable_thinking_if_supported` | bool | false | Enable chain-of-thought thinking blocks for models that support it |
 
 **Response Format:**
 ```json
@@ -314,7 +328,9 @@ int cactus_prefill(
     char* response_buffer,         // Buffer for response JSON
     size_t buffer_size,             // Size of response buffer
     const char* options_json,       // Optional generation options (can be NULL)
-    const char* tools_json          // Optional tools definition (can be NULL)
+    const char* tools_json,         // Optional tools definition (can be NULL)
+    const uint8_t* pcm_buffer,     // Optional raw PCM audio buffer (can be NULL)
+    size_t pcm_buffer_size         // Size of PCM buffer in bytes (0 when not used)
 );
 ```
 
@@ -374,7 +390,7 @@ const char* base_messages = R"([
 ])";
 
 char prefill_response[1024];
-cactus_prefill(model, base_messages, prefill_response, sizeof(prefill_response), NULL, tools);
+cactus_prefill(model, base_messages, prefill_response, sizeof(prefill_response), NULL, tools, NULL, 0);
 
 const char* completion_messages = R"([
     { "role": "system", "content": "You are a helpful assistant." },
@@ -579,7 +595,7 @@ int result = cactus_transcribe(whisper, NULL, NULL,
 
 **Example (with custom vocabulary):**
 ```c
-cactus_model_t whisper = cactus_init("../../weights/whisper-small", NULL);
+cactus_model_t whisper = cactus_init("../../weights/whisper-small", NULL, false);
 
 const char* options = "{\"custom_vocabulary\": [\"Omeprazole\", \"HIPAA\", \"Cactus\"], \"vocabulary_boost\": 3.0}";
 
@@ -618,8 +634,6 @@ cactus_stream_transcribe_t cactus_stream_transcribe_start(
     "language": "en",
     "custom_vocabulary": ["Omeprazole", "HIPAA", "Cactus"],
     "vocabulary_boost": 3.0
-    "custom_vocabulary": ["word1", "word2"],
-    "vocabulary_boost": 5.0
 }
 ```
 
@@ -627,8 +641,6 @@ cactus_stream_transcribe_t cactus_stream_transcribe_start(
 - `language`: ISO 639-1 language code (e.g., "en", "es", "fr", "de"). Default: "en". Ignored for non-Whisper models.
 - `custom_vocabulary`: List of words or phrases to bias the decoder toward. Useful for proper nouns, acronyms, and domain-specific terms. The bias is applied for the lifetime of the stream session.
 - `vocabulary_boost`: Logit bias strength for `custom_vocabulary` tokens. Default: 5.0. Clamped to 0.0–20.0.
-- `custom_vocabulary`: Array of words or phrases to boost recognition probability. Default: []
-- `vocabulary_boost`: Log-probability bias to add to tokens matching custom_vocabulary entries (0.0–20.0). Default: 5.0
 
 **Example:**
 ```c
@@ -1777,6 +1789,7 @@ int find_similar_image(cactus_model_t model, const char* query,
 | Model Type | Text | Vision | Audio | Embeddings | Description |
 |------------|------|--------|-------|------------|-------------|
 | Qwen | ✓ | ✓ | - | ✓ | Qwen3/Qwen3.5 language and vision models |
+| Gemma4 | ✓ | ✓ | ✓ | ✓ | Google Gemma 4 multimodal (E2B, E4B) with Apple NPU |
 | Gemma | ✓ | - | - | - | Google Gemma 3 / Gemma 3n models |
 | LFM2 | ✓ | ✓ | - | ✓ | Liquid Foundation Models (incl. VL and MoE) |
 | Nomic | - | - | - | ✓ | Nomic embedding models |

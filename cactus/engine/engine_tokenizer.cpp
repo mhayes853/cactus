@@ -139,10 +139,9 @@ void load_special_tokens_map(const std::string& config_file, std::unordered_map<
         uint32_t token_id = static_cast<uint32_t>(std::stoul(id_part.substr(id_start + 1, id_end - id_start - 1)));
 
         size_t token_start = token_part.find("\"");
-        size_t token_end = token_part.rfind("\"");
-        if (token_start == std::string::npos || token_end == std::string::npos || token_start >= token_end) continue;
-
-        std::string token_content = token_part.substr(token_start + 1, token_end - token_start - 1);
+        if (token_start == std::string::npos) continue;
+        size_t value_pos = token_start + 1;
+        std::string token_content = extract_json_string(token_part, value_pos);
         special_tokens[token_content] = token_id;
     }
 }
@@ -247,6 +246,9 @@ void Tokenizer::detect_model_type(const std::string& config_path) {
             } else if (line.find("parakeet") != std::string::npos) {
                 model_type_ = ModelType::PARAKEET;
                 break;
+            } else if (line.find("needle") != std::string::npos) {
+                model_type_ = ModelType::NEEDLE;
+                break;
             } else if (line.find("youtu") != std::string::npos) {
                 model_type_ = ModelType::YOUTU;
                 break;
@@ -306,6 +308,8 @@ std::string Tokenizer::get_default_stop_sequence() const {
         case ModelType::QWEN3P5:
         case ModelType::LFM2:
             return "<|im_end|>";
+        case ModelType::NEEDLE:
+            return "";
         default:
             return "<|im_end|>";
     }
@@ -339,11 +343,20 @@ std::string Tokenizer::format_chat_prompt(const std::vector<ChatMessage>& messag
             return format_gemma4_style(messages, add_generation_prompt, tools_json, enable_thinking_if_supported);
         case ModelType::LFM2:
             return format_lfm2_style(messages, add_generation_prompt, tools_json);
+        case ModelType::NEEDLE:
+            return format_needle_style(messages, add_generation_prompt, tools_json);
         case ModelType::YOUTU:
             return format_youtu_style(messages, add_generation_prompt, tools_json);
         default:
             return format_qwen_style(messages, add_generation_prompt, tools_json);
     }
+}
+
+std::string Tokenizer::format_needle_style(const std::vector<ChatMessage>& messages,
+                                           bool /*add_generation_prompt*/,
+                                           const std::string& tools_json) const {
+    std::string serialized_tools = tools_json.empty() ? "[]" : tools_json;
+    return format_needle_query_text(messages) + "<tools>" + serialized_tools + "</s>";
 }
 
 std::string Tokenizer::format_qwen_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json, bool enable_thinking_if_supported) const {

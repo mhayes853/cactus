@@ -69,6 +69,25 @@ def print_color(color, message):
 from .downloads import get_model_dir_name, get_weights_dir, download_from_hf as _download_from_hf_impl
 
 
+NEEDLE_CHECKPOINT_REPO = "Cactus-Compute/needle"
+NEEDLE_TOKENIZER_REPO = "Cactus-Compute/needle-tokenizer"
+NEEDLE_CHECKPOINT_FILE = "needle.pkl"
+
+
+def is_needle_model_id(model_id):
+    normalized = (model_id or "").strip().lower()
+    if "/" in normalized:
+        normalized = normalized.split("/")[-1]
+    return normalized == "needle" or normalized.startswith("needle-") or normalized.startswith("needle_")
+
+
+def get_effective_weights_dir(model_id, args=None):
+    if not is_needle_model_id(model_id):
+        return get_weights_dir(model_id)
+    return (PROJECT_ROOT / "weights" / "needle").resolve()
+
+
+
 def check_command(cmd):
     """Check if a command is available in PATH."""
     return shutil.which(cmd) is not None
@@ -113,6 +132,51 @@ def ensure_xgrammar_submodule():
         return False
 
     return True
+
+def _is_stale_binary(binary_path, dependency_paths):
+    binary_path = Path(binary_path)
+    if not binary_path.exists():
+        return True
+
+    try:
+        binary_mtime = binary_path.stat().st_mtime
+    except OSError:
+        return True
+
+    for dep in dependency_paths:
+        dep_path = Path(dep)
+        if not dep_path.exists():
+            continue
+        try:
+            if dep_path.stat().st_mtime > binary_mtime:
+                return True
+        except OSError:
+            continue
+
+    return False
+
+
+def _ensure_chat_binary(project_root, lib_path):
+    tests_dir = project_root / "tests"
+    build_dir = tests_dir / "build"
+    chat_binary = build_dir / "chat"
+    chat_cpp = tests_dir / "chat.cpp"
+
+    if not _is_stale_binary(chat_binary, [lib_path, chat_cpp]):
+        return chat_binary
+
+    print_color(YELLOW, "Refreshing chat binary for current Cactus library...")
+    build_args = argparse.Namespace(
+        apple=False,
+        android=False,
+        flutter=False,
+        python=False,
+    )
+    result = cmd_build(build_args)
+    if result != 0 or not chat_binary.exists():
+        raise RuntimeError("Failed to rebuild chat binary")
+
+    return chat_binary
 
 
 def ensure_vad_weights(model_id, weights_dir, precision='INT8'):
@@ -159,9 +223,8 @@ def download_from_hf(model_id, weights_dir, precision):
 def cmd_download(args):
     """Download model weights. By default downloads pre-converted weights from Cactus-Compute."""
     model_id = args.model_id
-    model_name = getattr(args, 'original_model_id', model_id)
     is_local = Path(model_id).is_dir()
-    weights_dir = get_weights_dir(model_id)
+    weights_dir = get_effective_weights_dir(model_id, args)
     reconvert = getattr(args, 'reconvert', False)
     precision = getattr(args, 'precision', 'INT4')
 
@@ -177,6 +240,30 @@ def cmd_download(args):
     print()
     print_color(YELLOW, f"Model weights not found. Downloading {model_id}...")
     print("=" * 45)
+
+    if not is_local and is_needle_model_id(model_id):
+        try:
+            from huggingface_hub import hf_hub_download, snapshot_download
+            from .converter import convert_needle_checkpoint
+
+            print_color(YELLOW, "Using Needle exporter...")
+            token = getattr(args, 'token', None)
+            cache_dir = getattr(args, 'cache_dir', None)
+
+            ck_path = hf_hub_download(repo_id=NEEDLE_CHECKPOINT_REPO, filename=NEEDLE_CHECKPOINT_FILE,
+                                      repo_type="model", token=token, cache_dir=cache_dir)
+            tk_snap = Path(snapshot_download(repo_id=NEEDLE_TOKENIZER_REPO, repo_type="dataset",
+                                            allow_patterns=["*.model"], token=token, cache_dir=cache_dir))
+            tk_path = next(tk_snap.rglob("*.model"), None)
+            if not tk_path:
+                raise FileNotFoundError(f"No .model file in tokenizer snapshot: {tk_snap}")
+
+            convert_needle_checkpoint(ck_path, tk_path, weights_dir, precision)
+            print_color(GREEN, f"Successfully exported Needle weights to {weights_dir}")
+            return 0
+        except Exception as e:
+            print_color(RED, f"Error: {e}")
+            return 1
 
     if not reconvert and not is_local:
         if download_from_hf(model_id, weights_dir, precision):
@@ -333,12 +420,12 @@ def cmd_download(args):
     except ImportError:
         Lfm2VlForConditionalGeneration = None
 
-    is_vlm = 'vl' in model_name.lower() or 'vlm' in model_name.lower()
-    is_whisper = 'whisper' in model_name.lower()
-    is_parakeet = 'parakeet' in model_name.lower()
-    is_vad = 'silero-vad' in model_name.lower()
-    is_pyannote = 'segmentation-3.0' in model_name.lower()
-    is_wespeaker = 'wespeaker' in model_name.lower()
+    is_vlm = 'vl' in model_id.lower() or 'vlm' in model_id.lower()
+    is_whisper = 'whisper' in model_id.lower()
+    is_parakeet = 'parakeet' in model_id.lower()
+    is_vad = 'silero-vad' in model_id.lower()
+    is_pyannote = 'segmentation-3.0' in model_id.lower()
+    is_wespeaker = 'wespeaker' in model_id.lower()
 
     try:
         if is_vlm:
@@ -585,12 +672,12 @@ def cmd_download(args):
         config = convert_hf_model_weights(model, weights_dir, precision, args)
         del model
 
-        model_name_lower = model_name.lower()
-        if 'extract' in model_name_lower:
+        model_id_lower = model_id.lower()
+        if 'extract' in model_id_lower:
             config['model_variant'] = 'extract'
-        elif 'vlm' in model_name_lower:
+        elif 'vlm' in model_id_lower:
             config['model_variant'] = 'vlm'
-        elif 'rag' in model_name_lower:
+        elif 'rag' in model_id_lower:
             config['model_variant'] = 'rag'
         else:
             config.setdefault('model_variant', 'default')
@@ -611,7 +698,7 @@ def cmd_download(args):
             tokenizer,
             weights_dir,
             token=token,
-            model_id=model_name,
+            model_id=model_id,
             labels=tokenizer_labels,
             model_type=config.get('model_type'),
         )
@@ -719,6 +806,35 @@ def cmd_build(args):
 
     is_darwin = platform.system() == "Darwin"
 
+    sdl2_available = False
+    sdl2_flags = []
+    sdl2_link = []
+    if is_darwin:
+        sdl2_check = subprocess.run(["brew", "list", "sdl2"], capture_output=True)
+        if sdl2_check.returncode == 0:
+            sdl2_prefix_result = subprocess.run(["brew", "--prefix", "sdl2"], capture_output=True, text=True)
+            if sdl2_prefix_result.returncode == 0:
+                sdl2_prefix = sdl2_prefix_result.stdout.strip()
+                sdl2_flags = ["-DHAVE_SDL2", f"-I{sdl2_prefix}/include", f"-I{sdl2_prefix}/include/SDL2"]
+                sdl2_link = [f"-L{sdl2_prefix}/lib", "-lSDL2"]
+                sdl2_available = True
+    else:
+        sdl2_check = subprocess.run(["pkg-config", "--exists", "sdl2"], capture_output=True)
+        if sdl2_check.returncode == 0:
+            cflags = subprocess.run(["pkg-config", "--cflags", "sdl2"], capture_output=True, text=True)
+            libs = subprocess.run(["pkg-config", "--libs", "sdl2"], capture_output=True, text=True)
+            if cflags.returncode == 0 and libs.returncode == 0:
+                sdl2_flags = ["-DHAVE_SDL2"] + cflags.stdout.strip().split()
+                sdl2_link = libs.stdout.strip().split()
+                sdl2_available = True
+
+    if sdl2_available:
+        print_color(GREEN, "SDL2 found - building with live audio support")
+    else:
+        print_color(YELLOW, "SDL2 not found - live mic recording will be disabled")
+        print_color(YELLOW, "Install SDL2 for live mic support: brew install sdl2 (macOS)")
+        print_color(YELLOW, "Then run `cactus build`")
+
     if is_darwin:
         if not vendored_curl.exists():
             print_color(RED, f"Error: vendored libcurl not found at {vendored_curl}")
@@ -735,6 +851,7 @@ def cmd_build(args):
             f"-I{xgrammar_include}",
             f"-I{xgrammar_dlpack_include}",
             f"-I{xgrammar_picojson_include}",
+            *sdl2_flags,
             str(chat_cpp),
             str(lib_path),
             "-o", "chat",
@@ -746,6 +863,7 @@ def cmd_build(args):
             "-framework", "Security",
             "-framework", "SystemConfiguration",
             "-framework", "CFNetwork",
+            *sdl2_link,
         ]
     else:
         if not built_xgrammar.exists():
@@ -758,12 +876,14 @@ def cmd_build(args):
             f"-I{xgrammar_include}",
             f"-I{xgrammar_dlpack_include}",
             f"-I{xgrammar_picojson_include}",
+            *sdl2_flags,
             str(chat_cpp),
             str(lib_path),
             "-o", "chat",
             str(built_xgrammar),
             "-lcurl",
-            "-pthread"
+            "-pthread",
+            *sdl2_link,
         ]
 
     if not check_command(compiler):
@@ -781,37 +901,6 @@ def cmd_build(args):
     if asr_cpp.exists():
         print("Compiling asr.cpp...")
 
-        # Check for SDL2 and get flags
-        sdl2_available = False
-        sdl2_include = ""
-        sdl2_lib = ""
-
-        if is_darwin:
-            sdl2_check = subprocess.run(["brew", "list", "sdl2"], capture_output=True)
-            if sdl2_check.returncode == 0:
-                sdl2_prefix_result = subprocess.run(["brew", "--prefix", "sdl2"], capture_output=True, text=True)
-                if sdl2_prefix_result.returncode == 0:
-                    sdl2_prefix = sdl2_prefix_result.stdout.strip()
-                    sdl2_include = f"-I{sdl2_prefix}/include"
-                    sdl2_lib = f"-L{sdl2_prefix}/lib -lSDL2"
-                    sdl2_available = True
-        else:
-            sdl2_check = subprocess.run(["pkg-config", "--exists", "sdl2"], capture_output=True)
-            if sdl2_check.returncode == 0:
-                cflags = subprocess.run(["pkg-config", "--cflags", "sdl2"], capture_output=True, text=True)
-                libs = subprocess.run(["pkg-config", "--libs", "sdl2"], capture_output=True, text=True)
-                if cflags.returncode == 0 and libs.returncode == 0:
-                    sdl2_include = cflags.stdout.strip()
-                    sdl2_lib = libs.stdout.strip()
-                    sdl2_available = True
-
-        if sdl2_available:
-            print_color(GREEN, "SDL2 found - building with live transcription support")
-        else:
-            print_color(YELLOW, "SDL2 not found - live transcription will be disabled")
-            print_color(YELLOW, "Install SDL2 for live mic support: brew install sdl2 (macOS)")
-            print_color(YELLOW, "Then run `cactus build`")
-
         if is_darwin:
             cmd = [
                 compiler, "-std=c++20", "-O3",
@@ -820,10 +909,7 @@ def cmd_build(args):
                 f"-I{xgrammar_include}",
                 f"-I{xgrammar_dlpack_include}",
                 f"-I{xgrammar_picojson_include}",
-            ]
-            if sdl2_available:
-                cmd.extend(["-DHAVE_SDL2", sdl2_include])
-            cmd.extend([
+                *sdl2_flags,
                 str(asr_cpp),
                 str(lib_path),
                 "-o", "asr",
@@ -835,9 +921,8 @@ def cmd_build(args):
                 "-framework", "Security",
                 "-framework", "SystemConfiguration",
                 "-framework", "CFNetwork",
-            ])
-            if sdl2_available:
-                cmd.extend(sdl2_lib.split())
+                *sdl2_link,
+            ]
         else:
             if not built_xgrammar.exists():
                 print_color(RED, f"Error: built xgrammar not found at {built_xgrammar}")
@@ -848,19 +933,15 @@ def cmd_build(args):
                 f"-I{xgrammar_include}",
                 f"-I{xgrammar_dlpack_include}",
                 f"-I{xgrammar_picojson_include}",
-            ]
-            if sdl2_available:
-                cmd.extend(["-DHAVE_SDL2", sdl2_include])
-            cmd.extend([
+                *sdl2_flags,
                 str(asr_cpp),
                 str(lib_path),
                 "-o", "asr",
                 str(built_xgrammar),
                 "-lcurl",
-                "-pthread"
-            ])
-            if sdl2_available:
-                cmd.extend(sdl2_lib.split())
+                "-pthread",
+                *sdl2_link,
+            ]
 
         result = subprocess.run(cmd, cwd=build_dir)
         if result.returncode != 0:
@@ -1033,7 +1114,7 @@ def cmd_run(args):
         download_result = cmd_download(args)
         if download_result != 0:
             return download_result
-        weights_dir = get_weights_dir(model_id)
+        weights_dir = get_effective_weights_dir(model_id, args)
 
     image_path = getattr(args, 'image', None)
     if image_path:
@@ -1046,10 +1127,10 @@ def cmd_run(args):
             print_color(RED, f"Error: Unsupported image format. Supported: {', '.join(valid_exts)}")
             return 1
 
-    chat_binary = PROJECT_ROOT / "tests" / "build" / "chat"
-
-    if not chat_binary.exists():
-        print_color(RED, f"Error: Chat binary not found at {chat_binary}")
+    try:
+        chat_binary = _ensure_chat_binary(PROJECT_ROOT, lib_path)
+    except RuntimeError as exc:
+        print_color(RED, f"Error: {exc}")
         return 1
 
     os.system('clear' if platform.system() != 'Windows' else 'cls')
@@ -1074,8 +1155,8 @@ def cmd_run(args):
     prompt = getattr(args, 'prompt', None)
     if prompt:
         cmd_args.extend(['--prompt', prompt])
-    if getattr(args, 'no_thinking', False):
-        cmd_args.append('--no-thinking')
+    if getattr(args, 'thinking', False):
+        cmd_args.append('--thinking')
 
     os.execv(str(chat_binary), cmd_args)
 
@@ -1371,7 +1452,7 @@ def cmd_eval(args):
     if download_result != 0:
         return download_result
 
-    weights_dir = get_weights_dir(model_id)
+    weights_dir = get_effective_weights_dir(model_id, args)
     extra = getattr(args, 'extra_args', None) or []
 
     def extra_has_flag(flag: str) -> bool:
@@ -2050,6 +2131,9 @@ def create_parser():
                                  help='Quantization precision (default: INT4)')
     download_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     download_parser.add_argument('--token', help='HuggingFace API token')
+
+    download_parser.add_argument('--weights-variant', choices=WEIGHTS_VARIANT_CHOICES, default='auto',
+                                 help='Weights package preference: auto (default), apple, or standard')
     download_parser.add_argument('--reconvert', action='store_true',
                                  help='Download original model and convert (instead of using pre-converted from Cactus-Compute)')
 
@@ -2070,6 +2154,8 @@ def create_parser():
                             help='Quantization precision (default: INT4)')
     run_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     run_parser.add_argument('--token', help='HuggingFace API token')
+    run_parser.add_argument('--weights-variant', choices=WEIGHTS_VARIANT_CHOICES, default='auto',
+                            help='Weights package preference for auto-download: auto, apple, or standard')
     run_parser.add_argument('--no-cloud-tele', action='store_true',
                             help='Disable cloud telemetry (write to cache only)')
     run_parser.add_argument('--reconvert', action='store_true',
@@ -2082,8 +2168,8 @@ def create_parser():
                             help='System prompt to prepend to all messages')
     run_parser.add_argument('--prompt',
                             help='Initial prompt to send immediately')
-    run_parser.add_argument('--no-thinking', action='store_true',
-                            help='Disable thinking/reasoning for models that support it')
+    run_parser.add_argument('--thinking', action='store_true',
+                            help='Enable thinking/reasoning for models that support it')
 
     transcribe_parser = subparsers.add_parser('transcribe', help='Download ASR model and run transcription')
     transcribe_parser.add_argument('model_id', nargs='?', default=DEFAULT_ASR_MODEL_ID,
@@ -2116,6 +2202,8 @@ def create_parser():
                              help='Quantization precision (default: INT4)')
     eval_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     eval_parser.add_argument('--token', help='HuggingFace API token')
+    eval_parser.add_argument('--weights-variant', choices=WEIGHTS_VARIANT_CHOICES, default='auto',
+                             help='Weights package preference for auto-download: auto, apple, or standard')
     eval_parser.add_argument('--tools', action='store_true', help='Run tools evals (default)')
     eval_parser.add_argument('--vlm', action='store_true', help='Run VLM-specific evals')
     eval_parser.add_argument('--stt', action='store_true', help='Run speech-to-text evals')

@@ -178,7 +178,8 @@ cactus_prefill(
     model: int,
     messages_json: str,              # JSON array of {role, content}
     options_json: str | None,        # optional inference options
-    tools_json: str | None           # optional tool definitions
+    tools_json: str | None,          # optional tool definitions
+    pcm_data: list[int] | None = None              # optional raw audio bytes
 ) -> None
 ```
 
@@ -402,7 +403,7 @@ Functions that return a value raise `RuntimeError` on failure. `cactus_prefill`,
 
 ## Vision (VLM)
 
-Pass images in the messages content for vision-language models:
+Pass images in the messages content for vision-language models (LFM2-VL, LFM2.5-VL, Gemma4, Qwen3.5):
 
 ```python
 messages = json.dumps([{
@@ -412,6 +413,29 @@ messages = json.dumps([{
 }])
 result = json.loads(cactus_complete(model, messages, None, None, None))
 print(result["response"])
+```
+
+## Audio (Multimodal)
+
+Pass audio files in messages for models with native audio understanding (Gemma4):
+
+```python
+messages = json.dumps([{
+    "role": "user",
+    "content": "Transcribe the audio.",
+    "audio": ["path/to/audio.wav"]
+}])
+result = json.loads(cactus_complete(model, messages, None, None, None))
+print(result["response"])
+
+# Combined vision + audio
+messages = json.dumps([{
+    "role": "user",
+    "content": "Describe the image and transcribe the audio.",
+    "images": ["path/to/image.png"],
+    "audio": ["path/to/audio.wav"]
+}])
+result = json.loads(cactus_complete(model, messages, None, None, None))
 ```
 
 ## Compute Graph
