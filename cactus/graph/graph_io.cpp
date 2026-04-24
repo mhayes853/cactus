@@ -140,7 +140,7 @@ namespace {
         param_flags |= PARAM_NUM_GROUPS;
       }
 
-      if (node.op_type == OpType::SAMPLE && !node.params.sample_bitmask_words.empty()) {
+      if (node.op_type == OpType::SAMPLE && !node.params.bitmask.empty()) {
         param_flags |= PARAM_SAMPLE_BITMASK;
       }
 
@@ -175,7 +175,7 @@ namespace {
         write_u64(out, static_cast<uint64_t>(node.params.index_value));
       }
       if (param_flags & PARAM_SAMPLE_BITMASK) {
-        write_u32_vector(out, node.params.sample_bitmask_words);
+        write_u32_vector(out, node.params.bitmask);
       }
     }
 
@@ -345,7 +345,7 @@ namespace {
             node.params.index_value = static_cast<size_t>(read_u64(in));
         }
         if (param_flags & PARAM_SAMPLE_BITMASK) {
-            node.params.sample_bitmask_words = read_u32_vector(in);
+            node.params.bitmask = read_u32_vector(in);
         }
     }
 
@@ -412,7 +412,7 @@ namespace {
         read_op_params(in, node);
         return node;
     }
-    
+
 
 } // namespace
 
