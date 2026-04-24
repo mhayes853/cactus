@@ -491,6 +491,32 @@ bool test_fast_tanh_f32x4_correctness() {
     return true;
 }
 
+bool test_sample_fp32_bitmask_greedy() {
+    std::vector<float> logits = {1.0f, 10.0f, 5.0f, 3.0f};
+    uint32_t output = 0;
+
+    const uint32_t bitmask[] = {0b1101u};
+
+    cactus_sample_f32(logits.data(), &output, logits.size(),
+                      0.0f, 1.0f, 0, 0,
+                      bitmask);
+
+    return output == 2;
+}
+
+bool test_sample_fp16_bitmask_greedy() {
+    std::vector<__fp16> logits = {1.0f, 10.0f, 5.0f, 3.0};
+    uint32_t output = 0;
+
+    const uint32_t bitmask[] = {0b1101u};
+
+    cactus_sample_f16(logits.data(), &output, logits.size(),
+                      0.0f, 1.0f, 0, 0,
+                      bitmask);
+
+    return output == 2;
+}
+
 int main() {
     TestUtils::TestRunner runner("Kernel Backend Tests");
 
@@ -507,6 +533,8 @@ int main() {
     runner.run_test("Kernel INT4 MatMul Correctness", test_int4_matmul_correctness());
     runner.run_test("Kernel STFT Complex Correctness", test_stft_kernel_correctness());
     runner.run_test("Kernel Fast Tanh Correctness", test_fast_tanh_f32x4_correctness());
+    runner.run_test("Kernel Sample FP32 Bitmask Greedy", test_sample_fp32_bitmask_greedy());
+    runner.run_test("Kernel Sample FP16 Bitmask Greedy", test_sample_fp16_bitmask_greedy());
 
     runner.print_summary();
     return runner.all_passed() ? 0 : 1;
