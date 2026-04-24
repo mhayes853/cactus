@@ -200,6 +200,30 @@ class Graph:
         if rc != 0:
             raise RuntimeError("graph_softmax failed")
         return self._tensor_from_node(out.value)
+
+    def sample(self, x, temperature=0.6, top_p=0.95, top_k=20, bitmask=None):
+        x = self._ensure_tensor(x)
+        bitmask_arr = self._coerce_bitmask(bitmask)
+        bitmask_ptr = None
+        bitmask_size = 0
+        if bitmask_arr is not None:
+            bitmask_ptr = bitmask_arr.ctypes.data_as(ctypes.POINTER(ctypes.c_uint32))
+            bitmask_size = int(bitmask_arr.size)
+
+        out = cactus_node_t()
+        rc = _lib.cactus_graph_sample(
+            self.h,
+            cactus_node_t(x.id),
+            ctypes.c_float(float(temperature)),
+            ctypes.c_float(float(top_p)),
+            ctypes.c_size_t(int(top_k)),
+            bitmask_ptr,
+            ctypes.c_size_t(bitmask_size),
+            ctypes.byref(out),
+        )
+        if rc != 0:
+            raise RuntimeError("graph_sample failed")
+        return self._tensor_from_node(out.value)
     
     def relu(self, x):
         x = self._ensure_tensor(x)
@@ -288,6 +312,14 @@ class Graph:
             raise RuntimeError("unsupported precision")
         return arr
 
+    def _coerce_bitmask(self, bitmask):
+        if bitmask is None:
+            return None
+        arr = np.ascontiguousarray(np.asarray(bitmask), dtype=np.uint32)
+        if arr.ndim != 1:
+            raise ValueError("bitmask must be a 1D sequence of uint32 words")
+        return arr
+
 
 class Tensor:
     def __init__(self, g, node_id, shape, dtype):
@@ -346,6 +378,9 @@ class Tensor:
     
     def softmax(self, axis=-1):
         return self.g.softmax(self, axis)
+
+    def sample(self, temperature=0.6, top_p=0.95, top_k=20, bitmask=None):
+        return self.g.sample(self, temperature=temperature, top_p=top_p, top_k=top_k, bitmask=bitmask)
 
     def numpy(self):
         info = cactus_tensor_info_t()
