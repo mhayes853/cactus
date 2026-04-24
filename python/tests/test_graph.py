@@ -2,10 +2,12 @@ import unittest
 import numpy as np
 import sys
 import tempfile
+import ctypes
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.graph import Graph, Tensor
+from src.cactus import _lib, cactus_node_t
 
 
 class TestGraphElementwise(unittest.TestCase):
@@ -243,6 +245,13 @@ class TestGraphSaveLoad(unittest.TestCase):
     def _rebind_tensor(self, graph, tensor):
         return Tensor(graph, tensor.id, tensor.shape, tensor.dtype)
 
+    def _read_sampled_token(self, graph, tensor):
+        out_ptr = ctypes.c_void_p()
+        rc = _lib.cactus_graph_get_output_ptr(graph.h, cactus_node_t(tensor.id), ctypes.byref(out_ptr))
+        if rc != 0 or not out_ptr.value:
+            raise RuntimeError("graph_get_output_ptr failed")
+        return ctypes.c_uint32.from_address(out_ptr.value).value
+
     def test_save_load_roundtrip_composed_graph(self):
         g = Graph()
 
@@ -279,42 +288,38 @@ class TestGraphSaveLoad(unittest.TestCase):
             self.assertEqual(out.shape, expected.shape)
             np.testing.assert_allclose(out, expected, atol=1e-2)
 
-    def test_save_load_roundtrip_softmax_cat(self):
+    def test_save_load_roundtrip_sample(self):
         g = Graph()
 
-        a = g.input((2, 3))
-        b = g.input((2, 3))
-        joined = g.cat([a, b], axis=1)
-        out_node = joined.softmax(axis=1)
+        logits = g.input((1, 4), dtype=Graph.FP32)
+        bitmask = [0b1111]
+        out_node = logits.sample(temperature=0.0, top_p=1.0, top_k=0, bitmask=bitmask)
 
-        a_data = np.array([[1.0, 2.0, 3.0], [0.5, 1.5, 2.5]], dtype=np.float16)
-        b_data = np.array([[4.0, 5.0, 6.0], [3.5, 4.5, 5.5]], dtype=np.float16)
+        logits_data = np.array([[1.0, 10.0, 5.0, 3.0]], dtype=np.float32)
 
-        g.set_input(a, a_data)
-        g.set_input(b, b_data)
+        g.set_input(logits, logits_data)
         g.execute()
-        expected = out_node.numpy()
+        expected = self._read_sampled_token(g, out_node)
         expected_info = g.output_info(out_node)
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = Path(tmpdir) / "softmax_cat_graph.cg"
+            path = Path(tmpdir) / "sample_graph.cg"
             g.save(path)
 
             loaded = Graph.load(path)
-            loaded_a = self._rebind_tensor(loaded, a)
-            loaded_b = self._rebind_tensor(loaded, b)
+            loaded_logits = self._rebind_tensor(loaded, logits)
             loaded_out = self._rebind_tensor(loaded, out_node)
 
-            loaded.set_input(loaded_a, a_data)
-            loaded.set_input(loaded_b, b_data)
+            loaded.set_input(loaded_logits, logits_data)
             loaded.execute()
 
-            out = loaded_out.numpy()
+            out = self._read_sampled_token(loaded, loaded_out)
             info = loaded.output_info(loaded_out)
 
             self.assertEqual(info["shape"], expected_info["shape"])
             self.assertEqual(info["precision"], expected_info["precision"])
-            np.testing.assert_allclose(out, expected, atol=5e-2)
+            self.assertEqual(out, expected)
+            self.assertEqual(out, 1)
 
 
 if __name__ == "__main__":
