@@ -355,21 +355,25 @@ void cactus_bilinear_interpolation_f16(const __fp16* input, __fp16* output, size
 
 void cactus_sample_f32(const float* logits, uint32_t* output, size_t vocab_size,
                        float temperature, float top_p, size_t top_k, size_t random_seed,
+                       const uint32_t* bitmask = nullptr,
                        const float* bias_values = nullptr, const uint32_t* bias_indices = nullptr,
                        size_t bias_count = 0);
 void cactus_sample_f16(const __fp16* logits, uint32_t* output, size_t vocab_size,
                        float temperature, float top_p, size_t top_k, size_t random_seed,
+                       const uint32_t* bitmask = nullptr,
                        const float* bias_values = nullptr, const uint32_t* bias_indices = nullptr,
                        size_t bias_count = 0);
 
 void cactus_sample_f32_ex(const float* logits, uint32_t* output, size_t vocab_size,
                           float temperature, float top_p, float min_p, float repetition_penalty,
                           size_t top_k, size_t random_seed,
+                          const uint32_t* bitmask = nullptr,
                           const float* bias_values = nullptr, const uint32_t* bias_indices = nullptr,
                           size_t bias_count = 0);
 void cactus_sample_f16_ex(const __fp16* logits, uint32_t* output, size_t vocab_size,
                           float temperature, float top_p, float min_p, float repetition_penalty,
                           size_t top_k, size_t random_seed,
+                          const uint32_t* bitmask = nullptr,
                           const float* bias_values = nullptr, const uint32_t* bias_indices = nullptr,
                           size_t bias_count = 0);
 

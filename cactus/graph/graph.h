@@ -358,6 +358,7 @@ struct OpParams {
 
     std::vector<float> bias_values;
     std::vector<uint32_t> bias_indices;
+    std::vector<uint32_t> sample_bitmask_words;
 
     const int8_t* cached_keys_int8 = nullptr;
     const int8_t* cached_values_int8 = nullptr;
@@ -635,9 +636,11 @@ public:
     size_t weighted_stats_pool(size_t input, size_t weights);
 
     size_t sample(size_t logits, float temperature = 0.6f, float top_p = 0.95f, size_t top_k = 20,
-                  const std::unordered_map<uint32_t, float>& logit_bias = {});
+                  const std::unordered_map<uint32_t, float>& logit_bias = {},
+                  const std::vector<uint32_t>& bitmask = {});
     size_t sample_with_options(size_t logits, float temperature, float top_p, float min_p, float repetition_penalty,
-                               size_t top_k, const std::unordered_map<uint32_t, float>& logit_bias = {});
+                               size_t top_k, const std::unordered_map<uint32_t, float>& logit_bias = {},
+                               const std::vector<uint32_t>& bitmask = {});
     
     size_t concat(size_t input1, size_t input2, int axis = 0);
     size_t cat(const std::vector<size_t>& inputs, int axis);

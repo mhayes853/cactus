@@ -127,7 +127,7 @@ size_t CactusGraph::flatten(size_t input, int start_dim, int end_dim) {
 size_t CactusGraph::matmul(size_t input1, size_t input2, bool pretransposed_rhs, ComputeBackend backend) {
     const auto& lhs_buffer = get_output_buffer(input1);
     const auto& rhs_buffer = get_output_buffer(input2);
-      
+
     if (lhs_buffer.shape.size() != 2 || rhs_buffer.shape.size() != 2) {
         throw std::invalid_argument("Matrix multiplication requires 2D tensors");
     }
@@ -634,7 +634,7 @@ size_t CactusGraph::conv1d_k7s3(size_t input, size_t weight, size_t bias) {
     if (w.shape.size() != 3) throw std::runtime_error("weight must be [C_in, 7, C_out]");
     if (w.shape[0] != xin.shape[1]) throw std::runtime_error("C_in mismatch in conv1d_k7s3");
     if (w.shape[1] != 7) throw std::runtime_error("K=7 expected in conv1d_k7s3");
-    
+
     size_t C_out = w.shape[2];
     if (b.total_size != C_out) throw std::runtime_error("Bias size mismatch");
 
@@ -656,16 +656,16 @@ size_t CactusGraph::conv1d_k7s3(size_t input, size_t weight, size_t bias) {
 size_t CactusGraph::conv1d(size_t input, size_t weight, size_t stride) {
     const auto& xin = get_output_buffer(input);
     const auto& w   = get_output_buffer(weight);
-    
+
     if (xin.shape.size() != 3) throw std::runtime_error("conv1d expects N,C,L");
     if (w.shape.size() != 3) throw std::runtime_error("conv1d weight expects [C_out, C_in, K]");
-    
+
     size_t N = xin.shape[0];
     size_t C_out = w.shape[0];
     size_t L = xin.shape[2];
     size_t K = w.shape[2];
     size_t L_out = (L - K) / stride + 1;
-    
+
     OpParams params{.stride = stride};
     return add_node(OpType::CONV1D, {input, weight}, {N, C_out, L_out}, params);
 }
@@ -674,17 +674,17 @@ size_t CactusGraph::conv1d(size_t input, size_t weight, size_t bias, size_t stri
     const auto& xin = get_output_buffer(input);
     const auto& w   = get_output_buffer(weight);
     const auto& b   = get_output_buffer(bias);
-    
+
     if (xin.shape.size() != 3) throw std::runtime_error("conv1d expects N,C,L");
     if (w.shape.size() != 3) throw std::runtime_error("conv1d weight expects [C_out, C_in, K]");
-    
+
     size_t N = xin.shape[0];
     size_t C_out = w.shape[0];
     size_t L = xin.shape[2];
     size_t K = w.shape[2];
     size_t L_out = (L - K) / stride + 1;
     if (b.total_size != C_out) throw std::runtime_error("conv1d bias size mismatch");
-    
+
     OpParams params{.output_precision = xin.precision, .stride = stride};
     return add_node(OpType::CONV1D, {input, weight, bias}, {N, C_out, L_out}, params);
 }
@@ -1250,13 +1250,15 @@ size_t CactusGraph::scatter_topk(size_t indices, size_t values, size_t num_class
 }
 
 size_t CactusGraph::sample(size_t logits, float temperature, float top_p, size_t top_k,
-                           const std::unordered_map<uint32_t, float>& logit_bias) {
-    return this->sample_with_options(logits, temperature, top_p, 0.15f, 1.1f, top_k, logit_bias);
+                           const std::unordered_map<uint32_t, float>& logit_bias,
+                           const std::vector<uint32_t>& bitmask) {
+    return this->sample_with_options(logits, temperature, top_p, 0.15f, 1.1f, top_k, logit_bias, bitmask);
 }
 
 size_t CactusGraph::sample_with_options(size_t logits, float temperature, float top_p,
                                         float min_p, float repetition_penalty, size_t top_k,
-                                        const std::unordered_map<uint32_t, float>& logit_bias) {
+                                        const std::unordered_map<uint32_t, float>& logit_bias,
+                                        const std::vector<uint32_t>& bitmask) {
     const auto& logits_buffer = get_output_buffer(logits);
 
     if (logits_buffer.shape.empty()) {
@@ -1279,6 +1281,10 @@ size_t CactusGraph::sample_with_options(size_t logits, float temperature, float 
             params.bias_indices.push_back(idx);
             params.bias_values.push_back(val);
         }
+    }
+
+    if (!bitmask.empty()) {
+        params.sample_bitmask_words = bitmask;
     }
 
     std::vector<size_t> output_shape = {1};
@@ -1483,7 +1489,7 @@ size_t CactusGraph::quantize_activations(size_t input) {
     if (input_buffer.precision != Precision::FP16) {
         throw std::invalid_argument("quantize_activations requires FP16 input");
     }
-    
+
     OpParams params{};
     params.output_precision = Precision::INT8;
     return add_node(OpType::QUANTIZE_ACTIVATIONS, {input}, input_buffer.shape, params);

@@ -514,19 +514,31 @@ void cactus_softmax_f16(
         });
 }
 
+template <typename T>
+void apply_bitmask(std::vector<T>& filtered_logits, const uint32_t* bitmask, size_t vocab_size) {
+    if (!bitmask) return;
+    for (size_t i = 0; i < vocab_size; ++i) {
+        const uint8_t bit = (((const uint8_t *) bitmask)[i / 8] >> (i & 7)) & 1;
+        if (!bit) filtered_logits[i] = -std::numeric_limits<T>::infinity();
+    }
+}
+
 void cactus_sample_f32(const float* logits, uint32_t* output, size_t vocab_size,
                        float temperature, float top_p, size_t top_k, size_t random_seed,
+                       const uint32_t* bitmask,
                        const float* bias_values, const uint32_t* bias_indices,
                        size_t bias_count) {
     cactus_sample_f32_ex(logits, output, vocab_size,
                          temperature, top_p, 0.15f, 1.1f,
                          top_k, random_seed,
+                         bitmask,
                          bias_values, bias_indices, bias_count);
 }
 
 void cactus_sample_f32_ex(const float* logits, uint32_t* output, size_t vocab_size,
                           float temperature, float top_p, float min_p, float repetition_penalty,
                           size_t top_k, size_t random_seed,
+                          const uint32_t* bitmask,
                           const float* bias_values, const uint32_t* bias_indices,
                           size_t bias_count) {
     if (vocab_size == 0) {
@@ -547,6 +559,8 @@ void cactus_sample_f32_ex(const float* logits, uint32_t* output, size_t vocab_si
             }
         }
     }
+
+    apply_bitmask(filtered_logits, bitmask, vocab_size);
 
     if (temperature == 0.0f) {
         auto it = std::max_element(filtered_logits.begin(), filtered_logits.end());
@@ -712,17 +726,20 @@ void cactus_sample_f32_ex(const float* logits, uint32_t* output, size_t vocab_si
 
 void cactus_sample_f16(const __fp16* logits, uint32_t* output, size_t vocab_size,
                        float temperature, float top_p, size_t top_k, size_t random_seed,
+                       const uint32_t* bitmask,
                        const float* bias_values, const uint32_t* bias_indices,
                        size_t bias_count) {
     cactus_sample_f16_ex(logits, output, vocab_size,
                          temperature, top_p, 0.15f, 1.1f,
                          top_k, random_seed,
+                         bitmask,
                          bias_values, bias_indices, bias_count);
 }
 
 void cactus_sample_f16_ex(const __fp16* logits, uint32_t* output, size_t vocab_size,
                           float temperature, float top_p, float min_p, float repetition_penalty,
                           size_t top_k, size_t random_seed,
+                          const uint32_t* bitmask,
                           const float* bias_values, const uint32_t* bias_indices,
                           size_t bias_count) {
     if (vocab_size == 0) {
@@ -743,6 +760,8 @@ void cactus_sample_f16_ex(const __fp16* logits, uint32_t* output, size_t vocab_s
             }
         }
     }
+
+    apply_bitmask(filtered_logits, bitmask, vocab_size);
 
     if (temperature == 0.0f) {
         auto it = std::max_element(filtered_logits.begin(), filtered_logits.end());
