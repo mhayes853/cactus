@@ -15,6 +15,7 @@
 #include <xgrammar/matcher.h>
 #include <xgrammar/object.h>
 #include <xgrammar/tokenizer_info.h>
+#include <picojson/picojson.h>
 
 #include "../graph/graph.h"
 
@@ -237,6 +238,20 @@ struct GrammarVocabulary {
     std::vector<uint32_t> stop_token_ids;
 };
 
+struct ToolDefinition {
+    std::string name;
+    std::string description;
+    picojson::value arguments_schema;
+
+    static std::vector<ToolDefinition> parse_tools_json(const std::string& tools_json);
+
+    bool operator==(const ToolDefinition& other) const {
+        return name == other.name
+            && description == other.description
+            && arguments_schema == other.arguments_schema;
+    }
+};
+
 class Grammar {
 public:
     Grammar();
@@ -257,6 +272,13 @@ public:
     static Grammar structural_tag(const std::string& structural_tag_json);
     static Grammar unite(const std::vector<Grammar>& grammars);
     static Grammar concatenate(const std::vector<Grammar>& grammars);
+    static Grammar model_decode_grammar(
+        const Grammar& grammar,
+        bool force_tools,
+        bool supports_reasoning,
+        Config::ModelType model_type,
+        const std::vector<ToolDefinition>& tools
+    );
 
     bool is_empty() const;
     bool is_universal() const;

@@ -35,10 +35,279 @@ GrammarVocabulary Tokenizer::get_grammar_vocabulary() const {
     return GrammarVocabulary{encoded_vocab, vocab_type, encoded_vocab.size(), stop_token_ids};
 }
 
+std::vector<ToolDefinition> ToolDefinition::parse_tools_json(const std::string& tools_json) {
+    if (tools_json.empty()) {
+        throw std::runtime_error("tools_json must not be empty");
+    }
+
+    picojson::value parsed;
+    std::string parse_error;
+    auto end = picojson::parse(parsed, tools_json.begin(), tools_json.end(), &parse_error);
+    if (!parse_error.empty()) {
+        throw std::runtime_error("failed to parse tools_json: " + parse_error);
+    }
+    if (end != tools_json.end()) {
+        throw std::runtime_error("failed to parse tools_json: trailing content after JSON payload");
+    }
+    if (!parsed.is<picojson::array>()) {
+        throw std::runtime_error("tools_json must be a JSON array");
+    }
+
+    std::vector<ToolDefinition> tools;
+    for (const auto& item : parsed.get<picojson::array>()) {
+        if (!item.is<picojson::object>()) {
+            throw std::runtime_error("each tool entry must be a JSON object");
+        }
+
+        const auto& tool_object = item.get<picojson::object>();
+        if (!tool_object.count("type") || !tool_object.at("type").is<std::string>()) {
+            throw std::runtime_error("tool entry must contain a 'type' field");
+        }
+        const std::string& type = tool_object.at("type").get<std::string>();
+        if (type != "function") {
+            throw std::runtime_error("tool entry field 'type' must be 'function'");
+        }
+
+        if (!tool_object.count("function") || !tool_object.at("function").is<picojson::object>()) {
+            throw std::runtime_error("tool entry must contain a 'function' field");
+        }
+        const auto& function_object = tool_object.at("function").get<picojson::object>();
+        if (!function_object.count("name") || !function_object.at("name").is<std::string>()) {
+            throw std::runtime_error("tool entry function must contain a 'name' field");
+        }
+        const std::string& name = function_object.at("name").get<std::string>();
+        if (!function_object.count("parameters") || !function_object.at("parameters").is<picojson::object>()) {
+            throw std::runtime_error("tool entry function must contain a 'parameters' field within the 'function' field");
+        }
+
+        tools.push_back(ToolDefinition{
+            name,
+            function_object.count("description") && function_object.at("description").is<std::string>()
+                ? function_object.at("description").get<std::string>()
+                : "",
+            function_object.at("parameters")
+        });
+    }
+
+    if (tools.empty()) {
+        throw std::runtime_error("tools_json must contain at least one tool entry");
+    }
+
+    return tools;
+}
+
 Grammar::Grammar() : grammar(xgrammar::NullObj{}), is_universal_(false) {}
 
 Grammar::Grammar(xgrammar::Grammar raw_grammar)
     : grammar(raw_grammar), is_universal_(false) {}
+
+static std::string json_tool_structural_tag_json(
+    const std::vector<ToolDefinition>& tools,
+    const std::string& begin_prefix,
+    const std::string& end_suffix
+) {
+    picojson::array tags;
+
+    for (const auto& tool : tools) {
+        if (!tool.arguments_schema.is<picojson::object>()) {
+            throw std::runtime_error("tool '" + tool.name + "' arguments schema must be a JSON object");
+        }
+        if (tool.name.empty()) {
+            throw std::runtime_error("tool definitions must have a non-empty name");
+        }
+
+        picojson::object content;
+        content["type"] = picojson::value("json_schema");
+        content["json_schema"] = tool.arguments_schema;
+
+        picojson::object tag;
+        tag["begin"] = picojson::value(begin_prefix + tool.name + "\", \"arguments\": ");
+        tag["content"] = picojson::value(content);
+        tag["end"] = picojson::value(end_suffix);
+        tags.push_back(picojson::value(tag));
+    }
+
+    picojson::object format;
+    format["type"] = picojson::value("tags_with_separator");
+    format["separator"] = picojson::value("");
+    format["tags"] = picojson::value(tags);
+    format["at_least_one"] = picojson::value(true);
+
+    picojson::object root;
+    root["type"] = picojson::value("structural_tag");
+    root["format"] = picojson::value(format);
+    return picojson::value(root).serialize();
+}
+
+static Grammar qwen_style_tool_call_grammar(const std::vector<ToolDefinition>& tools) {
+    return Grammar::structural_tag(
+        json_tool_structural_tag_json(tools, "<tool_call>\n{\"name\": \"", "}\n</tool_call>")
+    );
+}
+
+static Grammar needle_style_tool_call_grammar(const std::vector<ToolDefinition>& tools) {
+    return Grammar::structural_tag(
+        json_tool_structural_tag_json(tools, "<tool_call>\n{\"name\": \"", "}")
+    );
+}
+
+static std::string gbnf_escape_literal(const std::string& value) {
+    std::string escaped;
+    escaped.reserve(value.size());
+    for (char c : value) {
+        if (c == '\\' || c == '"') {
+            escaped.push_back('\\');
+        }
+        escaped.push_back(c);
+    }
+    return escaped;
+}
+
+static std::string gbnf_tool_name_rule(const std::vector<ToolDefinition>& tools) {
+    std::string rule = "tool_name ::= ";
+    for (size_t i = 0; i < tools.size(); ++i) {
+        const auto& tool = tools[i];
+        if (i > 0) {
+            rule += " | ";
+        }
+        rule += "\"" + gbnf_escape_literal(tool.name) + "\"";
+    }
+    return rule;
+}
+
+static Grammar gemma_style_tool_call_grammar(const std::vector<ToolDefinition>& tools, bool use_pipe_tags_only) {
+    std::string gbnf = R"(
+    root ::= tool_call+
+    tool_call ::= )";
+    gbnf += use_pipe_tags_only
+        ? R"("<|tool_call>" "call:" tool_name object "<tool_call|>")"
+        : R"("<start_function_call>" "call:" tool_name object "<end_function_call>")";
+    gbnf += R"(
+    object ::= "{" (pair ("," pair)*)? "}"
+    pair ::= object_key ":" value
+    array ::= "[" (value ("," value)*)? "]"
+    value ::= string | number | boolean | null | array | object
+    string ::= "<escape>" string_char* "<escape>"
+    string_char ::= [^<] | "<" [^e] | "<e" [^s] | "<es" [^c] | "<esc" [^a] | "<esca" [^p] | "<escap" [^e] | "<escape" [^>]
+    boolean ::= "true" | "false"
+    null ::= "null"
+    number ::= "-"? int frac? exp?
+    int ::= "0" | nonzero_digit digit*
+    frac ::= "." digit+
+    exp ::= ("e" | "E") ("+" | "-")? digit+
+    object_key ::= [A-Za-z_] [A-Za-z0-9_]*
+    digit ::= [0-9]
+    nonzero_digit ::= [1-9]
+    )";
+    return Grammar::gbnf(gbnf + gbnf_tool_name_rule(tools) + "\n");
+}
+
+static Grammar lfm2_style_tool_call_grammar(const std::vector<ToolDefinition>& tools) {
+    const auto gbnf = R"GRAMMAR(
+    root ::= tool_block+
+    tool_block ::= "<|tool_call_start|>" "[" call ("," call)* "]" "<|tool_call_end|>"
+    call ::= tool_name "(" (kwarg ("," kwarg)*)? ")"
+    kwarg ::= ident "=" value
+    value ::= string | number | boolean | none | list | dict
+    list ::= "[" (value ("," value)*)? "]"
+    dict ::= "{" (dict_item ("," dict_item)*)? "}"
+    dict_item ::= string ":" value
+    boolean ::= "True" | "False"
+    none ::= "None" | "null"
+    number ::= "-"? int frac? exp?
+    int ::= "0" | nonzero_digit digit*
+    frac ::= "." digit+
+    exp ::= ("e" | "E") ("+" | "-")? digit+
+    string ::= "\"" string_char* "\""
+    string_char ::= unescaped | "\\" escape
+    unescaped ::= [^"\\]
+    escape ::= "\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t"
+    ident ::= [A-Za-z_] [A-Za-z0-9_]*
+    digit ::= [0-9]
+    nonzero_digit ::= [1-9]
+    )GRAMMAR";
+    return Grammar::gbnf(gbnf + gbnf_tool_name_rule(tools) + "\n");
+}
+
+static Grammar model_tool_call_grammar(
+    Config::ModelType model_type,
+    const std::vector<ToolDefinition>& tools
+) {
+    if (tools.empty()) return Grammar();
+    switch (model_type) {
+        case Config::ModelType::QWEN:
+        case Config::ModelType::QWEN3P5:
+        case Config::ModelType::YOUTU:
+            return qwen_style_tool_call_grammar(tools);
+        case Config::ModelType::NEEDLE:
+            return needle_style_tool_call_grammar(tools);
+        case Config::ModelType::GEMMA:
+        case Config::ModelType::GEMMA3N:
+            return gemma_style_tool_call_grammar(tools, false);
+        case Config::ModelType::GEMMA4:
+            return gemma_style_tool_call_grammar(tools, true);
+        case Config::ModelType::LFM2:
+            return lfm2_style_tool_call_grammar(tools);
+        default:
+            return Grammar::universal();
+    }
+}
+
+static Grammar reasoning_grammar(Config::ModelType model_type) {
+    if (model_type == Config::ModelType::GEMMA4) {
+        static const auto grammar = Grammar::gbnf(R"(
+            root ::= think?
+            think ::= "<|channel>" any_non_thinking_character* "\n<channel|>"
+            any_non_thinking_character ::= (
+                [^<]
+                | "<" [^c]
+                | "<c" [^h]
+                | "<ch" [^a]
+                | "<cha" [^n]
+                | "<chan" [^n]
+                | "<chann" [^e]
+                | "<channe" [^l]
+                | "<channel" [^|]
+                | "<channel|" [^>]
+            )
+        )");
+        return grammar;
+    }
+    static const auto grammar = Grammar::gbnf(R"(
+        root ::= think?
+        think ::= "<think>\n" any_non_thinking_character* "\n</think>\n\n"
+        any_non_thinking_character ::= (
+            [^<]
+            | "<" [^/]
+            | "</" [^t]
+            | "</t" [^h]
+            | "</th" [^i]
+            | "</thi" [^n]
+            | "</thin" [^k]
+            | "</think" [^>]
+        )
+    )");
+    return grammar;
+}
+
+Grammar Grammar::model_decode_grammar(
+    const Grammar& grammar,
+    bool force_tools,
+    bool supports_reasoning,
+    Config::ModelType model_type,
+    const std::vector<ToolDefinition>& tools
+) {
+    if (grammar.is_empty() && tools.empty()) {
+        return Grammar();
+    }
+    auto tool_grammar = model_tool_call_grammar(model_type, tools);
+    auto content_grammar = force_tools
+        ? Grammar::concatenate({tool_grammar, grammar})
+        : Grammar::unite({grammar, tool_grammar});
+    return supports_reasoning
+        ? Grammar::concatenate({reasoning_grammar(model_type), content_grammar})
+        : content_grammar;
+}
 
 Grammar Grammar::gbnf(const std::string& gbnf, const std::string& start_symbol) {
     return Grammar(xgrammar::Grammar::FromEBNF(gbnf, start_symbol));
