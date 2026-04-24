@@ -205,10 +205,8 @@ class Graph:
         x = self._ensure_tensor(x)
         bitmask_arr = self._coerce_bitmask(bitmask)
         bitmask_ptr = None
-        bitmask_size = 0
         if bitmask_arr is not None:
             bitmask_ptr = bitmask_arr.ctypes.data_as(ctypes.POINTER(ctypes.c_uint32))
-            bitmask_size = int(bitmask_arr.size)
 
         out = cactus_node_t()
         rc = _lib.cactus_graph_sample(
@@ -218,7 +216,6 @@ class Graph:
             ctypes.c_float(float(top_p)),
             ctypes.c_size_t(int(top_k)),
             bitmask_ptr,
-            ctypes.c_size_t(bitmask_size),
             ctypes.byref(out),
         )
         if rc != 0:

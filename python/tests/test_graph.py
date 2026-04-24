@@ -1,17 +1,17 @@
-import unittest
-import numpy as np
+import ctypes
 import sys
 import tempfile
-import ctypes
+import unittest
 from pathlib import Path
 
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from src.graph import Graph, Tensor
 from src.cactus import _lib, cactus_node_t
+from src.graph import Graph, Tensor
 
 
 class TestGraphElementwise(unittest.TestCase):
-
     def test_pow_abs(self):
         g = Graph()
         a = g.input((4,))
@@ -82,7 +82,6 @@ class TestGraphElementwise(unittest.TestCase):
 
 
 class TestGraphComposed(unittest.TestCase):
-
     def test_composed_inference_graph(self):
         g = Graph()
 
@@ -112,7 +111,6 @@ class TestGraphComposed(unittest.TestCase):
 
 
 class TestGraphTensorOps(unittest.TestCase):
-
     def test_view(self):
         g = Graph()
         a = g.input((2, 3))
@@ -181,7 +179,6 @@ class TestGraphTensorOps(unittest.TestCase):
 
 
 class TestGraphActivations(unittest.TestCase):
-
     def test_relu(self):
         g = Graph()
         a = g.input((4,))
@@ -222,7 +219,6 @@ class TestGraphActivations(unittest.TestCase):
 
 
 class TestGraphSoftmax(unittest.TestCase):
-
     def test_softmax_2d(self):
         g = Graph()
         a = g.input((2, 4))
@@ -241,13 +237,14 @@ class TestGraphSoftmax(unittest.TestCase):
 
 
 class TestGraphSaveLoad(unittest.TestCase):
-
     def _rebind_tensor(self, graph, tensor):
         return Tensor(graph, tensor.id, tensor.shape, tensor.dtype)
 
     def _read_sampled_token(self, graph, tensor):
         out_ptr = ctypes.c_void_p()
-        rc = _lib.cactus_graph_get_output_ptr(graph.h, cactus_node_t(tensor.id), ctypes.byref(out_ptr))
+        rc = _lib.cactus_graph_get_output_ptr(
+            graph.h, cactus_node_t(tensor.id), ctypes.byref(out_ptr)
+        )
         if rc != 0 or not out_ptr.value:
             raise RuntimeError("graph_get_output_ptr failed")
         return ctypes.c_uint32.from_address(out_ptr.value).value
@@ -287,6 +284,43 @@ class TestGraphSaveLoad(unittest.TestCase):
             out = loaded_out.numpy()
             self.assertEqual(out.shape, expected.shape)
             np.testing.assert_allclose(out, expected, atol=1e-2)
+
+    def test_save_load_roundtrip_softmax_cat(self):
+        g = Graph()
+
+        a = g.input((2, 3))
+        b = g.input((2, 3))
+        joined = g.cat([a, b], axis=1)
+        out_node = joined.softmax(axis=1)
+
+        a_data = np.array([[1.0, 2.0, 3.0], [0.5, 1.5, 2.5]], dtype=np.float16)
+        b_data = np.array([[4.0, 5.0, 6.0], [3.5, 4.5, 5.5]], dtype=np.float16)
+
+        g.set_input(a, a_data)
+        g.set_input(b, b_data)
+        g.execute()
+        expected = out_node.numpy()
+        expected_info = g.output_info(out_node)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "softmax_cat_graph.cg"
+            g.save(path)
+
+            loaded = Graph.load(path)
+            loaded_a = self._rebind_tensor(loaded, a)
+            loaded_b = self._rebind_tensor(loaded, b)
+            loaded_out = self._rebind_tensor(loaded, out_node)
+
+            loaded.set_input(loaded_a, a_data)
+            loaded.set_input(loaded_b, b_data)
+            loaded.execute()
+
+            out = loaded_out.numpy()
+            info = loaded.output_info(loaded_out)
+
+            self.assertEqual(info["shape"], expected_info["shape"])
+            self.assertEqual(info["precision"], expected_info["precision"])
+            np.testing.assert_allclose(out, expected, atol=5e-2)
 
     def test_save_load_roundtrip_sample(self):
         g = Graph()

@@ -269,7 +269,6 @@ _lib.cactus_graph_sample.argtypes = [
     ctypes.c_float,
     ctypes.c_size_t,
     ctypes.POINTER(ctypes.c_uint32),
-    ctypes.c_size_t,
     ctypes.POINTER(cactus_node_t),
 ]
 _lib.cactus_graph_sample.restype = ctypes.c_int
