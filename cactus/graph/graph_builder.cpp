@@ -1284,7 +1284,7 @@ size_t CactusGraph::sample_with_options(size_t logits, float temperature, float 
     }
 
     if (!bitmask.empty()) {
-        params.sample_bitmask_words = bitmask;
+        params.bitmask = bitmask;
     }
 
     std::vector<size_t> output_shape = {1};

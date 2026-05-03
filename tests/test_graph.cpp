@@ -755,7 +755,7 @@ bool test_graph_sample_bitmask_save_load() {
             [](const auto& node) { return node.op_type == OpType::SAMPLE; }
         );
 
-        if (sample_it != sg.nodes.end() && sample_it->params.sample_bitmask_words != bitmask) {
+        if (sample_it != sg.nodes.end() && sample_it->params.bitmask != bitmask) {
             std::remove(filename.c_str());
             return false;
         }

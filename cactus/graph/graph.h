@@ -103,7 +103,7 @@ enum class Precision {
     INT8,
     FP16,
     FP32,
-    INT4 
+    INT4
 };
 
 enum class ComputeBackend {
@@ -158,7 +158,7 @@ struct PrecisionTraits {
             case Precision::INT8: return 1;
             case Precision::FP16: return 2;
             case Precision::FP32: return 4;
-            case Precision::INT4: return 1; 
+            case Precision::INT4: return 1;
         }
         return 1;
     }
@@ -214,7 +214,7 @@ struct TensorConfig {
     Precision compute_precision = Precision::INT8;
     Precision output_precision = Precision::INT8;
     bool auto_mixed_precision = false;
-    
+
     static TensorConfig& global();
 };
 
@@ -242,7 +242,7 @@ struct BufferDesc {
     std::unique_ptr<char[]> owned_scales;
 
     bool is_interleaved = false;
-    size_t original_N = 0;  
+    size_t original_N = 0;
 
     void* activation_scales_data = nullptr;
     std::unique_ptr<char[]> owned_activation_scales;
@@ -326,7 +326,7 @@ struct OpParams {
     size_t slice_start = 0;
     size_t slice_length = 0;
     size_t window_size = 0;
-    bool is_causal = true;  
+    bool is_causal = true;
     bool attention_mask_is_additive = false;
     float logit_cap = 0.0f;
     std::vector<size_t> new_shape;
@@ -343,9 +343,9 @@ struct OpParams {
     float repetition_penalty = 1.1f;
     size_t top_k = 0;
     size_t random_seed = 0;
-    
-    size_t index_value = 0;  
-    size_t num_classes = 0; 
+
+    size_t index_value = 0;
+    size_t num_classes = 0;
     size_t num_groups = 0;
     size_t dst_height = 0;
     size_t dst_width = 0;
@@ -353,12 +353,12 @@ struct OpParams {
     bool normalize_routing = false;
     size_t num_experts = 0;
     size_t num_experts_per_tok = 0;
-    bool moe_gated = true; 
+    bool moe_gated = true;
     Activation activation = Activation::SILU;
 
     std::vector<float> bias_values;
     std::vector<uint32_t> bias_indices;
-    std::vector<uint32_t> sample_bitmask_words;
+    std::vector<uint32_t> bitmask;
 
     const int8_t* cached_keys_int8 = nullptr;
     const int8_t* cached_values_int8 = nullptr;
@@ -380,7 +380,7 @@ struct GraphNode {
     std::vector<size_t> input_ids;
     BufferDesc output_buffer;
     OpParams params;
-    
+
     GraphNode(size_t node_id, OpType type);
 };
 
@@ -490,17 +490,17 @@ public:
 
     void save(const std::string& path);
     static CactusGraph load(const std::string& path);
-    
+
     size_t input(const std::vector<size_t>& shape, Precision precision = Precision::INT8);
     size_t precision_cast(size_t input, Precision target_precision);
-    size_t quantize_activations(size_t input);  
-    
+    size_t quantize_activations(size_t input);
+
     size_t add(size_t input1, size_t input2);
     size_t add_clipped(size_t input1, size_t input2);
     size_t subtract(size_t input1, size_t input2);
     size_t multiply(size_t input1, size_t input2);
     size_t divide(size_t input1, size_t input2);
-    
+
     size_t scalar_add(size_t input, float value);
     size_t scalar_subtract(size_t input, float value);
     size_t scalar_multiply(size_t input, float value);
@@ -510,7 +510,7 @@ public:
     size_t scalar_cos(size_t input);
     size_t scalar_sin(size_t input);
     size_t scalar_log(size_t input);
-    
+
     size_t relu(size_t input);
     size_t silu(size_t input);
     size_t gelu(size_t input);
@@ -523,20 +523,20 @@ public:
     size_t pow(size_t input, float exponent);
     size_t view(size_t input, const std::vector<size_t>& new_shape);
     size_t flatten(size_t input, int start_dim = 0, int end_dim = -1);
-    
+
     size_t matmul(size_t input1, size_t input2, bool pretransposed_rhs = false, ComputeBackend backend = ComputeBackend::CPU);
     size_t transpose(size_t input, ComputeBackend backend = ComputeBackend::CPU);
     size_t transposeN(size_t input, const std::vector<size_t>& permutation, ComputeBackend backend = ComputeBackend::CPU);
     size_t reshape(size_t input, const std::vector<size_t>& new_shape);
     size_t slice(size_t input, int axis, size_t start, size_t length);
     size_t index(size_t input, size_t index_value, int dim);
-    
+
     size_t sum(size_t input, int axis);
     size_t mean(size_t input, int axis);
     size_t variance(size_t input, int axis);
     size_t min(size_t input, int axis);
     size_t max(size_t input, int axis);
-    
+
     size_t gather(size_t embeddings, size_t indices);
     size_t mmap_embeddings(const std::string& filename);
     size_t mmap_weights(const std::string& filename);
@@ -641,15 +641,14 @@ public:
     size_t sample_with_options(size_t logits, float temperature, float top_p, float min_p, float repetition_penalty,
                                size_t top_k, const std::unordered_map<uint32_t, float>& logit_bias = {},
                                const std::vector<uint32_t>& bitmask = {});
-    
     size_t concat(size_t input1, size_t input2, int axis = 0);
     size_t cat(const std::vector<size_t>& inputs, int axis);
     size_t scatter_topk(size_t indices, size_t values, size_t num_classes);
-    
+
     void set_input(size_t node_id, const void* data, Precision precision);
     void set_external_input(size_t node_id, void* data, Precision precision);
     void* get_output(size_t node_id);
-    
+
     void execute(const std::string& profile_file = "");
     void hard_reset();
     void soft_reset();
@@ -660,7 +659,7 @@ public:
     void capture_debug_node(uint32_t layer_idx, const std::string& name, size_t node_id);
     const std::vector<DebugNodeEntry>& get_debug_nodes() const;
     void clear_debug_nodes();
-    
+
     size_t add_node(OpType op_type, const std::vector<size_t>& inputs, const std::vector<size_t>& output_shape, const OpParams& params = {});
     const BufferDesc& get_output_buffer(size_t node_id) const;
     void allocate_buffers();
@@ -682,7 +681,7 @@ private:
     std::vector<DebugNodeEntry> debug_nodes_;
     BufferPool buffer_pool_;
     bool prefill_mode_ = false;
-    
+
     std::unordered_set<size_t> persistent_node_ids_;
     std::unordered_set<size_t> populated_node_ids_;
 };
@@ -721,9 +720,9 @@ namespace GraphFile {
 
     SerializedGraph load_graph(const std::string& filename);
     void save_graph(const CactusGraph& graph, const std::string& filename);
-    
+
     void save_node(CactusGraph& graph, size_t node_id, const std::string& filename);
-    
+
     class MappedFile {
     public:
         MappedFile(const std::string& filename);

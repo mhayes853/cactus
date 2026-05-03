@@ -18,7 +18,7 @@ void compute_sample_node(GraphNode& node, const std::vector<std::unique_ptr<Grap
     const float* bias_values = node.params.bias_values.empty() ? nullptr : node.params.bias_values.data();
     const uint32_t* bias_indices = node.params.bias_indices.empty() ? nullptr : node.params.bias_indices.data();
     size_t bias_count = node.params.bias_values.size();
-    const uint32_t* bitmask = node.params.sample_bitmask_words.empty() ? nullptr : node.params.sample_bitmask_words.data();
+    const uint32_t* bitmask = node.params.bitmask.empty() ? nullptr : node.params.bitmask.data();
 
     if (logits_buffer.shape.size() != 2) {
         throw std::runtime_error("Sample expects 2D logits tensor [seq_len, vocab_size]");
