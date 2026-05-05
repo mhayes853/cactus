@@ -8,6 +8,7 @@ fn main() {
 
     let build_dir = build_native_library(&cactus_src);
     link_native_library(&build_dir);
+    link_vendored_xgrammar();
     link_platform_dependencies();
 
     generate_bindings(&cactus_src);
@@ -84,7 +85,6 @@ fn link_platform_dependencies() {
     }
     println!("cargo:rustc-link-lib=curl");
     println!("cargo:rustc-link-lib=c++");
-    link_vendored_xgrammar();
 }
 
 #[cfg(target_os = "linux")]
@@ -93,7 +93,7 @@ fn link_platform_dependencies() {
     println!("cargo:rustc-link-lib=m");
     println!("cargo:rustc-link-lib=pthread");
     println!("cargo:rustc-link-lib=curl");
-    link_vendored_xgrammar();
+    println!("cargo:rustc-link-lib=atomic");
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
