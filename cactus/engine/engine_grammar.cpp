@@ -185,10 +185,7 @@ Grammar Grammar::star(const Grammar& grammar) {
 Grammar Grammar::repeat(const Grammar& grammar, int count) {
     if (grammar.is_empty()) return grammar;
     if (count == 0) return Grammar::epsilon();
-    std::vector<Grammar> grammars;
-    for (int i = 0; i < count; i++) {
-        grammars.push_back(grammar);
-    }
+    std::vector<Grammar> grammars(count, grammar);
     return Grammar::concatenate(grammars);
 }
 
@@ -197,7 +194,8 @@ Grammar Grammar::repeat_range(const Grammar& grammar, int min_count, int max_cou
     if (max_count != -1 && max_count < min_count) {
         throw std::runtime_error("repeat_range max_count must be >= min_count or size_t(-1)");
     }
-    if (min_count == 0 && max_count == 0) Grammar::epsilon();
+    if (min_count == 0 && max_count == 0) return Grammar::epsilon();
+    if (min_count == max_count) return Grammar::repeat(grammar, min_count);
 
     picojson::value format_json;
 
