@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <thread>
 #include <vector>
+#include <thread>
 #include <dlpack/dlpack.h>
 #include <picojson/picojson.h>
 
