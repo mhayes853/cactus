@@ -27,7 +27,7 @@ static std::unique_ptr<cactus::engine::Tokenizer> create_test_tokenizer() {
         throw std::runtime_error("CACTUS_TEST_MODEL is not set");
     }
 
-    auto tokenizer = create_tokenizer_from_model_dir(model_path);
+    auto tokenizer = Tokenizer::from_model_dir(model_path);
     if (!tokenizer) {
         throw std::runtime_error("Failed to load tokenizer from test model files");
     }

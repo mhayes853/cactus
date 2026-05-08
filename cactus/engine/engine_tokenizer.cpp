@@ -13,8 +13,8 @@ namespace cactus {
 namespace engine {
 
 namespace {
-    
-bool model_uses_bpe_tokenizer(const std::string& merges_file) {
+
+bool has_merges(const std::string& merges_file) {
     std::ifstream merges_check(merges_file);
     if (!merges_check.is_open()) {
         return false;
@@ -250,7 +250,7 @@ TokenizerRuntimeConfig load_tokenizer_runtime_config(const std::string& config_f
     return config;
 }
 
-std::unique_ptr<Tokenizer> create_tokenizer_from_model_dir(const std::string& model_dir) {
+std::unique_ptr<Tokenizer> Tokenizer::from_model_dir(const std::string& model_dir) {
     const std::string vocab_file = model_dir + "/vocab.txt";
     const std::string merges_file = model_dir + "/merges.txt";
     const std::string config_file = model_dir + "/tokenizer_config.txt";
@@ -259,7 +259,7 @@ std::unique_ptr<Tokenizer> create_tokenizer_from_model_dir(const std::string& mo
 
     std::unique_ptr<Tokenizer> tokenizer;
     if (runtime_config.tokenizer_type == TokenizerRuntimeConfig::TokenizerType::BPE ||
-        (runtime_config.tokenizer_type == TokenizerRuntimeConfig::TokenizerType::UNKNOWN && model_uses_bpe_tokenizer(merges_file))) {
+        (runtime_config.tokenizer_type == TokenizerRuntimeConfig::TokenizerType::UNKNOWN && has_merges(merges_file))) {
         tokenizer = std::make_unique<BPETokenizer>();
     } else {
         tokenizer = std::make_unique<SPTokenizer>();
@@ -483,7 +483,7 @@ std::string Tokenizer::format_chat_prompt(const std::vector<ChatMessage>& messag
     if (model_type_ == ModelType::LFM2 && has_images) {
         return format_lfm2_vl_style(messages, add_generation_prompt, tools_json);
     }
-    
+
     switch (model_type_) {
         case ModelType::QWEN:
         case ModelType::QWEN3P5:
@@ -844,13 +844,13 @@ std::string Tokenizer::format_lfm2_vl_style(
     }
 
     std::string result = "<|startoftext|>";
-    
+
     for (const auto& msg : messages) {
         result += "<|im_start|>" + msg.role + "\n";
         for (const auto& image_path : msg.images) {
             int width = 0, height = 0, channels = 0;
             unsigned char* img_data = stbi_load(image_path.c_str(), &width, &height, &channels, 0);
-            
+
             if (img_data) {
                 Siglip2Preprocessor preprocessor;
                 auto shape_result = preprocessor.compute_spatial_shapes(height, width);
@@ -860,26 +860,26 @@ std::string Tokenizer::format_lfm2_vl_style(
                 int grid_cols = shape_result.grid_cols;
                 int num_tiles = grid_rows * grid_cols;
                 result += "<|image_start|>";
-                
+
                 if (num_tiles > 1) {
                     for (int tile_idx = 0; tile_idx < num_tiles; ++tile_idx) {
                         int row = tile_idx / grid_cols;
                         int col = tile_idx % grid_cols;
-                        
+
                         result += "<|img_row_" + std::to_string(row + 1) + "_col_" + std::to_string(col + 1) + "|>";
                         auto [tile_height, tile_width] = shape_result.shapes[tile_idx];
                         int tile_tokens = (tile_height * tile_width) / (downsample_factor * downsample_factor);
-                        
+
                         for (int t = 0; t < tile_tokens; ++t) {
                             result += "<image>";
                         }
                     }
                     if (use_thumbnail && static_cast<size_t>(num_tiles) < shape_result.shapes.size()) {
                         result += "<|img_thumbnail|>";
-                        
+
                         auto [thumb_height, thumb_width] = shape_result.shapes[num_tiles];
                         int thumbnail_tokens = (thumb_height * thumb_width) / (downsample_factor * downsample_factor);
-                        
+
                         for (int t = 0; t < thumbnail_tokens; ++t) {
                             result += "<image>";
                         }
@@ -887,14 +887,14 @@ std::string Tokenizer::format_lfm2_vl_style(
                 } else if (num_tiles == 1) {
                     auto [thumb_height, thumb_width] = shape_result.shapes[0];
                     int thumbnail_tokens = (thumb_height * thumb_width) / (downsample_factor * downsample_factor);
-                    
+
                     for (int t = 0; t < thumbnail_tokens; ++t) {
                         result += "<image>";
                     }
                 }
-                
+
                 result += "<|image_end|>";
-                
+
                 stbi_image_free(img_data);
             } else {
                 result += "<image>";
@@ -952,7 +952,7 @@ std::string Tokenizer::format_gemma_style(const std::vector<ChatMessage>& messag
             std::string func_name = msg.name.empty() ? "tool" : msg.name;
             result += "<start_function_response>response:" + func_name + "{" + msg.content + "}<end_function_response>";
             prev_message_type = "tool_response";
-            
+
         } else if (msg.role == "user") {
             if (prev_message_type != "tool_response") {
                 result += "<start_of_turn>user\n";
@@ -960,7 +960,7 @@ std::string Tokenizer::format_gemma_style(const std::vector<ChatMessage>& messag
             result += trim(msg.content);
             result += "<end_of_turn>\n";
             prev_message_type = "content";
-            
+
         } else if (msg.role == "assistant" || msg.role == "model") {
             if (prev_message_type != "tool_response") {
                 result += "<start_of_turn>model\n";

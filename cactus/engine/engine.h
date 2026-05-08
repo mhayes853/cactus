@@ -5,7 +5,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <memory>
-#include <thread>
 #include <cstdint>
 
 #include <xgrammar/compiler.h>
@@ -403,6 +402,8 @@ inline std::string extract_json_string(const std::string& json, size_t& pos) {
 
 class Tokenizer {
 public:
+    static std::unique_ptr<Tokenizer> from_model_dir(const std::string& model_dir);
+
     virtual ~Tokenizer() = default;
 
     virtual std::vector<uint32_t> encode(const std::string& text) const = 0;
@@ -509,8 +510,6 @@ private:
     std::vector<std::string> split_with_special_tokens(const std::string& text) const;
     void load_special_tokens(const std::string& config_file);
 };
-
-std::unique_ptr<Tokenizer> create_tokenizer_from_model_dir(const std::string& model_dir);
 
 class SPTokenizer : public Tokenizer {
 public:

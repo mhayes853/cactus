@@ -3,13 +3,11 @@
 #include "../graph/graph.h"
 #include "../npu/npu.h"
 #include <fstream>
-#include <iomanip>
 #include <iostream>
 #include <cmath>
 #include <cstdlib>
 #include <dirent.h>
 #include <algorithm>
-#include <set>
 #include <sstream>
 #include <stdexcept>
 
@@ -82,7 +80,7 @@ bool Model::init_internal(CactusGraph* gb, const std::string& model_folder, size
         return false;
     }
 
-    tokenizer_ = create_tokenizer_from_model_dir(model_folder);
+    tokenizer_ = Tokenizer::from_model_dir(model_folder);
     if (!tokenizer_) return false;
 
     graph_handle_ = gb;

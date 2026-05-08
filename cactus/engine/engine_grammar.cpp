@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <vector>
+#include <thread>
 #include <dlpack/dlpack.h>
 
 namespace cactus {
@@ -49,10 +50,7 @@ GrammarVocabulary Tokenizer::get_grammar_vocabulary() const {
     std::vector<uint32_t> stop_token_ids = {get_eos_token()};
     std::string default_stop = get_default_stop_sequence();
     if (!default_stop.empty()) {
-        std::vector<uint32_t> encoded = encode(default_stop);
-        if (encoded.size() == 1 && std::find(stop_token_ids.begin(), stop_token_ids.end(), encoded[0]) == stop_token_ids.end()) {
-            stop_token_ids.push_back(encoded[0]);
-        }
+        stop_token_ids.push_back(encode(default_stop)[0]);
     }
 
     const auto& encoded_vocab = get_encoded_vocab();
@@ -69,7 +67,7 @@ GrammarVocabulary Tokenizer::get_grammar_vocabulary() const {
 Grammar::Grammar() : grammar(xgrammar::NullObj{}), is_universal_(false) {}
 
 Grammar::Grammar(xgrammar::Grammar raw_grammar)
-    : grammar(raw_grammar), is_universal_(false) {}
+    : grammar(std::move(raw_grammar)), is_universal_(false) {}
 
 Grammar Grammar::ebnf(const std::string& ebnf, const std::string& start_symbol) {
     return Grammar(xgrammar::Grammar::FromEBNF(ebnf, start_symbol));
@@ -164,7 +162,7 @@ const xgrammar::Grammar& Grammar::raw_value() const {
 }
 
 GrammarEngine::GrammarEngine(const GrammarVocabulary& vocab)
-    : compiler(nullptr), tokenizer_info(vocab.raw_value()) {
+    : compiler(nullptr), tokenizer_info(std::move(vocab.raw_value())) {
     compiler = xgrammar::GrammarCompiler(
         tokenizer_info,
         static_cast<int>(std::max(1u, std::thread::hardware_concurrency()))
