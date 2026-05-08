@@ -282,6 +282,15 @@ cactus_grammar_t cactus_grammar_concatenate(cactus_grammar_t* grammars, size_t n
     });
 }
 
+cactus_grammar_t cactus_grammar_optional(cactus_grammar_t grammar) {
+    auto* handle = require_grammar_handle(__func__, grammar);
+    if (!handle) return nullptr;
+
+    return make_grammar(__func__, [&] {
+        return Grammar::optional(*handle->grammar);
+    });
+}
+
 int cactus_grammar_get_ebnf(cactus_grammar_t grammar, char* buffer, size_t buffer_size) {
     if (!grammar) {
         return handle_int_exception(__func__, "grammar is null");

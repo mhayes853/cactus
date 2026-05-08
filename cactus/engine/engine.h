@@ -257,6 +257,7 @@ public:
     static Grammar structural_tag(const std::string& structural_tag_json, const GrammarVocabulary* vocab = nullptr);
     static Grammar unite(const std::vector<Grammar>& grammars);
     static Grammar concatenate(const std::vector<Grammar>& grammars);
+    static Grammar optional(const Grammar& grammar);
 
     bool is_empty() const;
     bool is_universal() const;

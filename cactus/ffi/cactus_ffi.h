@@ -488,6 +488,7 @@ CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_structural_tag(
 );
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_union(cactus_grammar_t* grammars, size_t num_grammars);
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_concatenate(cactus_grammar_t* grammars, size_t num_grammars);
+CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_optional(cactus_grammar_t grammar);
 CACTUS_FFI_EXPORT int cactus_grammar_get_ebnf(cactus_grammar_t grammar, char* buffer, size_t buffer_size);
 CACTUS_FFI_EXPORT bool cactus_grammar_is_empty(cactus_grammar_t grammar);
 CACTUS_FFI_EXPORT bool cactus_grammar_is_universal(cactus_grammar_t grammar);

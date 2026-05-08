@@ -157,6 +157,11 @@ Grammar Grammar::concatenate(const std::vector<Grammar>& grammars) {
     return handles.empty() ? Grammar() : Grammar(xgrammar::Grammar::Concat(handles));
 }
 
+Grammar Grammar::optional(const Grammar& grammar) {
+    if (grammar.is_empty()) return Grammar();
+    return Grammar::unite({Grammar::epsilon(), grammar});
+}
+
 bool Grammar::is_empty() const {
     return grammar.IsNull();
 }
