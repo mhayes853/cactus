@@ -291,6 +291,15 @@ cactus_grammar_t cactus_grammar_optional(cactus_grammar_t grammar) {
     });
 }
 
+cactus_grammar_t cactus_grammar_star(cactus_grammar_t grammar) {
+    auto* handle = require_grammar_handle(__func__, grammar);
+    if (!handle) return nullptr;
+
+    return make_grammar(__func__, [&] {
+        return Grammar::star(*handle->grammar);
+    });
+}
+
 cactus_grammar_t cactus_grammar_repeat(cactus_grammar_t grammar, int count) {
     auto* handle = require_grammar_handle(__func__, grammar);
     if (!handle) return nullptr;

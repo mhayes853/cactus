@@ -258,6 +258,7 @@ public:
     static Grammar unite(const std::vector<Grammar>& grammars);
     static Grammar concatenate(const std::vector<Grammar>& grammars);
     static Grammar optional(const Grammar& grammar);
+    static Grammar star(const Grammar& grammar);
     static Grammar repeat(const Grammar& grammar, int count);
     static Grammar repeat_range(const Grammar& grammar, int min_count, int max_count);
 

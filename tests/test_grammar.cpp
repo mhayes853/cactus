@@ -83,6 +83,10 @@ static cactus_grammar_t make_grammar_optional(cactus_grammar_t grammar) {
     return make_grammar_handle(cactus_grammar_optional(grammar));
 }
 
+static cactus_grammar_t make_grammar_star(cactus_grammar_t grammar) {
+    return make_grammar_handle(cactus_grammar_star(grammar));
+}
+
 static cactus_grammar_t make_grammar_repeat(cactus_grammar_t grammar, size_t count) {
     return make_grammar_handle(cactus_grammar_repeat(grammar, count));
 }
@@ -289,6 +293,22 @@ static bool test_optional_empty_grammar_stays_empty() {
     auto empty = GrammarHandle(make_grammar_empty(), &cactus_grammar_destroy);
     auto optional = GrammarHandle(make_grammar_optional(empty.get()), &cactus_grammar_destroy);
     return cactus_grammar_is_empty(optional.get());
+}
+
+static bool test_star_grammar_accepts_zero_or_more_occurrences(const GrammarFixture& fixture) {
+    auto ha = GrammarHandle(make_grammar_ebnf("root ::= \"ha\""), &cactus_grammar_destroy);
+    auto star = GrammarHandle(make_grammar_star(ha.get()), &cactus_grammar_destroy);
+
+    return accepts_complete_text(star.get(), fixture, "")
+        && accepts_complete_text(star.get(), fixture, "ha")
+        && accepts_complete_text(star.get(), fixture, "hahaha")
+        && rejects_text(star.get(), fixture, "hello");
+}
+
+static bool test_star_empty_grammar_stays_empty() {
+    auto empty = GrammarHandle(make_grammar_empty(), &cactus_grammar_destroy);
+    auto star = GrammarHandle(make_grammar_star(empty.get()), &cactus_grammar_destroy);
+    return cactus_grammar_is_empty(star.get());
 }
 
 static bool test_repeat_exact_language(const GrammarFixture& fixture) {
@@ -585,6 +605,8 @@ int main() {
         runner.run_test("epsilon_language", test_epsilon_grammar_accepts_only_empty_string(fixture));
         runner.run_test("optional_language", test_optional_grammar_accepts_zero_or_one_occurrence(fixture));
         runner.run_test("optional_empty_stays_empty", test_optional_empty_grammar_stays_empty());
+        runner.run_test("star_language", test_star_grammar_accepts_zero_or_more_occurrences(fixture));
+        runner.run_test("star_empty_stays_empty", test_star_empty_grammar_stays_empty());
         runner.run_test("repeat_exact_language", test_repeat_exact_language(fixture));
         runner.run_test("repeat_range_language", test_repeat_range_language(fixture));
         runner.run_test("repeat_range_unbounded_language", test_repeat_range_unbounded_language(fixture));

@@ -163,11 +163,29 @@ Grammar Grammar::optional(const Grammar& grammar) {
     return Grammar::unite({Grammar::epsilon(), grammar});
 }
 
+Grammar Grammar::star(const Grammar& grammar) {
+    if (grammar.is_empty()) return Grammar();
+
+    picojson::object structural_tag;
+    structural_tag["type"] = picojson::value("structural_tag");
+
+    picojson::object star;
+    star["type"] = picojson::value("star");
+
+    picojson::object grammar_obj;
+    grammar_obj["type"] = picojson::value("grammar");
+    grammar_obj["grammar"] = picojson::value(grammar.ebnf());
+
+    star["content"] = picojson::value(grammar_obj);
+    structural_tag["format"] = picojson::value(star);
+    return Grammar::structural_tag(picojson::value(structural_tag).serialize());
+}
+
 Grammar Grammar::repeat(const Grammar& grammar, int count) {
     if (grammar.is_empty()) return grammar;
     if (count == 0) return Grammar::epsilon();
     std::vector<Grammar> grammars;
-    for (size_t i = 0; i < count; i++) {
+    for (int i = 0; i < count; i++) {
         grammars.push_back(grammar);
     }
     return Grammar::concatenate(grammars);
