@@ -73,6 +73,21 @@ Grammar Grammar::ebnf(const std::string& ebnf, const std::string& start_symbol) 
     return Grammar(xgrammar::Grammar::FromEBNF(ebnf, start_symbol));
 }
 
+Grammar Grammar::epsilon() {
+    return Grammar::structural_tag(R"({
+        "type": "structural_tag",
+        "format": {
+            "type": "repeat",
+            "min": 0,
+            "max": 0,
+            "content": {
+                "type": "const_string",
+                "value": "x"
+            }
+        }
+    })");
+}
+
 Grammar Grammar::json() {
     return Grammar(xgrammar::Grammar::BuiltinJSONGrammar());
 }

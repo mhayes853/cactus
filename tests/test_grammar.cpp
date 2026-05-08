@@ -49,6 +49,10 @@ static cactus_grammar_t make_grammar_empty() {
     return make_grammar_handle(cactus_grammar_init_empty());
 }
 
+static cactus_grammar_t make_grammar_epsilon() {
+    return make_grammar_handle(cactus_grammar_init_epsilon());
+}
+
 static cactus_grammar_t make_grammar_universal() {
     return make_grammar_handle(cactus_grammar_init_universal());
 }
@@ -251,6 +255,12 @@ static bool test_empty_grammar_properties() {
         && cactus_grammar_is_empty(empty_concat.get())
         && !cactus_grammar_is_empty(union_with_simple.get())
         && !cactus_grammar_is_empty(concat_with_simple.get());
+}
+
+static bool test_epsilon_grammar_accepts_only_empty_string(const GrammarFixture& fixture) {
+    auto epsilon = GrammarHandle(make_grammar_epsilon(), &cactus_grammar_destroy);
+    return accepts_complete_text(epsilon.get(), fixture, "")
+        && rejects_text(epsilon.get(), fixture, "hello");
 }
 
 static bool test_ebnf_string_export_matches_parenthesized_input_ebnf() {
@@ -503,6 +513,7 @@ int main() {
         GrammarFixture fixture;
         runner.run_test("vocab_accessors", test_vocab_accessors(fixture));
         runner.run_test("empty_properties", test_empty_grammar_properties());
+        runner.run_test("epsilon_language", test_epsilon_grammar_accepts_only_empty_string(fixture));
         runner.run_test("ebnf_export_matches", test_ebnf_string_export_matches_parenthesized_input_ebnf());
         runner.run_test("regex_json_schema_init", test_regex_and_json_schema_construction());
         runner.run_test("concat_language", test_concat_accepts_expected_language(fixture));

@@ -201,6 +201,12 @@ cactus_grammar_t cactus_grammar_init_empty() {
     });
 }
 
+cactus_grammar_t cactus_grammar_init_epsilon() {
+    return make_grammar(__func__, [] {
+        return Grammar::epsilon();
+    });
+}
+
 cactus_grammar_t cactus_grammar_init_universal() {
     return make_grammar(__func__, [] {
         return Grammar::universal();

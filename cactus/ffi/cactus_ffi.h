@@ -454,6 +454,7 @@ cactus_node_t node, cactus_tensor_info_t* out_info);
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_ebnf(const char* ebnf, const char* start_symbol);
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_json();
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_empty();
+CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_epsilon();
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_universal();
 
 typedef struct cactus_grammar_json_schema_options_t {

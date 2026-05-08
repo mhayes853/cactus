@@ -242,6 +242,7 @@ public:
     ~Grammar() = default;
 
     static Grammar ebnf(const std::string& ebnf, const std::string& start_symbol = "root");
+    static Grammar epsilon();
     static Grammar json();
     static Grammar universal();
     static Grammar json_schema(
