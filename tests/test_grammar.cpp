@@ -83,6 +83,14 @@ static cactus_grammar_t make_grammar_optional(cactus_grammar_t grammar) {
     return make_grammar_handle(cactus_grammar_optional(grammar));
 }
 
+static cactus_grammar_t make_grammar_repeat(cactus_grammar_t grammar, size_t count) {
+    return make_grammar_handle(cactus_grammar_repeat(grammar, count));
+}
+
+static cactus_grammar_t make_grammar_repeat_range(cactus_grammar_t grammar, size_t min_count, size_t max_count) {
+    return make_grammar_handle(cactus_grammar_repeat_range(grammar, min_count, max_count));
+}
+
 static cactus_grammar_vocabulary_t make_vocab_handle_from_tokenizer(const Tokenizer& tokenizer) {
     return make_grammar_vocabulary_from_tokenizer(tokenizer);
 }
@@ -281,6 +289,47 @@ static bool test_optional_empty_grammar_stays_empty() {
     auto empty = GrammarHandle(make_grammar_empty(), &cactus_grammar_destroy);
     auto optional = GrammarHandle(make_grammar_optional(empty.get()), &cactus_grammar_destroy);
     return cactus_grammar_is_empty(optional.get());
+}
+
+static bool test_repeat_exact_language(const GrammarFixture& fixture) {
+    auto ha = GrammarHandle(make_grammar_ebnf("root ::= \"ha\""), &cactus_grammar_destroy);
+    auto repeated = GrammarHandle(make_grammar_repeat(ha.get(), 3), &cactus_grammar_destroy);
+
+    return accepts_complete_text(repeated.get(), fixture, "hahaha")
+        && rejects_eos_after_text(repeated.get(), fixture, "")
+        && rejects_eos_after_text(repeated.get(), fixture, "ha")
+        && rejects_text(repeated.get(), fixture, "hahahaha")
+        && rejects_text(repeated.get(), fixture, "hello");
+}
+
+static bool test_repeat_range_language(const GrammarFixture& fixture) {
+    auto ha = GrammarHandle(make_grammar_ebnf("root ::= \"ha\""), &cactus_grammar_destroy);
+    auto repeated = GrammarHandle(make_grammar_repeat_range(ha.get(), 2, 4), &cactus_grammar_destroy);
+
+    return accepts_complete_text(repeated.get(), fixture, "haha")
+        && accepts_complete_text(repeated.get(), fixture, "hahaha")
+        && accepts_complete_text(repeated.get(), fixture, "hahahaha")
+        && rejects_eos_after_text(repeated.get(), fixture, "")
+        && rejects_eos_after_text(repeated.get(), fixture, "ha")
+        && rejects_text(repeated.get(), fixture, "hahahahaha");
+}
+
+static bool test_repeat_range_unbounded_language(const GrammarFixture& fixture) {
+    auto ha = GrammarHandle(make_grammar_ebnf("root ::= \"ha\""), &cactus_grammar_destroy);
+    auto repeated = GrammarHandle(make_grammar_repeat_range(ha.get(), 2, -1), &cactus_grammar_destroy);
+
+    return accepts_complete_text(repeated.get(), fixture, "haha")
+        && accepts_complete_text(repeated.get(), fixture, "hahaha")
+        && accepts_complete_text(repeated.get(), fixture, "hahahaha")
+        && rejects_eos_after_text(repeated.get(), fixture, "")
+        && rejects_eos_after_text(repeated.get(), fixture, "ha");
+}
+
+static bool test_repeat_empty_grammar_stays_empty() {
+    auto empty = GrammarHandle(make_grammar_empty(), &cactus_grammar_destroy);
+    auto exact = GrammarHandle(make_grammar_repeat(empty.get(), 3), &cactus_grammar_destroy);
+    auto range = GrammarHandle(make_grammar_repeat_range(empty.get(), 1, 3), &cactus_grammar_destroy);
+    return cactus_grammar_is_empty(exact.get()) && cactus_grammar_is_empty(range.get());
 }
 
 static bool test_ebnf_string_export_matches_parenthesized_input_ebnf() {
@@ -536,6 +585,10 @@ int main() {
         runner.run_test("epsilon_language", test_epsilon_grammar_accepts_only_empty_string(fixture));
         runner.run_test("optional_language", test_optional_grammar_accepts_zero_or_one_occurrence(fixture));
         runner.run_test("optional_empty_stays_empty", test_optional_empty_grammar_stays_empty());
+        runner.run_test("repeat_exact_language", test_repeat_exact_language(fixture));
+        runner.run_test("repeat_range_language", test_repeat_range_language(fixture));
+        runner.run_test("repeat_range_unbounded_language", test_repeat_range_unbounded_language(fixture));
+        runner.run_test("repeat_empty_stays_empty", test_repeat_empty_grammar_stays_empty());
         runner.run_test("ebnf_export_matches", test_ebnf_string_export_matches_parenthesized_input_ebnf());
         runner.run_test("regex_json_schema_init", test_regex_and_json_schema_construction());
         runner.run_test("concat_language", test_concat_accepts_expected_language(fixture));

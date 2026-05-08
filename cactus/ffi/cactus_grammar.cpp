@@ -291,6 +291,24 @@ cactus_grammar_t cactus_grammar_optional(cactus_grammar_t grammar) {
     });
 }
 
+cactus_grammar_t cactus_grammar_repeat(cactus_grammar_t grammar, int count) {
+    auto* handle = require_grammar_handle(__func__, grammar);
+    if (!handle) return nullptr;
+
+    return make_grammar(__func__, [&] {
+        return Grammar::repeat(*handle->grammar, count);
+    });
+}
+
+cactus_grammar_t cactus_grammar_repeat_range(cactus_grammar_t grammar, int min_count, int max_count) {
+    auto* handle = require_grammar_handle(__func__, grammar);
+    if (!handle) return nullptr;
+
+    return make_grammar(__func__, [&] {
+        return Grammar::repeat_range(*handle->grammar, min_count, max_count);
+    });
+}
+
 int cactus_grammar_get_ebnf(cactus_grammar_t grammar, char* buffer, size_t buffer_size) {
     if (!grammar) {
         return handle_int_exception(__func__, "grammar is null");

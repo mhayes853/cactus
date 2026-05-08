@@ -3,9 +3,10 @@
 #include <algorithm>
 #include <cstdint>
 #include <stdexcept>
-#include <vector>
 #include <thread>
+#include <vector>
 #include <dlpack/dlpack.h>
+#include <picojson/picojson.h>
 
 namespace cactus {
 namespace engine {
@@ -160,6 +161,43 @@ Grammar Grammar::concatenate(const std::vector<Grammar>& grammars) {
 Grammar Grammar::optional(const Grammar& grammar) {
     if (grammar.is_empty()) return Grammar();
     return Grammar::unite({Grammar::epsilon(), grammar});
+}
+
+Grammar Grammar::repeat(const Grammar& grammar, int count) {
+    if (grammar.is_empty()) return grammar;
+    if (count == 0) return Grammar::epsilon();
+    std::vector<Grammar> grammars;
+    for (size_t i = 0; i < count; i++) {
+        grammars.push_back(grammar);
+    }
+    return Grammar::concatenate(grammars);
+}
+
+Grammar Grammar::repeat_range(const Grammar& grammar, int min_count, int max_count) {
+    if (grammar.is_empty()) return Grammar();
+    if (max_count != -1 && max_count < min_count) {
+        throw std::runtime_error("repeat_range max_count must be >= min_count or size_t(-1)");
+    }
+    if (min_count == 0 && max_count == 0) Grammar::epsilon();
+
+    picojson::value format_json;
+
+    picojson::object structural_tag;
+    structural_tag["type"] = picojson::value("structural_tag");
+
+    picojson::object repeat;
+    repeat["type"] = picojson::value("repeat");
+    repeat["min"] = picojson::value(static_cast<double>(min_count));
+    repeat["max"] = picojson::value(static_cast<double>(max_count));
+
+    picojson::object grammar_obj;
+    grammar_obj["type"] = picojson::value("grammar");
+    grammar_obj["grammar"] = picojson::value(grammar.ebnf());
+
+    repeat["content"] = picojson::value(grammar_obj);
+
+    structural_tag["format"] = picojson::value(repeat);
+    return Grammar::structural_tag(picojson::value(structural_tag).serialize());
 }
 
 bool Grammar::is_empty() const {
