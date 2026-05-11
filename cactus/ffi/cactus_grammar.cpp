@@ -148,6 +148,13 @@ cactus_grammar_vocabulary_t cactus_grammar_vocabulary_init_from_model(cactus_mod
     }
 }
 
+bool cactus_grammar_vocabulary_get_add_prefix_space(cactus_grammar_vocabulary_t vocabulary) {
+    auto* handle = require_vocabulary_handle(__func__, vocabulary);
+    if (!handle) return false;
+
+    return handle->vocabulary->add_prefix_space();
+}
+
 size_t cactus_grammar_vocabulary_get_size(cactus_grammar_vocabulary_t vocabulary) {
     auto* handle = require_vocabulary_handle(__func__, vocabulary);
     if (!handle) return 0;
@@ -423,6 +430,19 @@ cactus_grammar_matcher_t cactus_grammar_matcher_fork(cactus_grammar_matcher_t ma
     try {
         return new CactusGrammarMatcherHandle{
             std::make_unique<GrammarMatcher>(handle->matcher->fork())
+        };
+    } catch (const std::exception& e) {
+        return handle_exception(__func__, e.what());
+    }
+}
+
+cactus_grammar_t cactus_grammar_matcher_get_grammar(cactus_grammar_matcher_t matcher) {
+    auto* handle = require_matcher_handle(__func__, matcher);
+    if (!handle) return nullptr;
+
+    try {
+        return new CactusGrammarHandle{
+            std::make_unique<Grammar>(handle->matcher->grammar())
         };
     } catch (const std::exception& e) {
         return handle_exception(__func__, e.what());

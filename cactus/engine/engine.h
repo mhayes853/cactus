@@ -232,6 +232,7 @@ public:
     static GrammarVocabulary from_tokenizer(const Tokenizer& tokenizer);
     GrammarVocabulary(xgrammar::TokenizerInfo tokenizer_info);
 
+    bool add_prefix_space() const;
     size_t vocab_size() const;
     const std::vector<uint32_t>& stop_token_ids() const;
     const xgrammar::TokenizerInfo& raw_value() const;
@@ -274,6 +275,7 @@ public:
     const xgrammar::Grammar& raw_value() const;
 
 private:
+    friend class GrammarMatcher;
     Grammar(xgrammar::Grammar raw_grammar);
 
     xgrammar::Grammar grammar;
@@ -296,9 +298,14 @@ private:
 
 class GrammarMatcher {
 public:
-    GrammarMatcher(xgrammar::GrammarMatcher matcher, xgrammar::TokenizerInfo tokenizer_info);
+    GrammarMatcher(
+        xgrammar::GrammarMatcher matcher,
+        xgrammar::CompiledGrammar compiled_grammar,
+        xgrammar::TokenizerInfo tokenizer_info
+    );
     ~GrammarMatcher() = default;
 
+    Grammar grammar() const;
     void rollback(int tokens = 1);
     void reset();
     GrammarMatcher fork() const;
@@ -309,6 +316,7 @@ public:
 
 private:
     xgrammar::GrammarMatcher matcher;
+    xgrammar::CompiledGrammar compiled_grammar;
     xgrammar::TokenizerInfo tokenizer_info;
 };
 

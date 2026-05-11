@@ -98,10 +98,6 @@ static cactus_grammar_t make_grammar_repeat_range(cactus_grammar_t grammar, size
     return make_grammar_handle(cactus_grammar_repeat_range(grammar, min_count, max_count));
 }
 
-static cactus_grammar_vocabulary_t make_vocab_handle_from_tokenizer(const Tokenizer& tokenizer) {
-    return make_grammar_vocabulary_from_tokenizer(tokenizer);
-}
-
 static cactus_grammar_matcher_t make_matcher(cactus_grammar_t grammar, cactus_grammar_engine_t engine) {
     auto matcher = cactus_grammar_engine_compile_matcher(engine, grammar);
     if (!matcher) {
@@ -114,6 +110,7 @@ struct GrammarFixture {
     std::unique_ptr<cactus::engine::Tokenizer> tokenizer;
     GrammarVocabularyHandle vocab;
     GrammarEngineHandle engine;
+    bool add_prefix_space = false;
     size_t vocab_size = 0;
     std::vector<uint32_t> stop_token_ids;
 
@@ -124,6 +121,7 @@ struct GrammarFixture {
         if (!engine) {
             throw std::runtime_error(cactus_get_last_error());
         }
+        add_prefix_space = cactus_grammar_vocabulary_get_add_prefix_space(vocab.get());
         vocab_size = cactus_grammar_vocabulary_get_size(vocab.get());
         if (vocab_size == 0) {
             throw std::runtime_error(cactus_get_last_error());
@@ -241,7 +239,9 @@ static std::string tool_call_structural_tag_json() {
 }
 
 static bool test_vocab_accessors(const GrammarFixture& fixture) {
+    const auto vocabulary = GrammarVocabulary::from_tokenizer(*fixture.tokenizer);
     return fixture.vocab_size == fixture.tokenizer->get_vocab_size()
+        && fixture.add_prefix_space == vocabulary.add_prefix_space()
         && !fixture.stop_token_ids.empty()
         && fixture.stop_token_ids.front() == fixture.tokenizer->get_eos_token();
 }
@@ -560,6 +560,27 @@ static bool test_grammar_matcher_fork_preserves_accept_state(const GrammarFixtur
     return cactus_grammar_matcher_accept(forked.get(), eos_token);
 }
 
+static bool test_grammar_matcher_get_grammar_round_trips_source(const GrammarFixture& fixture) {
+    auto grammar = GrammarHandle(make_grammar_ebnf("root ::= \"hello world\""), &cactus_grammar_destroy);
+    auto matcher = GrammarMatcherHandle(make_matcher(grammar.get(), fixture.engine.get()), &cactus_grammar_matcher_destroy);
+    auto retrieved = GrammarHandle(cactus_grammar_matcher_get_grammar(matcher.get()), &cactus_grammar_destroy);
+    if (!retrieved) return false;
+
+    return grammar_ebnf(retrieved.get()) == grammar_ebnf(grammar.get());
+}
+
+static bool test_grammar_matcher_fork_preserves_source_grammar(const GrammarFixture& fixture) {
+    auto grammar = GrammarHandle(make_grammar_ebnf("root ::= \"hello world\""), &cactus_grammar_destroy);
+    auto matcher = GrammarMatcherHandle(make_matcher(grammar.get(), fixture.engine.get()), &cactus_grammar_matcher_destroy);
+    auto forked = GrammarMatcherHandle(cactus_grammar_matcher_fork(matcher.get()), &cactus_grammar_matcher_destroy);
+    if (!forked) return false;
+
+    auto retrieved = GrammarHandle(cactus_grammar_matcher_get_grammar(forked.get()), &cactus_grammar_destroy);
+    if (!retrieved) return false;
+
+    return grammar_ebnf(retrieved.get()) == grammar_ebnf(grammar.get());
+}
+
 static bool test_grammar_matcher_next_bitmask_tracks_simple_grammar(const GrammarFixture& fixture) {
     auto grammar = GrammarHandle(make_grammar_ebnf("root ::= \"hello\""), &cactus_grammar_destroy);
     auto matcher = GrammarMatcherHandle(make_matcher(grammar.get(), fixture.engine.get()), &cactus_grammar_matcher_destroy);
@@ -627,6 +648,8 @@ int main() {
         runner.run_test("grammar_matcher_rollback", test_grammar_matcher_rollback_restores_previous_state(fixture));
         runner.run_test("grammar_matcher_completion_state", test_grammar_matcher_completion_state(fixture));
         runner.run_test("grammar_matcher_fork", test_grammar_matcher_fork_preserves_accept_state(fixture));
+        runner.run_test("grammar_matcher_get_grammar", test_grammar_matcher_get_grammar_round_trips_source(fixture));
+        runner.run_test("grammar_matcher_fork_preserves_grammar", test_grammar_matcher_fork_preserves_source_grammar(fixture));
         runner.run_test("grammar_matcher_next_bitmask", test_grammar_matcher_next_bitmask_tracks_simple_grammar(fixture));
         runner.run_test("grammar_matcher_next_bitmask_overallocated_tail", test_grammar_matcher_next_bitmask_zeroes_overallocated_tail(fixture));
     } catch (const std::exception& e) {

@@ -3,7 +3,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <unordered_set>
 #include <stdexcept>
 #include <thread>
 #include <vector>
@@ -62,6 +61,10 @@ GrammarVocabulary::GrammarVocabulary(xgrammar::TokenizerInfo tokenizer_info)
     : tokenizer_info(std::move(tokenizer_info)) {
     const auto& stop_token_ids = this->tokenizer_info.GetStopTokenIds();
     stop_token_ids_.assign(stop_token_ids.begin(), stop_token_ids.end());
+}
+
+bool GrammarVocabulary::add_prefix_space() const {
+    return tokenizer_info.GetAddPrefixSpace();
 }
 
 size_t GrammarVocabulary::vocab_size() const {
@@ -260,11 +263,25 @@ GrammarMatcher GrammarEngine::compile_matcher(const Grammar& grammar) {
     }
 
     auto compiled_grammar = compiler.CompileGrammar(grammar.raw_value());
-    return GrammarMatcher(xgrammar::GrammarMatcher(compiled_grammar), tokenizer_info);
+    return GrammarMatcher(
+        xgrammar::GrammarMatcher(compiled_grammar),
+        std::move(compiled_grammar),
+        tokenizer_info
+    );
 }
 
-GrammarMatcher::GrammarMatcher(xgrammar::GrammarMatcher matcher, xgrammar::TokenizerInfo tokenizer_info)
-    : matcher(std::move(matcher)), tokenizer_info(std::move(tokenizer_info)) {}
+GrammarMatcher::GrammarMatcher(
+    xgrammar::GrammarMatcher matcher,
+    xgrammar::CompiledGrammar compiled_grammar,
+    xgrammar::TokenizerInfo tokenizer_info
+)
+    : matcher(std::move(matcher)),
+      compiled_grammar(std::move(compiled_grammar)),
+      tokenizer_info(std::move(tokenizer_info)) {}
+
+Grammar GrammarMatcher::grammar() const {
+    return Grammar(compiled_grammar.GetGrammar());
+}
 
 void GrammarMatcher::rollback(int tokens) {
     matcher.Rollback(tokens);
@@ -275,7 +292,7 @@ void GrammarMatcher::reset() {
 }
 
 GrammarMatcher GrammarMatcher::fork() const {
-    return GrammarMatcher(matcher.Fork(), tokenizer_info);
+    return GrammarMatcher(matcher.Fork(), compiled_grammar, tokenizer_info);
 }
 
 bool GrammarMatcher::is_completed() const {
