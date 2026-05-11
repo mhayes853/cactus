@@ -14,6 +14,7 @@
 #include <xgrammar/matcher.h>
 #include <xgrammar/object.h>
 #include <xgrammar/tokenizer_info.h>
+#include <picojson/picojson.h>
 
 #include "../graph/graph.h"
 
@@ -223,8 +224,12 @@ struct Config {
     std::string to_json() const;
 };
 
+class Tokenizer;
+
 class GrammarVocabulary {
 public:
+    static GrammarVocabulary from_model_dir(const std::string& model_dir);
+    static GrammarVocabulary from_tokenizer(const Tokenizer& tokenizer);
     GrammarVocabulary(xgrammar::TokenizerInfo tokenizer_info);
 
     size_t vocab_size() const;
@@ -381,6 +386,12 @@ struct TokenizerRuntimeConfig {
     bool has_chat_template = false;
 };
 
+struct TokenizerJsonMetadata {
+    picojson::value decoder;
+    picojson::value normalizer;
+    picojson::value pre_tokenizer;
+};
+
 TokenizerRuntimeConfig load_tokenizer_runtime_config(const std::string& config_file);
 void load_special_tokens_map(const std::string& config_file, std::unordered_map<std::string, uint32_t>& special_tokens);
 std::vector<std::string> split_with_special_tokens(const std::string& text, const std::unordered_map<std::string, uint32_t>& special_tokens);
@@ -417,7 +428,6 @@ public:
     virtual std::vector<uint32_t> apply_chat_template(const std::vector<ChatMessage>& messages, bool add_generation_prompt = true) const;
     virtual std::string format_chat_prompt(const std::vector<ChatMessage>& messages, bool add_generation_prompt = true, const std::string& tools_json = "", bool enable_thinking_if_supported = false) const;
 
-    virtual GrammarVocabulary get_grammar_vocabulary() const;
     virtual uint32_t get_vocab_size() const = 0;
     virtual uint32_t get_unk_token() const = 0;
     virtual uint32_t get_bos_token() const = 0;
@@ -425,6 +435,7 @@ public:
     virtual const std::vector<std::string>& get_encoded_vocab() const = 0;
     virtual bool has_chat_template() const { return has_chat_template_; }
     std::string get_default_stop_sequence() const;
+    const TokenizerJsonMetadata& tokenizer_json_metadata() const { return tokenizer_json_metadata_; }
 
     virtual bool load_vocabulary_with_config(const std::string& vocab_file, const std::string& merges_file, const std::string& config_file) = 0;
 
@@ -450,9 +461,12 @@ protected:
     uint32_t vision_default_output_length_ = 280;
     uint32_t vision_image_size_ = 768;
     TokenizerRuntimeConfig runtime_config_;
+    TokenizerJsonMetadata tokenizer_json_metadata_;
+    std::unordered_map<std::string, uint32_t> special_tokens_;
 
     void detect_model_type(const std::string& config_path);
     void load_chat_template(const std::string& template_file);
+    void load_tokenizer_json_data(const std::string& tokenizer_json_path);
     std::string format_qwen_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json, bool enable_thinking_if_supported = false) const;
     std::string format_gemma_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json) const;
     std::string format_gemma4_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json, bool enable_thinking_if_supported = false) const;
@@ -511,7 +525,6 @@ private:
     mutable std::unordered_map<std::string, uint8_t> unicode_to_byte_;
     void init_byte_mappings() const;
 
-    std::unordered_map<std::string, uint32_t> special_tokens_;
     std::vector<std::string> split_with_special_tokens(const std::string& text) const;
     void load_special_tokens(const std::string& config_file);
 };
@@ -566,7 +579,6 @@ private:
 
     void cleanup_mmap();
 
-    std::unordered_map<std::string, uint32_t> special_tokens_;
     std::vector<std::string> split_with_special_tokens(const std::string& text) const;
     void load_special_tokens(const std::string& config_file);
 };

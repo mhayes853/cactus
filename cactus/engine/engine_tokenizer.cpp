@@ -62,153 +62,42 @@ TokenizerRuntimeConfig::Decoder parse_decoder(const std::string& value) {
     return TokenizerRuntimeConfig::Decoder::NONE;
 }
 
-void skip_json_whitespace(const std::string& json, size_t& pos) {
-    while (pos < json.size() && std::isspace(static_cast<unsigned char>(json[pos]))) {
-        ++pos;
-    }
-}
+void parse_tokenizer_json_data(
+    const std::string& content,
+    TokenizerJsonMetadata& metadata,
+    std::unordered_map<std::string, uint32_t>& special_tokens
+) {
+    special_tokens.clear();
 
-bool extract_added_token_object(const std::string& json, size_t& pos, std::string& out_object) {
-    skip_json_whitespace(json, pos);
-    if (pos >= json.size() || json[pos] != '{') {
-        return false;
-    }
+    picojson::value root;
+    std::string err = picojson::parse(root, content);
 
-    size_t start = pos;
-    size_t depth = 0;
-    bool in_string = false;
-    bool escaped = false;
-
-    while (pos < json.size()) {
-        char c = json[pos++];
-        if (escaped) {
-            escaped = false;
-            continue;
+    const auto& tokenizer_obj = root.get<picojson::object>();
+    auto load_tokenizer_obj_field = [&](const char* key, picojson::value& out) {
+        auto it = tokenizer_obj.find(key);
+        if (it != tokenizer_obj.end()) {
+            out = it->second;
         }
-        if (c == '\\') {
-            escaped = true;
-            continue;
-        }
-        if (c == '"') {
-            in_string = !in_string;
-            continue;
-        }
-        if (in_string) {
-            continue;
-        }
-        if (c == '{') {
-            ++depth;
-        } else if (c == '}') {
-            if (depth == 0) {
-                return false;
-            }
-            --depth;
-            if (depth == 0) {
-                out_object = json.substr(start, pos - start);
-                return true;
-            }
-        }
-    }
+    };
 
-    return false;
-}
+    load_tokenizer_obj_field("decoder", metadata.decoder);
+    load_tokenizer_obj_field("normalizer", metadata.normalizer);
+    load_tokenizer_obj_field("pre_tokenizer", metadata.pre_tokenizer);
 
-bool parse_added_token_entry(const std::string& object, std::string& token_content, uint32_t& token_id,
-                             bool& is_special) {
-    token_content.clear();
-    token_id = 0;
-    is_special = false;
+    auto added_tokens_it = tokenizer_obj.find("added_tokens");
+    for (const auto& added_token : added_tokens_it->second.get<picojson::array>()) {
+        if (!added_token.is<picojson::object>()) continue;
+        const auto& added_token_obj = added_token.get<picojson::object>();
 
-    size_t id_key = object.find("\"id\"");
-    if (id_key == std::string::npos) {
-        return false;
-    }
-    size_t id_colon = object.find(':', id_key);
-    if (id_colon == std::string::npos) {
-        return false;
-    }
-    size_t id_pos = id_colon + 1;
-    skip_json_whitespace(object, id_pos);
-    size_t id_end = id_pos;
-    while (id_end < object.size() && std::isdigit(static_cast<unsigned char>(object[id_end]))) {
-        ++id_end;
-    }
-    if (id_end == id_pos) {
-        return false;
-    }
-    token_id = static_cast<uint32_t>(std::stoul(object.substr(id_pos, id_end - id_pos)));
-
-    size_t content_key = object.find("\"content\"");
-    if (content_key == std::string::npos) {
-        return false;
-    }
-    size_t content_colon = object.find(':', content_key);
-    if (content_colon == std::string::npos) {
-        return false;
-    }
-    size_t content_pos = object.find('"', content_colon + 1);
-    if (content_pos == std::string::npos) {
-        return false;
-    }
-    ++content_pos;
-    token_content = extract_json_string(object, content_pos);
-
-    size_t special_key = object.find("\"special\"");
-    if (special_key != std::string::npos) {
-        size_t special_colon = object.find(':', special_key);
-        if (special_colon != std::string::npos) {
-            size_t special_pos = special_colon + 1;
-            skip_json_whitespace(object, special_pos);
-            is_special = object.compare(special_pos, 4, "true") == 0;
-        }
-    }
-
-    return true;
-}
-
-void load_tokenizer_json_added_special_tokens(
-    const std::string& tokenizer_json_path,
-    std::unordered_map<std::string, uint32_t>& special_tokens) {
-    std::ifstream file(tokenizer_json_path);
-    if (!file.is_open()) {
-        return;
-    }
-
-    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    size_t pos = content.find("\"added_tokens\"");
-    if (pos == std::string::npos) {
-        return;
-    }
-
-    pos = content.find('[', pos);
-    if (pos == std::string::npos) {
-        return;
-    }
-    ++pos;
-
-    while (pos < content.size()) {
-        skip_json_whitespace(content, pos);
-        if (pos >= content.size() || content[pos] == ']') {
-            break;
-        }
-
-        std::string object;
-        if (!extract_added_token_object(content, pos, object)) {
-            ++pos;
+        auto special_it = added_token_obj.find("special");
+        if (!special_it->second.get<bool>()) {
             continue;
         }
 
-        std::string token_content;
-        uint32_t token_id = 0;
-        bool is_special = false;
-        if (parse_added_token_entry(object, token_content, token_id, is_special) && is_special) {
-            special_tokens[token_content] = token_id;
-        }
-
-        skip_json_whitespace(content, pos);
-        if (pos < content.size() && content[pos] == ',') {
-            ++pos;
-        }
+        auto content_it = added_token_obj.find("content");
+        auto id_it = added_token_obj.find("id");
+        special_tokens[content_it->second.get<std::string>()] =
+            static_cast<uint32_t>(id_it->second.get<int64_t>());
     }
 }
 
@@ -265,10 +154,23 @@ std::unique_ptr<Tokenizer> Tokenizer::from_model_dir(const std::string& model_di
         tokenizer = std::make_unique<SPTokenizer>();
     }
 
+    tokenizer->load_tokenizer_json_data(model_dir + "/tokenizer.json");
+
     if (!tokenizer->load_vocabulary_with_config(vocab_file, merges_file, config_file)) {
         return nullptr;
     }
     return tokenizer;
+}
+
+void Tokenizer::load_tokenizer_json_data(const std::string& tokenizer_json_path) {
+    tokenizer_json_metadata_ = {};
+    special_tokens_.clear();
+
+    std::ifstream file(tokenizer_json_path);
+    if (!file.is_open()) return;
+
+    const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    parse_tokenizer_json_data(content, tokenizer_json_metadata_, special_tokens_);
 }
 
 void load_special_tokens_map(const std::string& config_file, std::unordered_map<std::string, uint32_t>& special_tokens) {
@@ -312,10 +214,6 @@ void load_special_tokens_map(const std::string& config_file, std::unordered_map<
             }
         }
     }
-
-    size_t slash_pos = config_file.find_last_of("/\\");
-    std::string dir = (slash_pos == std::string::npos) ? "." : config_file.substr(0, slash_pos);
-    load_tokenizer_json_added_special_tokens(dir + "/tokenizer.json", special_tokens);
 }
 
 std::vector<std::string> split_with_special_tokens(const std::string& text,

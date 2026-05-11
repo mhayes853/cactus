@@ -21,13 +21,16 @@ using GrammarVocabularyHandle = std::unique_ptr<void, decltype(&cactus_grammar_v
 using GrammarEngineHandle = std::unique_ptr<void, decltype(&cactus_grammar_engine_destroy)>;
 using GrammarMatcherHandle = std::unique_ptr<void, decltype(&cactus_grammar_matcher_destroy)>;
 
-static std::unique_ptr<cactus::engine::Tokenizer> create_test_tokenizer() {
+static const std::string require_model_path() {
     const char* model_path = std::getenv("CACTUS_TEST_MODEL");
     if (!model_path) {
         throw std::runtime_error("CACTUS_TEST_MODEL is not set");
     }
+    return model_path;
+}
 
-    auto tokenizer = Tokenizer::from_model_dir(model_path);
+static std::unique_ptr<cactus::engine::Tokenizer> create_test_tokenizer() {
+    auto tokenizer = Tokenizer::from_model_dir(require_model_path());
     if (!tokenizer) {
         throw std::runtime_error("Failed to load tokenizer from test model files");
     }
@@ -116,7 +119,7 @@ struct GrammarFixture {
 
     GrammarFixture()
         : tokenizer(create_test_tokenizer()),
-          vocab(make_vocab_handle_from_tokenizer(*tokenizer), &cactus_grammar_vocabulary_destroy),
+          vocab(cactus_grammar_vocabulary_init(require_model_path().c_str()), &cactus_grammar_vocabulary_destroy),
           engine(cactus_grammar_engine_init(vocab.get()), &cactus_grammar_engine_destroy) {
         if (!engine) {
             throw std::runtime_error(cactus_get_last_error());
@@ -125,18 +128,15 @@ struct GrammarFixture {
         if (vocab_size == 0) {
             throw std::runtime_error(cactus_get_last_error());
         }
-
-        stop_token_ids = tokenizer->get_grammar_vocabulary().stop_token_ids();
-        std::vector<uint32_t> actual_stop_token_ids(stop_token_ids.size());
+        std::vector<uint32_t> actual_stop_token_ids(16);
         size_t out_token_count = 0;
-        if (cactus_grammar_vocabulary_get_stop_token_ids(
-                vocab.get(),
-                actual_stop_token_ids.data(),
-                actual_stop_token_ids.size(),
-                &out_token_count
-            ) != 0) {
-            throw std::runtime_error(cactus_get_last_error());
-        }
+        auto result = cactus_grammar_vocabulary_get_stop_token_ids(
+            vocab.get(),
+            actual_stop_token_ids.data(),
+            actual_stop_token_ids.size(),
+            &out_token_count
+        );
+        if (result != 0) throw std::runtime_error(cactus_get_last_error());
         actual_stop_token_ids.resize(out_token_count);
         stop_token_ids = std::move(actual_stop_token_ids);
     }

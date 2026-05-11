@@ -1,7 +1,9 @@
 #include "engine.h"
+#include "xgrammar/tokenizer_info.h"
 
 #include <algorithm>
 #include <cstdint>
+#include <unordered_set>
 #include <stdexcept>
 #include <thread>
 #include <vector>
@@ -14,21 +16,47 @@ namespace engine {
 
 namespace {
 
-static xgrammar::VocabType to_xgrammar_vocab_type(const TokenizerRuntimeConfig& runtime_config) {
-    const auto has_none = runtime_config.decoder == TokenizerRuntimeConfig::Decoder::NONE
-        && runtime_config.normalizer == TokenizerRuntimeConfig::Normalizer::NONE;
-    const auto is_byte_level = runtime_config.decoder == TokenizerRuntimeConfig::Decoder::BYTE_LEVEL
-        || runtime_config.normalizer == TokenizerRuntimeConfig::Normalizer::BYTE_LEVEL;
-    if (runtime_config.byte_fallback) {
-        return xgrammar::VocabType::BYTE_FALLBACK;
+std::string xgrammar_tokenizer_metadata(const Tokenizer& tokenizer) {
+    const auto& tokenizer_json_metadata = tokenizer.tokenizer_json_metadata();
+    picojson::object minimal_tokenizer;
+    minimal_tokenizer["decoder"] = tokenizer_json_metadata.decoder;
+    minimal_tokenizer["normalizer"] = tokenizer_json_metadata.normalizer;
+    minimal_tokenizer["pre_tokenizer"] = tokenizer_json_metadata.pre_tokenizer;
+
+    const std::string detected_metadata =
+        xgrammar::TokenizerInfo::DetectMetadataFromHF(picojson::value(minimal_tokenizer).serialize(false));
+
+    picojson::value metadata_value;
+    picojson::parse(metadata_value, detected_metadata);
+
+    picojson::object metadata = metadata_value.get<picojson::object>();
+    metadata["vocab_size"] = picojson::value(static_cast<int64_t>(tokenizer.get_encoded_vocab().size()));
+
+    picojson::array stop_token_ids { picojson::value(static_cast<int64_t>(tokenizer.get_eos_token())) };
+    const auto default_stop_sequence = tokenizer.get_default_stop_sequence();
+    if (!default_stop_sequence.empty()) {
+        const auto token = tokenizer.encode(default_stop_sequence)[0];
+        stop_token_ids.emplace_back(static_cast<int64_t>(token));
     }
-    if (is_byte_level || has_none) {
-        return xgrammar::VocabType::BYTE_LEVEL;
-    }
-    return xgrammar::VocabType::RAW;
+    metadata["stop_token_ids"] = picojson::value(std::move(stop_token_ids));
+
+    return picojson::value(metadata).serialize(false);
 }
 
-} // anonymous namespace
+}  // namespace
+
+GrammarVocabulary GrammarVocabulary::from_model_dir(const std::string& model_dir) {
+    auto tokenizer = Tokenizer::from_model_dir(model_dir);
+    if (!tokenizer) throw std::runtime_error("Unable to load tokenizer");
+    return GrammarVocabulary::from_tokenizer(*tokenizer);
+}
+
+GrammarVocabulary GrammarVocabulary::from_tokenizer(const Tokenizer& tokenizer) {
+    auto metadata = xgrammar_tokenizer_metadata(tokenizer);
+    return GrammarVocabulary(
+        xgrammar::TokenizerInfo::FromVocabAndMetadata(tokenizer.get_encoded_vocab(), metadata)
+    );
+}
 
 GrammarVocabulary::GrammarVocabulary(xgrammar::TokenizerInfo tokenizer_info)
     : tokenizer_info(std::move(tokenizer_info)) {
@@ -46,24 +74,6 @@ const std::vector<uint32_t>& GrammarVocabulary::stop_token_ids() const {
 
 const xgrammar::TokenizerInfo& GrammarVocabulary::raw_value() const {
     return tokenizer_info;
-}
-
-GrammarVocabulary Tokenizer::get_grammar_vocabulary() const {
-    std::vector<uint32_t> stop_token_ids = {get_eos_token()};
-    std::string default_stop = get_default_stop_sequence();
-    if (!default_stop.empty()) {
-        stop_token_ids.push_back(encode(default_stop)[0]);
-    }
-
-    const auto& encoded_vocab = get_encoded_vocab();
-    std::vector<int32_t> stop_token_ids_int32(stop_token_ids.begin(), stop_token_ids.end());
-    return GrammarVocabulary(xgrammar::TokenizerInfo(
-        encoded_vocab,
-        to_xgrammar_vocab_type(runtime_config_),
-        static_cast<int>(encoded_vocab.size()),
-        stop_token_ids_int32,
-        false
-    ));
 }
 
 Grammar::Grammar() : grammar(xgrammar::NullObj{}), is_universal_(false) {}

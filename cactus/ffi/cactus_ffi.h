@@ -467,16 +467,6 @@ typedef struct cactus_grammar_json_schema_options_t {
 
 CACTUS_FFI_EXPORT cactus_grammar_json_schema_options_t cactus_grammar_json_schema_default_options(void);
 
-CACTUS_FFI_EXPORT cactus_grammar_vocabulary_t cactus_grammar_vocabulary_init(cactus_model_t model);
-CACTUS_FFI_EXPORT size_t cactus_grammar_vocabulary_get_size(cactus_grammar_vocabulary_t vocabulary);
-CACTUS_FFI_EXPORT int cactus_grammar_vocabulary_get_stop_token_ids(
-    cactus_grammar_vocabulary_t vocabulary,
-    uint32_t* buffer,
-    size_t buffer_size,
-    size_t* out_token_count
-);
-CACTUS_FFI_EXPORT void cactus_grammar_vocabulary_destroy(cactus_grammar_vocabulary_t vocabulary);
-
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_json_schema(
     const char* json_schema,
     cactus_grammar_json_schema_options_t options
@@ -507,6 +497,17 @@ CACTUS_FFI_EXPORT cactus_grammar_matcher_t cactus_grammar_engine_compile_matcher
     cactus_grammar_engine_t engine,
     cactus_grammar_t grammar
 );
+
+CACTUS_FFI_EXPORT cactus_grammar_vocabulary_t cactus_grammar_vocabulary_init(const char* model_path);
+CACTUS_FFI_EXPORT cactus_grammar_vocabulary_t cactus_grammar_vocabulary_init_from_model(cactus_model_t model);
+CACTUS_FFI_EXPORT size_t cactus_grammar_vocabulary_get_size(cactus_grammar_vocabulary_t vocabulary);
+CACTUS_FFI_EXPORT int cactus_grammar_vocabulary_get_stop_token_ids(
+    cactus_grammar_vocabulary_t vocabulary,
+    uint32_t* buffer,
+    size_t buffer_size,
+    size_t* out_token_count
+);
+CACTUS_FFI_EXPORT void cactus_grammar_vocabulary_destroy(cactus_grammar_vocabulary_t vocabulary);
 
 CACTUS_FFI_EXPORT void cactus_grammar_matcher_destroy(cactus_grammar_matcher_t matcher);
 CACTUS_FFI_EXPORT void cactus_grammar_matcher_reset(cactus_grammar_matcher_t matcher);

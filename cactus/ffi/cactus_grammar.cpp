@@ -1,5 +1,6 @@
 #include "cactus_ffi.h"
 #include "cactus_utils.h"
+#include "engine.h"
 
 #include <algorithm>
 #include <cstring>
@@ -27,12 +28,6 @@ struct CactusGrammarEngineHandle {
 struct CactusGrammarMatcherHandle {
     std::unique_ptr<cactus::engine::GrammarMatcher> matcher;
 };
-
-cactus_grammar_vocabulary_t make_grammar_vocabulary_from_tokenizer(const cactus::engine::Tokenizer& tokenizer) {
-    return new CactusGrammarVocabularyHandle{
-        std::make_unique<GrammarVocabulary>(tokenizer.get_grammar_vocabulary())
-    };
-}
 
 } // namespace ffi
 } // namespace cactus
@@ -124,19 +119,29 @@ cactus_grammar_json_schema_options_t cactus_grammar_json_schema_default_options(
     return { true, 2, {",", ":"}, true, 1, };
 }
 
-cactus_grammar_vocabulary_t cactus_grammar_vocabulary_init(cactus_model_t model) {
-    if (!model) {
-        return handle_exception(__func__, "model is null");
-    }
+cactus_grammar_vocabulary_t cactus_grammar_vocabulary_init(const char* model_path) {
+    if (!model_path) return handle_exception(__func__, "model path is null");
 
     try {
-        auto* handle = static_cast<CactusModelHandle*>(model);
-        auto* tokenizer = handle->model ? handle->model->get_tokenizer() : nullptr;
-        if (!tokenizer) {
-            return handle_exception(__func__, "model tokenizer is null");
-        }
+        const auto vocabulary = GrammarVocabulary::from_model_dir(model_path);
         return new CactusGrammarVocabularyHandle{
-            std::make_unique<GrammarVocabulary>(tokenizer->get_grammar_vocabulary())
+            std::make_unique<GrammarVocabulary>(vocabulary)
+        };
+    } catch (const std::exception& e) {
+        return handle_exception(__func__, e.what());
+    }
+}
+
+cactus_grammar_vocabulary_t cactus_grammar_vocabulary_init_from_model(cactus_model_t model) {
+    if (!model) return handle_exception(__func__, "model is null");
+
+    try {
+        auto handle = static_cast<CactusModelHandle*>(model);
+        auto tokenizer = handle->model ? handle->model->get_tokenizer() : nullptr;
+        if (!tokenizer) return handle_exception(__func__, "model tokenizer is null");
+        const auto vocabulary = GrammarVocabulary::from_tokenizer(*tokenizer);
+        return new CactusGrammarVocabularyHandle{
+            std::make_unique<GrammarVocabulary>(vocabulary)
         };
     } catch (const std::exception& e) {
         return handle_exception(__func__, e.what());
