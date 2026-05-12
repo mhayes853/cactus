@@ -286,6 +286,7 @@ private:
 class Grammar {
 public:
     Grammar();
+    Grammar(xgrammar::Grammar raw_grammar);
     ~Grammar() = default;
 
     static Grammar ebnf(const std::string& ebnf, const std::string& start_symbol = "root");
@@ -316,9 +317,6 @@ public:
     const xgrammar::Grammar& raw_value() const;
 
 private:
-    friend class GrammarMatcher;
-    Grammar(xgrammar::Grammar raw_grammar);
-
     xgrammar::Grammar grammar;
     bool is_universal_ = false;
 };

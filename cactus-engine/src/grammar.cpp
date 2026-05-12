@@ -88,18 +88,8 @@ Grammar Grammar::ebnf(const std::string& ebnf, const std::string& start_symbol) 
 }
 
 Grammar Grammar::epsilon() {
-    return Grammar::structural_tag(R"({
-        "type": "structural_tag",
-        "format": {
-            "type": "repeat",
-            "min": 0,
-            "max": 0,
-            "content": {
-                "type": "const_string",
-                "value": "x"
-            }
-        }
-    })");
+    static auto grammar = Grammar::ebnf("root ::= \"\"");
+    return grammar;
 }
 
 Grammar Grammar::json() {
