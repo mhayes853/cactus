@@ -16,7 +16,7 @@ def _looks_like_project_root(path: Path) -> bool:
     return (
         (path / "python" / "src" / "cli.py").exists()
         and (path / "cactus").exists()
-        and (path / "tests").exists()
+        and (path / "cactus-engine" / "tests").exists()
     )
 
 
@@ -45,14 +45,15 @@ def _resolve_project_root() -> Path:
 
 PROJECT_ROOT = _resolve_project_root()
 DEFAULT_MODEL_ID = "google/gemma-4-E2B-it"
-DEFAULT_TEST_TRANSCRIBE_MODEL_ID = "nvidia/parakeet-tdt-0.6b-v3"
-DEFAULT_TEST_WHISPER_MODEL_ID = "openai/whisper-small"
-DEFAULT_TEST_DIARIZE_MODEL_ID = "pyannote/segmentation-3.0"
-DEFAULT_TEST_EMBED_SPEAKER_MODEL_ID = "pyannote/wespeaker-voxceleb-resnet34-LM"
+DEFAULT_TEST_MODEL_ID = "google/gemma-4-E2B-it"
 WEIGHTS_VARIANT_CHOICES = ["auto", "apple", "standard"]
 
-with open(PROJECT_ROOT / "models.json") as _f:
-    MODELS_REGISTRY = json.load(_f)
+# dont fail if models.json is missing or malformed - just have an empty registry and rely on HF download_args
+try:
+    with open(PROJECT_ROOT / "models.json", "r", encoding="utf-8") as f:
+        MODEL_REGISTRY = json.load(f)
+except Exception:
+    MODEL_REGISTRY = {}
 
 RED = '\033[0;31m'
 GREEN = '\033[0;32m'
@@ -135,7 +136,7 @@ def _is_stale_binary(binary_path, dependency_paths):
 
 
 def _ensure_chat_binary(project_root, lib_path):
-    tests_dir = project_root / "tests"
+    tests_dir = project_root / "cactus-engine" / "tests"
     build_dir = tests_dir / "build"
     chat_binary = build_dir / "chat"
     chat_cpp = tests_dir / "chat.cpp"
@@ -157,7 +158,7 @@ def _ensure_chat_binary(project_root, lib_path):
     return chat_binary
 
 
-def ensure_vad_weights(model_id, weights_dir, precision='INT8'):
+def ensure_vad_weights(model_id, weights_dir, precision='FP16'):
     """Bundle Silero VAD weights into <weights_dir>/vad/ for ASR models."""
     is_asr = (
         'whisper' in model_id.lower()
@@ -204,7 +205,7 @@ def cmd_download(args):
     is_local = Path(model_id).is_dir()
     weights_dir = get_effective_weights_dir(model_id, args)
     reconvert = getattr(args, 'reconvert', False)
-    precision = getattr(args, 'precision', 'INT4')
+    precision = getattr(args, 'precision', 'FP16')
 
     if reconvert and weights_dir.exists():
         print_color(YELLOW, f"Removing cached weights for reconversion...")
@@ -265,7 +266,7 @@ def cmd_download(args):
 
     weights_dir.mkdir(parents=True, exist_ok=True)
 
-    precision = getattr(args, 'precision', 'INT4')
+    precision = getattr(args, 'precision', 'FP16')
     cache_dir = getattr(args, 'cache_dir', None)
     token = getattr(args, 'token', None)
 
@@ -398,12 +399,13 @@ def cmd_download(args):
     except ImportError:
         Lfm2VlForConditionalGeneration = None
 
-    is_vlm = 'vl' in model_id.lower() or 'vlm' in model_id.lower()
-    is_whisper = 'whisper' in model_id.lower()
-    is_parakeet = 'parakeet' in model_id.lower()
-    is_vad = 'silero-vad' in model_id.lower()
-    is_pyannote = 'segmentation-3.0' in model_id.lower()
-    is_wespeaker = 'wespeaker' in model_id.lower()
+    model_name = str(model_id)
+    is_vlm = 'vl' in model_name.lower() or 'vlm' in model_name.lower()
+    is_whisper = 'whisper' in model_name.lower()
+    is_parakeet = 'parakeet' in model_name.lower()
+    is_vad = 'silero-vad' in model_name.lower()
+    is_pyannote = 'segmentation-3.0' in model_name.lower()
+    is_wespeaker = 'wespeaker' in model_name.lower()
 
     try:
         if is_vlm:
@@ -661,11 +663,8 @@ def cmd_download(args):
             config.setdefault('model_variant', 'default')
 
         # Config precision stores the compute precision (weights are quantized, activations stay FP16)
-        if precision in ('INT8', 'INT4'):
-            config['precision'] = "FP16"
-        else:
-            config['precision'] = precision
-        config['quantization'] = precision # this is for CLI display only
+        config['precision'] = precision
+        config['quantization'] = precision
 
         config_path = weights_dir / "config.txt"
         with open(config_path, 'w') as f:
@@ -720,7 +719,7 @@ def check_libcurl():
 
 
 def cmd_build(args):
-    """Build the Cactus library and chat binary."""
+    """Build the Cactus library."""
     if getattr(args, 'apple', False):
         return cmd_build_apple(args)
     if getattr(args, 'android', False):
@@ -730,8 +729,8 @@ def cmd_build(args):
     if getattr(args, 'python', False):
         return cmd_build_python(args)
 
-    print_color(BLUE, "Building Cactus chat...")
-    print("=" * 23)
+    print_color(BLUE, "Building Cactus library...")
+    print("=" * 24)
 
     if not check_command('cmake'):
         print_color(RED, "Error: CMake is not installed")
@@ -747,12 +746,12 @@ def cmd_build(args):
 
     cactus_dir = PROJECT_ROOT / "cactus"
     lib_path = cactus_dir / "build" / "libcactus.a"
-    vendored_curl = PROJECT_ROOT / "libs" / "curl" / "macos" / "libcurl.a"
-    xgrammar_include = PROJECT_ROOT / "libs" / "xgrammar" / "include"
+    vendored_curl = PROJECT_ROOT / "cactus-engine" / "libs" / "curl" / "macos" / "libcurl.a"
+    xgrammar_include = PROJECT_ROOT / "cactus-engine" / "libs" / "xgrammar" / "include"
     if platform.system() == "Darwin":
-        vendored_xgrammar = PROJECT_ROOT / "libs" / "xgrammar" / "macos" / "libxgrammar.a"
+        vendored_xgrammar = PROJECT_ROOT / "cactus-engine" / "libs" / "xgrammar" / "macos" / "libxgrammar.a"
     else:
-        vendored_xgrammar = PROJECT_ROOT / "libs" / "xgrammar" / "linux" / "aarch64" / "libxgrammar.a"
+        vendored_xgrammar = PROJECT_ROOT / "cactus-engine" / "libs" / "xgrammar" / "linux" / "aarch64" / "libxgrammar.a"
 
     print_color(YELLOW, "Building Cactus library...")
     build_script = cactus_dir / "build.sh"
@@ -763,8 +762,7 @@ def cmd_build(args):
     if result.returncode != 0:
         print_color(RED, "Failed to build cactus library")
         return 1
-
-    tests_dir = PROJECT_ROOT / "tests"
+    tests_dir = PROJECT_ROOT / "cactus-engine" / "tests"
     build_dir = tests_dir / "build"
     build_dir.mkdir(parents=True, exist_ok=True)
 
@@ -776,7 +774,6 @@ def cmd_build(args):
         return 1
 
     is_darwin = platform.system() == "Darwin"
-
     sdl2_available = False
     sdl2_flags = []
     sdl2_link = []
@@ -807,26 +804,26 @@ def cmd_build(args):
         print_color(YELLOW, "Then run `cactus build`")
 
     if is_darwin:
-        if not vendored_curl.exists():
-            print_color(RED, f"Error: vendored libcurl not found at {vendored_curl}")
-            print("Build it first and place it in libs/curl/macos/libcurl.a")
-            return 1
         if not vendored_xgrammar.exists():
             print_color(RED, f"Error: vendored xgrammar not found at {vendored_xgrammar}")
-            print("Build it first and place it in libs/xgrammar/macos/libxgrammar.a")
+            print("Build it first and place it in cactus-engine/libs/xgrammar/macos/libxgrammar.a")
             return 1
+        curl_link = [str(vendored_curl)] if vendored_curl.exists() else ["-lcurl"]
         compiler = "clang++"
         cmd = [
             compiler, "-std=c++20", "-O3",
             "-DACCELERATE_NEW_LAPACK",
             f"-I{PROJECT_ROOT}",
-            f"-I{PROJECT_ROOT / 'libs' / 'xgrammar' / 'include'}",
+            f"-I{PROJECT_ROOT / 'cactus-engine'}",
+            f"-I{PROJECT_ROOT / 'cactus-graph'}",
+            f"-I{PROJECT_ROOT / 'cactus-kernels'}",
+            f"-I{xgrammar_include}",
             *sdl2_flags,
             str(chat_cpp),
             str(lib_path),
             str(vendored_xgrammar),
             "-o", "chat",
-            str(vendored_curl),
+            *curl_link,
             "-framework", "Accelerate",
             "-framework", "CoreML",
             "-framework", "Foundation",
@@ -838,13 +835,16 @@ def cmd_build(args):
     else:
         if not vendored_xgrammar.exists():
             print_color(RED, f"Error: vendored xgrammar not found at {vendored_xgrammar}")
-            print("Build it first and place it in libs/xgrammar/linux/aarch64/libxgrammar.a")
+            print("Build it first and place it in cactus-engine/libs/xgrammar/linux/aarch64/libxgrammar.a")
             return 1
         compiler = "g++"
         cmd = [
             compiler, "-std=c++20", "-O3",
             f"-I{PROJECT_ROOT}",
             f"-I{xgrammar_include}",
+            f"-I{PROJECT_ROOT / 'cactus-engine'}",
+            f"-I{PROJECT_ROOT / 'cactus-graph'}",
+            f"-I{PROJECT_ROOT / 'cactus-kernels'}",
             *sdl2_flags,
             str(chat_cpp),
             str(lib_path),
@@ -871,17 +871,18 @@ def cmd_build(args):
         print("Compiling asr.cpp...")
 
         if is_darwin:
+            curl_link = [str(vendored_curl)] if vendored_curl.exists() else ["-lcurl"]
             cmd = [
                 compiler, "-std=c++20", "-O3",
                 "-DACCELERATE_NEW_LAPACK",
                 f"-I{PROJECT_ROOT}",
-                f"-I{PROJECT_ROOT / 'libs' / 'xgrammar' / 'include'}",
+                f"-I{xgrammar_include}",
                 *sdl2_flags,
                 str(asr_cpp),
                 str(lib_path),
                 str(vendored_xgrammar),
                 "-o", "asr",
-                str(vendored_curl),
+                *curl_link,
                 "-framework", "Accelerate",
                 "-framework", "CoreML",
                 "-framework", "Foundation",
@@ -911,6 +912,9 @@ def cmd_build(args):
             return 1
 
         print_color(GREEN, f"Build complete: {build_dir / 'asr'}")
+
+    print_color(GREEN, "Cactus library built successfully!")
+    print(f"Library location: {lib_path}")
 
     return 0
 
@@ -1114,7 +1118,7 @@ def cmd_run(args):
     os.execv(str(chat_binary), cmd_args)
 
 
-DEFAULT_ASR_MODEL_ID = "nvidia/parakeet-tdt-0.6b-v3"
+DEFAULT_ASR_MODEL_ID = DEFAULT_TEST_MODEL_ID
 
 def _pick_android_device_id(preferred_device=None):
     if preferred_device:
@@ -1267,7 +1271,7 @@ def _cmd_transcribe_ios(weights_dir, audio_file, args):
         print_color(RED, f"Error: audio file not found: {audio_path}")
         return 1
 
-    ios_script = PROJECT_ROOT / "tests" / "ios" / "run.sh"
+    ios_script = PROJECT_ROOT / "tests" / "ios" / "test.sh"
     if not ios_script.exists():
         print_color(RED, f"Error: iOS runner not found at {ios_script}")
         return 1
@@ -1328,7 +1332,7 @@ def cmd_transcribe(args):
     if getattr(args, 'ios', False):
         return _cmd_transcribe_ios(weights_dir, audio_file, args)
 
-    asr_binary = PROJECT_ROOT / "tests" / "build" / "asr"
+    asr_binary = PROJECT_ROOT / "cactus-engine" / "tests" / "build" / "asr"
     if not asr_binary.exists():
         print_color(RED, "Error: ASR binary not built. Run 'cactus build' first.")
         return 1
@@ -1396,7 +1400,7 @@ def cmd_eval(args):
 
     dlargs = DownloadArgs()
     dlargs.model_id = model_id
-    dlargs.precision = getattr(args, 'precision', 'INT4')
+    dlargs.precision = getattr(args, 'precision', 'FP16')
     dlargs.cache_dir = getattr(args, 'cache_dir', None)
     dlargs.token = getattr(args, 'token', None)
     dlargs.reconvert = getattr(args, 'reconvert', False)
@@ -1507,39 +1511,35 @@ def cmd_test(args):
             "If tests fail unexpectedly, rerun with --reconvert."
         )
 
-    if getattr(args, 'benchmark', False):
-        args.model = 'LiquidAI/LFM2.5-VL-1.6B'
-        args.transcribe_model = 'nvidia/parakeet-ctc-1.1b'
-        print_color(BLUE, f"Using large models: {args.model}, {args.transcribe_model}, {args.vad_model}")
-
     if getattr(args, 'reconvert', False):
-        reconvert_models = [
-            getattr(args, 'model', 'LiquidAI/LFM2-VL-450M'),
-            getattr(args, 'transcribe_model', DEFAULT_TEST_TRANSCRIBE_MODEL_ID),
-            getattr(args, 'whisper_model', DEFAULT_TEST_WHISPER_MODEL_ID),
-            getattr(args, 'vad_model', 'snakers4/silero-vad'),
-            getattr(args, 'diarize_model', DEFAULT_TEST_DIARIZE_MODEL_ID),
-            getattr(args, 'embed_speaker_model', DEFAULT_TEST_EMBED_SPEAKER_MODEL_ID),
-        ]
-        for model_id in reconvert_models:
-            class DownloadArgs:
-                pass
-            dl_args = DownloadArgs()
-            dl_args.model_id = model_id
-            dl_args.reconvert = True
-            dl_args.cache_dir = None
-            if args.precision:
-                dl_args.precision = args.precision
-            else:
-                is_asr = 'whisper' in model_id.lower() or 'moonshine' in model_id.lower() or 'silero-vad' in model_id.lower()
-                is_fp16_only = 'segmentation-3.0' in model_id.lower() or 'wespeaker' in model_id.lower()
-                dl_args.precision = 'FP16' if is_fp16_only else ('INT8' if is_asr else 'INT4')
-            if args.token:
-                dl_args.token = args.token
-            if cmd_download(dl_args) != 0:
-                return 1
+        model_id = getattr(args, 'model', DEFAULT_TEST_MODEL_ID)
+        class DownloadArgs:
+            pass
+        dl_args = DownloadArgs()
+        dl_args.model_id = model_id
+        dl_args.reconvert = True
+        dl_args.cache_dir = None
+        dl_args.precision = args.precision if args.precision else 'FP16'
+        if args.token:
+            dl_args.token = args.token
+        if cmd_download(dl_args) != 0:
+            return 1
 
-    test_script = PROJECT_ROOT / "tests" / "run.sh"
+    test_filter = args.only
+    for _test_name in ['llm', 'vlm', 'stt', 'embed', 'rag', 'graph', 'index', 'kernel', 'kv_cache', 'performance']:
+        if getattr(args, _test_name, False):
+            test_filter = _test_name
+            break
+
+    if test_filter == "kernel":
+        test_script = PROJECT_ROOT / "cactus-kernels" / "test.sh"
+        test_cwd = PROJECT_ROOT / "cactus-kernels"
+    elif test_filter in ("graph", "kv_cache"):
+        test_script = PROJECT_ROOT / "cactus-graph" / "test.sh"
+        test_cwd = PROJECT_ROOT / "cactus-graph"
+    else:
+        test_script = PROJECT_ROOT / "cactus-engine" / "test.sh"
+        test_cwd = PROJECT_ROOT / "cactus-engine"
 
     if not test_script.exists():
         print_color(RED, f"Error: Test script not found at {test_script}")
@@ -1549,16 +1549,6 @@ def cmd_test(args):
 
     if args.model:
         cmd.extend(["--model", args.model])
-    if args.transcribe_model:
-        cmd.extend(["--transcribe_model", args.transcribe_model])
-    if getattr(args, 'whisper_model', None):
-        cmd.extend(["--whisper_model", args.whisper_model])
-    if getattr(args, 'vad_model', None):
-        cmd.extend(["--vad_model", args.vad_model])
-    if getattr(args, 'diarize_model', None):
-        cmd.extend(["--diarize_model", args.diarize_model])
-    if getattr(args, 'embed_speaker_model', None):
-        cmd.extend(["--embed_speaker_model", args.embed_speaker_model])
     if args.precision:
         cmd.extend(["--precision", args.precision])
     if getattr(args, 'no_rebuild', False):
@@ -1582,7 +1572,7 @@ def cmd_test(args):
     else:
         env["CACTUS_NO_CLOUD_TELE"] = "1"
 
-    result = subprocess.run(cmd, cwd=PROJECT_ROOT / "tests", env=env)
+    result = subprocess.run(cmd, cwd=test_cwd, env=env)
     return result.returncode
 
 
@@ -1607,7 +1597,7 @@ def cmd_clean(args):
 
     remove_if_exists(PROJECT_ROOT / "apple" / "build")
 
-    remove_if_exists(PROJECT_ROOT / "tests" / "build")
+    remove_if_exists(PROJECT_ROOT / "cactus-engine" / "tests" / "build")
 
     remove_if_exists(PROJECT_ROOT / "venv")
 
@@ -1960,7 +1950,7 @@ def create_parser():
                                        auto downloads and spins up
 
     Optional flags:
-    --precision INT4|INT8|FP16         default: INT4
+    --precision FP16                   default: FP16
     --token <token>                    HF token (for gated models)
     --reconvert                        force model weights reconversion from source
 
@@ -1971,7 +1961,7 @@ def create_parser():
 
     Optional flags:
     --file <audio.wav>                 transcribe audio file instead of mic
-    --precision INT4|INT8|FP16         default: INT4
+    --precision FP16                   default: FP16
     --token <token>                    HF token (for gated models)
     --reconvert                        force model weights reconversion from source
 
@@ -1987,7 +1977,7 @@ def create_parser():
                                        see supported weights on ReadMe
 
     Optional flags:
-    --precision INT4|INT8|FP16         quantization (default: INT4)
+    --precision FP16                   precision (default: FP16)
     --token <token>                    HuggingFace API token
     --reconvert                        force model weights reconversion from source
 
@@ -1997,7 +1987,7 @@ def create_parser():
                                        supports LoRA adapter merging
 
     Optional flags:
-    --precision INT4|INT8|FP16   quantization (default: INT4)
+    --precision FP16             precision (default: FP16)
     --lora <path>                      LoRA adapter path to merge
     --token <token>                    HuggingFace API token
 
@@ -2022,7 +2012,7 @@ def create_parser():
     --transcribe_model <model>         default: nvidia/parakeet-tdt-0.6b-v3
     --whisper_model <model>            default: openai/whisper-small (language detection)
     --benchmark                        use larger models (LFM2.5-VL-1.6B + nvidia/parakeet-ctc-1.1b)
-    --precision INT4|INT8|FP16         regenerates weights with precision
+    --precision FP16                   regenerates weights with precision
     --reconvert                        force model weights reconversion from source
     --no-rebuild                       skip building library and tests
     --llm                              run only LLM tests
@@ -2080,8 +2070,8 @@ def create_parser():
     download_parser = subparsers.add_parser('download', help='Download and convert model weights')
     download_parser.add_argument('model_id', nargs='?', default=DEFAULT_MODEL_ID,
                                  help=f'HuggingFace model ID (default: {DEFAULT_MODEL_ID})')
-    download_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT4',
-                                 help='Quantization precision (default: INT4)')
+    download_parser.add_argument('--precision', choices=['FP16'], default='FP16',
+                                 help='Precision (default: FP16)')
     download_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     download_parser.add_argument('--token', help='HuggingFace API token')
 
@@ -2103,8 +2093,8 @@ def create_parser():
     run_parser = subparsers.add_parser('run', help='Build, download (if needed), and run chat')
     run_parser.add_argument('model_id', nargs='?', default=DEFAULT_MODEL_ID,
                             help=f'HuggingFace model ID (default: {DEFAULT_MODEL_ID})')
-    run_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT4',
-                            help='Quantization precision (default: INT4)')
+    run_parser.add_argument('--precision', choices=['FP16'], default='FP16',
+                            help='Precision (default: FP16)')
     run_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     run_parser.add_argument('--token', help='HuggingFace API token')
     run_parser.add_argument('--weights-variant', choices=WEIGHTS_VARIANT_CHOICES, default='auto',
@@ -2131,8 +2121,8 @@ def create_parser():
                                    help='Audio file to transcribe (WAV format). Omit for live microphone.')
     transcribe_parser.add_argument('--language', default='en',
                                    help='Language code for transcription (default: en). Examples: es, fr, de, zh, ja')
-    transcribe_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT4',
-                                   help='Quantization precision (default: INT4)')
+    transcribe_parser.add_argument('--precision', choices=['FP16'], default='FP16',
+                                   help='Precision (default: FP16)')
     transcribe_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     transcribe_parser.add_argument('--token', help='HuggingFace API token')
     transcribe_parser.add_argument('--no-cloud-tele', action='store_true',
@@ -2151,8 +2141,8 @@ def create_parser():
     eval_parser = subparsers.add_parser('eval', help='Run evaluation scripts outside the cactus submodule')
     eval_parser.add_argument('model_id', nargs='?', default=DEFAULT_MODEL_ID,
                              help=f'HuggingFace model ID (default: {DEFAULT_MODEL_ID})')
-    eval_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT4',
-                             help='Quantization precision (default: INT4)')
+    eval_parser.add_argument('--precision', choices=['FP16'], default='FP16',
+                             help='Precision (default: FP16)')
     eval_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     eval_parser.add_argument('--token', help='HuggingFace API token')
     eval_parser.add_argument('--weights-variant', choices=WEIGHTS_VARIANT_CHOICES, default='auto',
@@ -2168,21 +2158,9 @@ def create_parser():
                              help='Download original model and convert (instead of using pre-converted from Cactus-Compute)')
 
     test_parser = subparsers.add_parser('test', help='Run the test suite')
-    test_parser.add_argument('--model', default='LiquidAI/LFM2-VL-450M',
-                             help='Model to use for tests')
-    test_parser.add_argument('--transcribe_model', default=DEFAULT_TEST_TRANSCRIBE_MODEL_ID,
-                             help='Transcribe model to use')
-    test_parser.add_argument('--whisper_model', default=DEFAULT_TEST_WHISPER_MODEL_ID,
-                             help='Whisper model to use for language detection tests')
-    test_parser.add_argument('--vad_model', default='snakers4/silero-vad',
-                             help='VAD model to use')
-    test_parser.add_argument('--diarize_model', default=DEFAULT_TEST_DIARIZE_MODEL_ID,
-                             help='Diarization model to use')
-    test_parser.add_argument('--embed_speaker_model', default=DEFAULT_TEST_EMBED_SPEAKER_MODEL_ID,
-                             help='Speaker embedding model to use')
-    test_parser.add_argument('--benchmark', action='store_true',
-                             help='Use larger models (LFM2.5-VL-1.6B + nvidia/parakeet-ctc-1.1b)')
-    test_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'],
+    test_parser.add_argument('--model', default=DEFAULT_TEST_MODEL_ID,
+                             help='Model to use for tests (default: Gemma4)')
+    test_parser.add_argument('--precision', choices=['FP16'],
                              help='Regenerate weights with this precision (deletes existing weights)')
     test_parser.add_argument('--no-rebuild', action='store_true',
                              help='Skip building cactus library and tests')
@@ -2191,8 +2169,6 @@ def create_parser():
                              help='Run tests on Android')
     test_parser.add_argument('--ios', action='store_true',
                              help='Run tests on iOS')
-    test_parser.add_argument('--exhaustive', action='store_true',
-                             help='Run exhaustive golden tests for all model families and precisions')
     test_parser.add_argument('--only', help='(deprecated, use --<test_name> instead) Only run the specified test')
     for _test_name in ['llm', 'vlm', 'stt', 'embed', 'rag', 'graph', 'index', 'kernel', 'kv_cache', 'performance', 'grammar']:
         test_parser.add_argument(f'--{_test_name}', action='store_true',
@@ -2218,8 +2194,8 @@ def create_parser():
     convert_parser.add_argument('model_name', help='HuggingFace model name')
     convert_parser.add_argument('output_dir', nargs='?', default=None,
                                 help='Output directory (default: weights/<model_name>)')
-    convert_parser.add_argument('--precision', choices=['INT4', 'INT8', 'FP16'], default='INT4',
-                                help='Quantization precision (default: INT4)')
+    convert_parser.add_argument('--precision', choices=['FP16'], default='FP16',
+                                help='Precision (default: FP16)')
     convert_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     convert_parser.add_argument('--token', help='HuggingFace API token')
     convert_parser.add_argument('--lora', help='Path to LoRA adapter (local path or HuggingFace ID) to merge before conversion')

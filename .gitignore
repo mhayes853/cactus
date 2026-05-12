@@ -1,4 +1,4 @@
-build
+build*
 .claude
 .vscode
 .DS_Store
@@ -19,7 +19,7 @@ apple/*.xcframework
 apple/libcactus.a
 *.a
 !libs/curl/**/*.a
-!libs/xgrammar/**/*.a
+!cactus-engine/libs/xgrammar/**/*.a
 venv
 
 __pycache__
@@ -41,3 +41,4 @@ tests/assets/test_wav_info.txt
 vision_activations.json
 gemma-4-eap-extras/
 .githooks/
+*.cg
