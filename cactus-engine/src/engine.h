@@ -601,69 +601,6 @@ private:
     void load_special_tokens(const std::string& config_file);
 };
 
-struct KVCache {
-    static constexpr size_t DEFAULT_WINDOW_SIZE = 1024;
-    static constexpr size_t DEFAULT_SINK_SIZE = 4;
-
-    struct LayerCache {
-        std::vector<uint8_t> keys;
-        std::vector<uint8_t> values;
-        std::vector<float> key_scales;
-        std::vector<float> value_scales;
-        size_t head_dim = 0;
-        size_t kv_heads = 0;
-    };
-
-    std::vector<LayerCache> layer_caches;
-
-    size_t window_size = DEFAULT_WINDOW_SIZE;
-    size_t sink_size = DEFAULT_SINK_SIZE;
-    size_t current_seq_len = 0;
-    size_t total_seq_len = 0;
-    size_t max_seq_len = 2048;
-    size_t num_layers = 0;
-    Precision precision;
-    size_t element_size = 4;
-
-    void set_window_size(size_t window, size_t sink = DEFAULT_SINK_SIZE);
-    size_t get_effective_seq_len() const { return current_seq_len; }
-    size_t get_total_seq_len() const { return total_seq_len; }
-    size_t get_layer_head_dim(size_t layer_idx) const { return layer_caches[layer_idx].head_dim; }
-    size_t get_layer_kv_heads(size_t layer_idx) const { return layer_caches[layer_idx].kv_heads; }
-
-    void init(size_t num_layers, size_t max_seq, const std::vector<size_t>& layer_dims, const std::vector<size_t>& layer_kv_heads, Precision model_precision);
-    void reset();
-    void update_from_graph(CactusGraph* gb, const std::vector<size_t>& k_nodes,
-                          const std::vector<size_t>& v_nodes, size_t seq_len,
-                          size_t num_layers);
-
-    void update_from_npu(size_t layer_idx, const __fp16* k_data, const __fp16* v_data,
-                         size_t num_tokens, size_t kv_heads, size_t head_dim);
-
-    bool is_empty() const { return current_seq_len == 0; }
-    void* get_key_ptr(size_t layer);
-    void* get_value_ptr(size_t layer);
-
-    struct CircularView {
-        const void* ptr1;
-        const void* ptr2;
-        size_t len1;
-        size_t len2;
-        size_t total_len;
-    };
-
-    CircularView get_key_view(size_t layer);
-    CircularView get_value_view(size_t layer);
-
-    const int8_t* get_keys_int8(size_t layer) const;
-    const int8_t* get_values_int8(size_t layer) const;
-    const float* get_key_scales(size_t layer) const;
-    const float* get_value_scales(size_t layer) const;
-
-    void remove_token_range(size_t start, size_t count);
-    void compact_to_windows(const std::vector<size_t>& target_windows);
-};
-
 class ToolCallConstrainer {
 public:
     enum class State {
