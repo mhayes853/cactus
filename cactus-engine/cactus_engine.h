@@ -486,8 +486,8 @@ CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_repeat_range(
     int max_count                           // -1 means unlimited
 );
 CACTUS_FFI_EXPORT int cactus_grammar_get_ebnf(cactus_grammar_t grammar, char* buffer, size_t buffer_size);
-CACTUS_FFI_EXPORT bool cactus_grammar_is_empty(cactus_grammar_t grammar);
-CACTUS_FFI_EXPORT bool cactus_grammar_is_universal(cactus_grammar_t grammar);
+CACTUS_FFI_EXPORT int cactus_grammar_is_empty(cactus_grammar_t grammar);
+CACTUS_FFI_EXPORT int cactus_grammar_is_universal(cactus_grammar_t grammar);
 CACTUS_FFI_EXPORT void cactus_grammar_destroy(cactus_grammar_t grammar);
 
 CACTUS_FFI_EXPORT cactus_grammar_engine_t cactus_grammar_engine_init(cactus_grammar_vocabulary_t vocabulary);
@@ -499,7 +499,7 @@ CACTUS_FFI_EXPORT cactus_grammar_matcher_t cactus_grammar_engine_compile_matcher
 
 CACTUS_FFI_EXPORT cactus_grammar_vocabulary_t cactus_grammar_vocabulary_init(const char* model_path);
 CACTUS_FFI_EXPORT cactus_grammar_vocabulary_t cactus_grammar_vocabulary_init_from_model(cactus_model_t model);
-CACTUS_FFI_EXPORT bool cactus_grammar_vocabulary_get_add_prefix_space(cactus_grammar_vocabulary_t vocabulary);
+CACTUS_FFI_EXPORT int cactus_grammar_vocabulary_get_add_prefix_space(cactus_grammar_vocabulary_t vocabulary);
 CACTUS_FFI_EXPORT size_t cactus_grammar_vocabulary_get_size(cactus_grammar_vocabulary_t vocabulary);
 CACTUS_FFI_EXPORT int cactus_grammar_vocabulary_get_stop_token_ids(
     cactus_grammar_vocabulary_t vocabulary,
@@ -514,9 +514,9 @@ CACTUS_FFI_EXPORT void cactus_grammar_matcher_reset(cactus_grammar_matcher_t mat
 CACTUS_FFI_EXPORT void cactus_grammar_matcher_rollback(cactus_grammar_matcher_t matcher, int tokens);
 CACTUS_FFI_EXPORT cactus_grammar_matcher_t cactus_grammar_matcher_fork(cactus_grammar_matcher_t matcher);
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_matcher_get_grammar(cactus_grammar_matcher_t matcher);
-CACTUS_FFI_EXPORT bool cactus_grammar_matcher_is_completed(cactus_grammar_matcher_t matcher);
-CACTUS_FFI_EXPORT bool cactus_grammar_matcher_is_terminated(cactus_grammar_matcher_t matcher);
-CACTUS_FFI_EXPORT bool cactus_grammar_matcher_accept(cactus_grammar_matcher_t matcher, uint32_t token_id);
+CACTUS_FFI_EXPORT int cactus_grammar_matcher_is_completed(cactus_grammar_matcher_t matcher);
+CACTUS_FFI_EXPORT int cactus_grammar_matcher_is_terminated(cactus_grammar_matcher_t matcher);
+CACTUS_FFI_EXPORT int cactus_grammar_matcher_accept(cactus_grammar_matcher_t matcher, uint32_t token_id);
 CACTUS_FFI_EXPORT int cactus_grammar_matcher_next_bitmask(
     cactus_grammar_matcher_t matcher,
     int32_t* bitmask,

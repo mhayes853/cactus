@@ -240,11 +240,15 @@ static bool test_empty_grammar_properties() {
     auto empty2 = GrammarHandle(make_grammar_empty(), &cactus_grammar_destroy);
     auto simple = GrammarHandle(make_grammar_ebnf("root ::= \"hello\""), &cactus_grammar_destroy);
 
-    if (!cactus_grammar_is_empty(empty.get()) || !cactus_grammar_is_empty(empty2.get()) || cactus_grammar_is_empty(simple.get())) {
+    if (!cactus_grammar_is_empty(empty.get())
+        || !cactus_grammar_is_empty(empty2.get())
+        || cactus_grammar_is_empty(simple.get())) {
         return false;
     }
 
-    if (cactus_grammar_is_universal(empty.get()) || cactus_grammar_is_universal(empty2.get()) || cactus_grammar_is_universal(simple.get())) {
+    if (cactus_grammar_is_universal(empty.get())
+        || cactus_grammar_is_universal(empty2.get())
+        || cactus_grammar_is_universal(simple.get())) {
         return false;
     }
 

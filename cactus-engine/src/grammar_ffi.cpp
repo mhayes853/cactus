@@ -40,12 +40,6 @@ static cactus_grammar_t handle_exception(const char* operation, const std::strin
     return nullptr;
 }
 
-static bool handle_bool_exception(const char* operation, const std::string& error) {
-    last_error_message = std::string(operation) + ": " + error;
-    CACTUS_LOG_ERROR("grammar", last_error_message);
-    return false;
-}
-
 static int handle_int_exception(const char* operation, const std::string& error) {
     last_error_message = std::string(operation) + ": " + error;
     CACTUS_LOG_ERROR("grammar", last_error_message);
@@ -65,12 +59,8 @@ static std::vector<Grammar> collect_grammars(cactus_grammar_t* grammars, size_t 
     std::vector<Grammar> collected;
     collected.reserve(num_grammars);
     for (size_t i = 0; i < num_grammars; ++i) {
-        if (!grammars || !grammars[i]) {
-            continue;
-        }
-
-        auto* handle = static_cast<CactusGrammarHandle*>(grammars[i]);
-        collected.push_back(*handle->grammar);
+        if (!grammars || !grammars[i]) continue;
+        collected.push_back(*static_cast<CactusGrammarHandle*>(grammars[i])->grammar);
     }
     return collected;
 }
@@ -148,11 +138,11 @@ cactus_grammar_vocabulary_t cactus_grammar_vocabulary_init_from_model(cactus_mod
     }
 }
 
-bool cactus_grammar_vocabulary_get_add_prefix_space(cactus_grammar_vocabulary_t vocabulary) {
+int cactus_grammar_vocabulary_get_add_prefix_space(cactus_grammar_vocabulary_t vocabulary) {
     auto* handle = require_vocabulary_handle(__func__, vocabulary);
-    if (!handle) return false;
+    if (!handle) return -1;
 
-    return handle->vocabulary->add_prefix_space();
+    return handle->vocabulary->add_prefix_space() ? 1 : 0;
 }
 
 size_t cactus_grammar_vocabulary_get_size(cactus_grammar_vocabulary_t vocabulary) {
@@ -170,15 +160,11 @@ int cactus_grammar_vocabulary_get_stop_token_ids(
 ) {
     auto* handle = require_vocabulary_handle(__func__, vocabulary);
     if (!handle) return -1;
-    if (!out_token_count) {
-        return handle_int_exception(__func__, "out_token_count is null");
-    }
+    if (!out_token_count) return handle_int_exception(__func__, "out_token_count is null");
 
     const auto& stop_token_ids = handle->vocabulary->stop_token_ids();
     *out_token_count = stop_token_ids.size();
-    if (!buffer) {
-        return handle_int_exception(__func__, "buffer is null");
-    }
+    if (!buffer) return handle_int_exception(__func__, "buffer is null");
     if (buffer_size < stop_token_ids.size()) {
         return handle_int_exception(__func__, "buffer too small");
     }
@@ -192,9 +178,7 @@ void cactus_grammar_vocabulary_destroy(cactus_grammar_vocabulary_t vocabulary) {
 }
 
 cactus_grammar_t cactus_grammar_init_ebnf(const char* ebnf, const char* start_symbol) {
-    if (!ebnf) {
-        return handle_exception(__func__, "ebnf is null");
-    }
+    if (!ebnf) return handle_exception(__func__, "ebnf is null");
 
     return make_grammar(__func__, [&] {
         return Grammar::ebnf(ebnf, start_symbol ? start_symbol : "root");
@@ -229,9 +213,7 @@ cactus_grammar_t cactus_grammar_init_json_schema(
     const char* json_schema,
     cactus_grammar_json_schema_options_t options
 ) {
-    if (!json_schema) {
-        return handle_exception(__func__, "json_schema is null");
-    }
+    if (!json_schema) return handle_exception(__func__, "json_schema is null");
 
     if ((!options.any_whitespace) && (!options.separators[0] || !options.separators[1])) {
         return handle_exception(
@@ -256,9 +238,7 @@ cactus_grammar_t cactus_grammar_init_json_schema(
 }
 
 cactus_grammar_t cactus_grammar_init_regex(const char* regex) {
-    if (!regex) {
-        return handle_exception(__func__, "regex is null");
-    }
+    if (!regex) return handle_exception(__func__, "regex is null");
 
     return make_grammar(__func__, [&] {
         return Grammar::regex(regex);
@@ -269,9 +249,7 @@ cactus_grammar_t cactus_grammar_init_structural_tag(
     const char* structural_tag_json,
     cactus_grammar_vocabulary_t vocabulary
 ) {
-    if (!structural_tag_json) {
-        return handle_exception(__func__, "structural_tag_json is null");
-    }
+    if (!structural_tag_json) return handle_exception(__func__, "structural_tag_json is null");
 
     return make_grammar(__func__, [&] {
         auto* handle = static_cast<CactusGrammarVocabularyHandle*>(vocabulary);
@@ -331,18 +309,14 @@ cactus_grammar_t cactus_grammar_repeat_range(cactus_grammar_t grammar, int min_c
 }
 
 int cactus_grammar_get_ebnf(cactus_grammar_t grammar, char* buffer, size_t buffer_size) {
-    if (!grammar) {
-        return handle_int_exception(__func__, "grammar is null");
-    }
+    if (!grammar) return handle_int_exception(__func__, "grammar is null");
     if (!buffer || buffer_size == 0) {
         return handle_int_exception(__func__, "buffer is null or buffer_size is 0");
     }
 
     try {
         std::string ebnf = static_cast<CactusGrammarHandle*>(grammar)->grammar->ebnf();
-        if (ebnf.size() >= buffer_size) {
-            return handle_int_exception(__func__, "buffer too small");
-        }
+        if (ebnf.size() >= buffer_size) return handle_int_exception(__func__, "buffer too small");
         std::strcpy(buffer, ebnf.c_str());
         return 0;
     } catch (const std::exception& e) {
@@ -350,20 +324,14 @@ int cactus_grammar_get_ebnf(cactus_grammar_t grammar, char* buffer, size_t buffe
     }
 }
 
-bool cactus_grammar_is_empty(cactus_grammar_t grammar) {
-    if (!grammar) {
-        return handle_bool_exception(__func__, "grammar is null");
-    }
-
-    return static_cast<CactusGrammarHandle*>(grammar)->grammar->is_empty();
+int cactus_grammar_is_empty(cactus_grammar_t grammar) {
+    if (!grammar) return handle_int_exception(__func__, "grammar is null");
+    return static_cast<CactusGrammarHandle*>(grammar)->grammar->is_empty() ? 1 : 0;
 }
 
-bool cactus_grammar_is_universal(cactus_grammar_t grammar) {
-    if (!grammar) {
-        return handle_bool_exception(__func__, "grammar is null");
-    }
-
-    return static_cast<CactusGrammarHandle*>(grammar)->grammar->is_universal();
+int cactus_grammar_is_universal(cactus_grammar_t grammar) {
+    if (!grammar) return handle_int_exception(__func__, "grammar is null");
+    return static_cast<CactusGrammarHandle*>(grammar)->grammar->is_universal() ? 1 : 0;
 }
 
 void cactus_grammar_destroy(cactus_grammar_t grammar) {
@@ -449,19 +417,19 @@ cactus_grammar_t cactus_grammar_matcher_get_grammar(cactus_grammar_matcher_t mat
     }
 }
 
-bool cactus_grammar_matcher_is_completed(cactus_grammar_matcher_t matcher) {
+int cactus_grammar_matcher_is_completed(cactus_grammar_matcher_t matcher) {
     auto* handle = require_matcher_handle(__func__, matcher);
-    return handle ? handle->matcher->is_completed() : false;
+    return handle ? (handle->matcher->is_completed() ? 1 : 0) : -1;
 }
 
-bool cactus_grammar_matcher_is_terminated(cactus_grammar_matcher_t matcher) {
+int cactus_grammar_matcher_is_terminated(cactus_grammar_matcher_t matcher) {
     auto* handle = require_matcher_handle(__func__, matcher);
-    return handle ? handle->matcher->is_terminated() : false;
+    return handle ? (handle->matcher->is_terminated() ? 1 : 0) : -1;
 }
 
-bool cactus_grammar_matcher_accept(cactus_grammar_matcher_t matcher, uint32_t token_id) {
+int cactus_grammar_matcher_accept(cactus_grammar_matcher_t matcher, uint32_t token_id) {
     auto* handle = require_matcher_handle(__func__, matcher);
-    return handle ? handle->matcher->accept(token_id) : false;
+    return handle ? (handle->matcher->accept(token_id) ? 1 : 0) : -1;
 }
 
 int cactus_grammar_matcher_next_bitmask(
@@ -471,9 +439,7 @@ int cactus_grammar_matcher_next_bitmask(
 ) {
     auto* handle = require_matcher_handle(__func__, matcher);
     if (!handle) return -1;
-    if (!bitmask) {
-        return handle_int_exception(__func__, "bitmask is null");
-    }
+    if (!bitmask) return handle_int_exception(__func__, "bitmask is null");
 
     try {
         std::vector<int32_t> next_bitmask;
