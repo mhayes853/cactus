@@ -177,7 +177,7 @@ struct Config {
     float rope_scaling_factor = 1.0f;
     float rope_mscale_all_dim = 0.0f;
 
-    enum class ModelType {GEMMA4 = 15};
+    enum class ModelType {QWEN = 0, GEMMA = 1, NOMIC = 3, LFM2 = 5, SIGLIP2 = 6, WHISPER = 7, MOONSHINE = 8, SILERO_VAD = 9, PARAKEET = 10, QWEN3P5 = 11, PARAKEET_TDT = 12, GEMMA3N = 13, YOUTU = 14, GEMMA4 = 15, PYANNOTE = 16, WESPEAKER = 17, NEEDLE = 18};
     uint32_t predictor_hidden_dim = 0;
     uint32_t predictor_num_layers = 0;
     uint32_t tdt_joint_dim = 0;
@@ -211,14 +211,16 @@ struct Config {
 
     uint32_t altup_num_inputs = 4;
     uint32_t laurel_rank = 64;
-    uint32_t hidden_size_per_layer_input = 256;
-    uint32_t num_kv_shared_layers = 0;
-    uint32_t sliding_window = 512;
-    float rope_local_base_freq = 10000.0f;
-    float final_logit_softcapping = 0.0f;
-    float global_partial_rotary_factor = 1.0f;
+    static constexpr uint32_t UNSET_U32 = UINT32_MAX;
+    static constexpr float UNSET_F32 = -1e30f;
+    uint32_t hidden_size_per_layer_input = UNSET_U32;
+    uint32_t num_kv_shared_layers = UNSET_U32;
+    uint32_t sliding_window = UNSET_U32;
+    float rope_local_base_freq = UNSET_F32;
+    float final_logit_softcapping = UNSET_F32;
+    float global_partial_rotary_factor = UNSET_F32;
     uint32_t expert_intermediate_size = 0;
-    uint32_t global_head_dim = 0;
+    uint32_t global_head_dim = UNSET_U32;
     uint32_t num_global_kv_heads = 0;
     bool attention_k_eq_v = false;
     bool enable_moe_block = false;
@@ -258,7 +260,7 @@ struct Config {
     uint32_t channel_close_token_id = 101;
 
     static bool is_gemma_family(ModelType t) {
-        return t == ModelType::GEMMA4;
+        return t == ModelType::GEMMA || t == ModelType::GEMMA3N || t == ModelType::GEMMA4;
     }
 
     bool from_json(const std::string& json_path);
@@ -464,7 +466,7 @@ public:
     uint32_t get_global_img_token_id() const { return global_img_token_id_; }
 
 protected:
-    enum class ModelType { UNKNOWN, GEMMA4 };
+    enum class ModelType { UNKNOWN, GEMMA4, QWEN, LFM2 };
     ModelType model_type_ = ModelType::UNKNOWN;
     enum class ModelVariant { DEFAULT, VLM, EXTRACT, RAG};
     ModelVariant model_variant_ = ModelVariant::DEFAULT;
@@ -488,6 +490,8 @@ protected:
     void load_chat_template(const std::string& template_file);
     void load_tokenizer_json_data(const std::string& tokenizer_json_path);
     std::string format_gemma4_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json, bool enable_thinking_if_supported = false) const;
+    std::string format_qwen_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json) const;
+    std::string format_lfm2_style(const std::vector<ChatMessage>& messages, bool add_generation_prompt, const std::string& tools_json) const;
 };
 
 class BPETokenizer : public Tokenizer {
@@ -595,39 +599,6 @@ private:
 
     std::vector<std::string> split_with_special_tokens(const std::string& text) const;
     void load_special_tokens(const std::string& config_file);
-};
-
-class ConvCache {
-public:
-    struct CircularView {
-        const void* ptr1;
-        size_t len1;
-        const void* ptr2;
-        size_t len2;
-        size_t total_len;
-    };
-
-    void init(size_t layers, size_t hidden_dim, size_t window_len, Precision model_precision);
-    CircularView get_window(size_t layer) const;
-    void update(CactusGraph* gb, size_t layer, const size_t latest_token);
-    void reset();
-
-    bool is_empty() const { return num_layers == 0; }
-
-    size_t num_layers = 0;
-    size_t hidden_size = 0;
-    size_t window_size = 0;
-    Precision precision = Precision::FP32;
-    size_t element_size = 4;
-
-private:
-    struct LayerState {
-        std::vector<uint8_t> data;
-        size_t head = 0;
-        size_t count = 0;
-    };
-
-    std::vector<LayerState> layer_states;
 };
 
 struct KVCache {
@@ -920,15 +891,66 @@ private:
     std::unordered_map<uint32_t, float> vocab_bias_;
 };
 
-std::unique_ptr<Model> create_model(const std::string& model_folder);
+class ConvCache {
+public:
+    struct CircularView {
+        const void* ptr1;
+        size_t len1;
+        const void* ptr2;
+        size_t len2;
+        size_t total_len;
+    };
 
+    void init(size_t layers, size_t hidden_dim, size_t window_len, Precision model_precision);
+    CircularView get_window(size_t layer) const;
+    void update(CactusGraph* gb, size_t layer, const size_t latest_token);
+    void reset();
+
+    bool is_empty() const { return num_layers == 0; }
+
+    size_t num_layers = 0;
+    size_t hidden_size = 0;
+    size_t window_size = 0;
+    Precision precision = Precision::FP32;
+    size_t element_size = 4;
+
+private:
+    struct LayerState {
+        std::vector<uint8_t> data;
+        size_t head = 0;
+        size_t count = 0;
+    };
+
+    std::vector<LayerState> layer_states;
+};
 
 class Siglip2Preprocessor {
 public:
+    struct Config {
+        int patch_size = 16;
+        int downsample_factor = 2;
+        int min_tiles = 2;
+        int max_tiles = 10;
+        bool use_thumbnail = true;
+        int min_image_tokens = 64;
+        int max_image_tokens = 256;
+        int max_num_patches = 1024;
+        int tile_size = 512;
+        float max_pixels_tolerance = 2.0f;
+        bool do_resize = true;
+        bool do_rescale = true;
+        bool do_normalize = true;
+        bool do_convert_rgb = true;
+        bool do_image_splitting = true;
+        float rescale_factor = 1.0f / 255.0f;
+        float image_mean[3] = {0.5f, 0.5f, 0.5f};
+        float image_std[3] = {0.5f, 0.5f, 0.5f};
+    };
+
     struct PreprocessedImage {
         std::vector<float> pixel_values;
         std::vector<int> pixel_attention_mask;
-        std::vector<std::pair<int,int>> spatial_shapes;
+        std::vector<std::pair<int, int>> spatial_shapes;
         std::vector<size_t> pixel_values_shape;
         std::vector<size_t> pixel_attention_mask_shape;
         std::vector<size_t> spatial_shapes_shape;
@@ -938,7 +960,6 @@ public:
         int num_tiles;
         int patch_dim;
         int max_patches_per_tile;
-
         int image_rows;
         int image_cols;
         int image_height;
@@ -978,63 +999,35 @@ private:
     std::vector<std::vector<float>> convert_image_to_patches(
         const std::vector<float>& image, int width, int height, int channels, int patch_size);
     PreprocessedImage pad_patches(const std::vector<std::vector<float>>& tile_patches,
-                                  const std::vector<std::pair<int,int>>& spatial_shapes,
+                                  const std::vector<std::pair<int, int>>& spatial_shapes,
                                   int patch_dim,
                                   int max_patches_per_tile);
     int round_by_factor(int number, int factor);
 };
 
-class AudioProcessor {
-public:
-    struct SpectrogramConfig {
-        size_t n_fft = 400;
-        size_t hop_length = 160;
-        size_t frame_length = 400;
-        float power = 2.0f;
-        bool center = true;
-        const char* pad_mode = "reflect";
-        bool onesided = true;
-        float dither = 0.0f;
-        float mel_floor = 1e-10f;
-        const char* log_mel = nullptr;
-        float reference = 1.0f;
-        float min_value = 1e-10f;
-        bool remove_dc_offset = false;
-        float preemphasis = 0.0f;
-        bool hann_periodic = true;
-        float window_a0 = 0.5f;
-        size_t fft_override = 0;
-        bool mel_floor_additive = false;
-    };
+std::unique_ptr<Model> create_model(const std::string& model_folder);
 
-    AudioProcessor();
-    ~AudioProcessor();
 
-    void init_mel_filters(size_t num_frequency_bins, size_t num_mel_filters,
-                          float min_freq, float max_freq, size_t sampling_rate,
-                          const char* norm = "slaney", const char* mel_scale = "slaney");
-
-    std::vector<float> compute_spectrogram(
-        const std::vector<float>& waveform,
-        const SpectrogramConfig& config);
-
-    static std::vector<float> compute_irfft(
-        const std::vector<float>& complex_input,
-        size_t n,
-        const char* norm = "backward");
-
-    const std::vector<float>& get_mel_filters() const { return mel_filters_; }
-
-    size_t get_num_mel_filters() const { return num_mel_filters_; }
-    size_t get_num_frequency_bins() const { return num_frequency_bins_; }
-
-private:
-    std::vector<float> mel_filters_;
-    size_t num_frequency_bins_;
-    size_t num_mel_filters_;
+struct SpectrogramConfig {
+    size_t n_fft = 400;
+    size_t hop_length = 160;
+    size_t frame_length = 400;
+    float power = 2.0f;
+    bool center = true;
+    const char* pad_mode = "reflect";
+    bool onesided = true;
+    float dither = 0.0f;
+    float mel_floor = 1e-10f;
+    const char* log_mel = nullptr;
+    float reference = 1.0f;
+    float min_value = 1e-10f;
+    bool remove_dc_offset = false;
+    float preemphasis = 0.0f;
+    bool hann_periodic = true;
+    float window_a0 = 0.5f;
+    size_t fft_override = 0;
+    bool mel_floor_additive = false;
 };
-
-using SpectrogramConfig = AudioProcessor::SpectrogramConfig;
 
 namespace index {
     constexpr uint32_t MAGIC = 0x43414354;

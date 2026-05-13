@@ -67,6 +67,7 @@ set(ENGINE_SOURCES
     src/grammar.cpp
     src/grammar_ffi.cpp
     src/model.cpp
+    src/engine_image.cpp
     src/index.cpp
     src/index_ffi.cpp
     src/log.cpp
@@ -84,6 +85,10 @@ set(ENGINE_SOURCES
 )
 
 set(MODEL_SOURCES
+    models/model_lfm2.cpp
+    models/model_lfm2vl.cpp
+    models/model_qwen.cpp
+    models/model_siglip2.cpp
     models/gemma4/model_gemma4.cpp
     models/gemma4/model_gemma4_mm.cpp
     models/gemma4/model_gemma4_audio.cpp
@@ -104,6 +109,7 @@ target_include_directories(cactus_engine
             ${CMAKE_CURRENT_SOURCE_DIR}/models
             ${CACTUS_XGRAMMAR_INCLUDE_DIR}
             ${CACTUS_KERNELS_DIR}/src
+            ${CACTUS_KERNELS_DIR}/libs
 )
 target_link_libraries(cactus_engine PUBLIC cactus_graph)
 target_link_libraries(cactus_engine PRIVATE ${CACTUS_XGRAMMAR_LIBRARY})
