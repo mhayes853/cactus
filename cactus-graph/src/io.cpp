@@ -19,9 +19,8 @@ namespace {
 
     constexpr uint32_t CACTUS_MAGIC = 0x54434143;
     constexpr uint32_t CACTUS_GRAPH_MAGIC = fourcc('C', 'G', 'R', 'F');
-    constexpr uint32_t FLAG_HAS_SCALES = 1 << 0;
     constexpr uint32_t FLAG_ORTHOGONAL_ROTATION = 1 << 1;
-    constexpr uint32_t FLAG_INTERLEAVED = 1 << 3;
+    constexpr uint32_t FLAG_INTERLEAVED_4ROW = 1 << 2;
     constexpr size_t HEADER_SIZE = 84;
 
     inline size_t align_offset(size_t offset, size_t alignment) {
@@ -276,8 +275,8 @@ size_t CactusGraph::mmap_embeddings(const std::string& filename) {
     size_t node_id = input(shape, precision);
     set_external_input(node_id, const_cast<void*>(mapped_file->data()), precision);
 
+    auto& buffer = nodes_[node_index_map_.at(node_id)]->output_buffer;
     if (PrecisionTraits::is_cq(precision) && mapped_file->group_size() > 0) {
-        auto& buffer = nodes_[node_index_map_.at(node_id)]->output_buffer;
         buffer.group_size = mapped_file->group_size();
         buffer.num_groups = mapped_file->num_groups();
 
@@ -309,6 +308,13 @@ size_t CactusGraph::mmap_embeddings(const std::string& filename) {
             buffer.cq_permutation = reinterpret_cast<const uint32_t*>(scales_base + off);
             buffer.cq_flags = 0;
         }
+        if (mapped_file->is_interleaved_4row()) {
+            buffer.cq_flags |= CACTUS_QUANT_FLAG_INTERLEAVED_4ROW;
+        }
+    } else if (precision == Precision::INT8 && mapped_file->group_size() > 0) {
+        buffer.group_size = mapped_file->group_size();
+        buffer.num_groups = mapped_file->num_groups();
+        buffer.set_activation_scales(const_cast<void*>(mapped_file->scales_data()), shape.empty() ? 0 : shape[0]);
     }
 
     size_t file_idx = mapped_files_.size();
@@ -365,6 +371,9 @@ size_t CactusGraph::mmap_weights(const std::string& filename) {
             off += gs;
             buffer.cq_permutation = reinterpret_cast<const uint32_t*>(scales_base + off);
             buffer.cq_flags = 0;
+        }
+        if (mapped_file->is_interleaved_4row()) {
+            buffer.cq_flags |= CACTUS_QUANT_FLAG_INTERLEAVED_4ROW;
         }
     }
 
@@ -639,14 +648,14 @@ MappedFile::MappedFile(MappedFile&& other) noexcept
       group_size_(other.group_size_), num_groups_(other.num_groups_),
       scales_offset_(other.scales_offset_), scales_bytes_(other.scales_bytes_),
       alignment_(other.alignment_),
-      is_interleaved_(other.is_interleaved_),
       is_orthogonal_rotation_(other.is_orthogonal_rotation_),
+      is_interleaved_4row_(other.is_interleaved_4row_),
       original_N_(other.original_N_) {
     other.fd_ = -1;
     other.mapped_data_ = nullptr;
     other.file_size_ = 0;
-    other.is_interleaved_ = false;
     other.is_orthogonal_rotation_ = false;
+    other.is_interleaved_4row_ = false;
     other.original_N_ = 0;
 }
 
@@ -671,14 +680,14 @@ MappedFile& MappedFile::operator=(MappedFile&& other) noexcept {
         scales_offset_ = other.scales_offset_;
         scales_bytes_ = other.scales_bytes_;
         alignment_ = other.alignment_;
-        is_interleaved_ = other.is_interleaved_;
         is_orthogonal_rotation_ = other.is_orthogonal_rotation_;
+        is_interleaved_4row_ = other.is_interleaved_4row_;
         original_N_ = other.original_N_;
         other.fd_ = -1;
         other.mapped_data_ = nullptr;
         other.file_size_ = 0;
-        other.is_interleaved_ = false;
         other.is_orthogonal_rotation_ = false;
+        other.is_interleaved_4row_ = false;
         other.original_N_ = 0;
     }
     return *this;
@@ -729,8 +738,8 @@ void MappedFile::parse_header() {
 
     uint32_t flags = *reinterpret_cast<const uint32_t*>(ptr + offset);
     offset += sizeof(uint32_t);
-    is_interleaved_ = (flags & FLAG_INTERLEAVED) != 0;
     is_orthogonal_rotation_ = (flags & FLAG_ORTHOGONAL_ROTATION) != 0;
+    is_interleaved_4row_ = (flags & FLAG_INTERLEAVED_4ROW) != 0;
 
     alignment_ = *reinterpret_cast<const uint32_t*>(ptr + offset);
     offset += sizeof(uint32_t);
