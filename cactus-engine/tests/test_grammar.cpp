@@ -246,12 +246,6 @@ static bool test_empty_grammar_properties() {
         return false;
     }
 
-    if (cactus_grammar_is_universal(empty.get())
-        || cactus_grammar_is_universal(empty2.get())
-        || cactus_grammar_is_universal(simple.get())) {
-        return false;
-    }
-
     cactus_grammar_t empty_union_inputs[] = {empty.get(), empty2.get()};
     auto empty_union = GrammarHandle(make_grammar_handle(cactus_grammar_union(empty_union_inputs, 2)), &cactus_grammar_destroy);
     auto empty_concat = GrammarHandle(make_grammar_handle(cactus_grammar_concatenate(empty_union_inputs, 2)), &cactus_grammar_destroy);
@@ -414,18 +408,9 @@ static bool test_regex_and_json_schema_construction() {
 
 static bool test_universal_grammar_accepts_anything(const GrammarFixture& fixture) {
     auto grammar = GrammarHandle(make_grammar_universal(), &cactus_grammar_destroy);
-    return cactus_grammar_is_universal(grammar.get())
-        && accepts_complete_text(grammar.get(), fixture, "")
+    return accepts_complete_text(grammar.get(), fixture, "")
         && accepts_complete_text(grammar.get(), fixture, "blob says hello from cactus")
         && accepts_complete_text(grammar.get(), fixture, "line one\nline two\nline three");
-}
-
-static bool test_union_with_universal_returns_universal() {
-    auto universal = GrammarHandle(make_grammar_universal(), &cactus_grammar_destroy);
-    auto specific = GrammarHandle(make_grammar_ebnf("root ::= \"hello\""), &cactus_grammar_destroy);
-    cactus_grammar_t handles[] = {specific.get(), universal.get()};
-    auto combined = GrammarHandle(make_grammar_handle(cactus_grammar_union(handles, 2)), &cactus_grammar_destroy);
-    return cactus_grammar_is_universal(combined.get());
 }
 
 static bool test_structural_tag_accepts_and_rejects_expected_text(const GrammarFixture& fixture) {
@@ -610,7 +595,6 @@ int main() {
         runner.run_test("regex_language", test_regex_accepts_expected_text(fixture));
         runner.run_test("json_schema_language", test_json_schema_accepts_expected_text(fixture));
         runner.run_test("universal", test_universal_grammar_accepts_anything(fixture));
-        runner.run_test("union_with_universal_returns_universal", test_union_with_universal_returns_universal());
         runner.run_test("structural_tag_language", test_structural_tag_accepts_and_rejects_expected_text(fixture));
         runner.run_test("grammar_matcher_reset", test_grammar_matcher_reset_restores_initial_state(fixture));
         runner.run_test("grammar_matcher_rollback", test_grammar_matcher_rollback_restores_previous_state(fixture));

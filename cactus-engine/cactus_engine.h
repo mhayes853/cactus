@@ -490,7 +490,6 @@ CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_repeat_range(
 );
 CACTUS_FFI_EXPORT int cactus_grammar_get_ebnf(cactus_grammar_t grammar, char* buffer, size_t buffer_size);
 CACTUS_FFI_EXPORT int cactus_grammar_is_empty(cactus_grammar_t grammar);
-CACTUS_FFI_EXPORT int cactus_grammar_is_universal(cactus_grammar_t grammar);
 CACTUS_FFI_EXPORT void cactus_grammar_destroy(cactus_grammar_t grammar);
 
 CACTUS_FFI_EXPORT cactus_grammar_engine_t cactus_grammar_engine_init(cactus_grammar_vocabulary_t vocabulary);

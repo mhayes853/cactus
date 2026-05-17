@@ -329,11 +329,6 @@ int cactus_grammar_is_empty(cactus_grammar_t grammar) {
     return static_cast<CactusGrammarHandle*>(grammar)->grammar->is_empty() ? 1 : 0;
 }
 
-int cactus_grammar_is_universal(cactus_grammar_t grammar) {
-    if (!grammar) return handle_int_exception(__func__, "grammar is null");
-    return static_cast<CactusGrammarHandle*>(grammar)->grammar->is_universal() ? 1 : 0;
-}
-
 void cactus_grammar_destroy(cactus_grammar_t grammar) {
     if (grammar) delete static_cast<CactusGrammarHandle*>(grammar);
 }

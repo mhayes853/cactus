@@ -78,10 +78,10 @@ const xgrammar::TokenizerInfo& GrammarVocabulary::raw_value() const {
     return tokenizer_info;
 }
 
-Grammar::Grammar() : grammar(xgrammar::NullObj{}), is_universal_(false) {}
+Grammar::Grammar() : grammar(xgrammar::NullObj{}) {}
 
 Grammar::Grammar(xgrammar::Grammar raw_grammar)
-    : grammar(std::move(raw_grammar)), is_universal_(false) {}
+    : grammar(std::move(raw_grammar)) {}
 
 Grammar Grammar::ebnf(const std::string& ebnf, const std::string& start_symbol) {
     return Grammar(xgrammar::Grammar::FromEBNF(ebnf, start_symbol));
@@ -103,7 +103,6 @@ Grammar Grammar::universal() {
             "type": "any_text"
         }
     })");
-    grammar.is_universal_ = true;
     return grammar;
 }
 
@@ -145,7 +144,6 @@ Grammar Grammar::unite(const std::vector<Grammar>& grammars) {
     handles.reserve(grammars.size());
     for (const auto& grammar : grammars) {
         if (grammar.is_empty()) continue;
-        if (grammar.is_universal()) return grammar;
         handles.push_back(grammar.raw_value());
     }
     return handles.empty() ? Grammar() : Grammar(xgrammar::Grammar::Union(handles));
@@ -158,16 +156,17 @@ Grammar Grammar::concatenate(const std::vector<Grammar>& grammars) {
         if (grammar.is_empty()) continue;
         handles.push_back(grammar.raw_value());
     }
-    return handles.empty() ? Grammar() : Grammar(xgrammar::Grammar::Concat(handles));
+    if (handles.empty()) return Grammar();
+    return Grammar(xgrammar::Grammar::Concat(handles));
 }
 
 Grammar Grammar::optional(const Grammar& grammar) {
-    if (grammar.is_empty()) return Grammar();
+    if (grammar.is_empty()) return grammar;
     return Grammar::unite({Grammar::epsilon(), grammar});
 }
 
 Grammar Grammar::star(const Grammar& grammar) {
-    if (grammar.is_empty()) return Grammar();
+    if (grammar.is_empty()) return grammar;
 
     picojson::object structural_tag;
     structural_tag["type"] = picojson::value("structural_tag");
@@ -221,10 +220,6 @@ Grammar Grammar::repeat_range(const Grammar& grammar, int min_count, int max_cou
 
 bool Grammar::is_empty() const {
     return grammar.IsNull();
-}
-
-bool Grammar::is_universal() const {
-    return is_universal_;
 }
 
 std::string Grammar::ebnf() const {

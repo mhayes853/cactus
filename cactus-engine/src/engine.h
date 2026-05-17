@@ -313,14 +313,12 @@ public:
     static Grammar repeat_range(const Grammar& grammar, int min_count, int max_count);
 
     bool is_empty() const;
-    bool is_universal() const;
     std::string ebnf() const;
 
     const xgrammar::Grammar& raw_value() const;
 
 private:
     xgrammar::Grammar grammar;
-    bool is_universal_ = false;
 };
 
 class GrammarMatcher;
