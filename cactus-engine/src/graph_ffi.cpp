@@ -515,6 +515,17 @@ int cactus_graph_max(cactus_graph_t graph, cactus_node_t x, int32_t axis, cactus
     }
 }
 
+int cactus_graph_cumsum(cactus_graph_t graph, cactus_node_t x, int32_t axis, cactus_node_t* out) {
+    if (!graph || !out) return fail_invalid("Invalid args to cactus_graph_cumsum");
+    try {
+        *out = static_cast<cactus_node_t>(as_graph(graph)->graph.cumsum(static_cast<size_t>(x), axis));
+        return 0;
+    } catch (const std::exception& e) {
+        last_error_message = e.what();
+        return -1;
+    }
+}
+
 int cactus_graph_concat(cactus_graph_t graph, cactus_node_t a, cactus_node_t b, int32_t axis, cactus_node_t* out) {
     if (!graph || !out) {
         last_error_message = "Invalid args to cactus_graph_concat";
@@ -607,6 +618,17 @@ int cactus_graph_mmap_weights(cactus_graph_t graph, const char* filename, cactus
     if (!graph || !filename || !out) return fail_invalid("Invalid args to cactus_graph_mmap_weights");
     try {
         *out = static_cast<cactus_node_t>(as_graph(graph)->graph.mmap_weights(std::string(filename)));
+        return 0;
+    } catch (const std::exception& e) {
+        last_error_message = e.what();
+        return -1;
+    }
+}
+
+int cactus_graph_bind_mmap_weights(cactus_graph_t graph, cactus_node_t node, const char* filename) {
+    if (!graph || !filename) return fail_invalid("Invalid args to cactus_graph_bind_mmap_weights");
+    try {
+        as_graph(graph)->graph.bind_mmap_weights(static_cast<size_t>(node), std::string(filename));
         return 0;
     } catch (const std::exception& e) {
         last_error_message = e.what();
@@ -1081,6 +1103,17 @@ int cactus_graph_conv1d_pointwise(cactus_graph_t graph, cactus_node_t input, cac
     }
 }
 
+int cactus_graph_clamp(cactus_graph_t graph, cactus_node_t input, float lo, float hi, cactus_node_t* out) {
+    if (!graph || !out) return fail_invalid("Invalid args to cactus_graph_clamp");
+    try {
+        *out = static_cast<cactus_node_t>(as_graph(graph)->graph.clamp(static_cast<size_t>(input), lo, hi));
+        return 0;
+    } catch (const std::exception& e) {
+        last_error_message = e.what();
+        return -1;
+    }
+}
+
 int cactus_graph_conv2d_k3s2p1(cactus_graph_t graph, cactus_node_t input, cactus_node_t weight, bool has_bias, cactus_node_t bias, cactus_node_t* out) {
     if (!graph || !out) return fail_invalid("Invalid args to cactus_graph_conv2d_k3s2p1");
     try {
@@ -1219,6 +1252,25 @@ int cactus_graph_moe_layer_gated(cactus_graph_t graph, cactus_node_t hidden, cac
             w2[i] = static_cast<size_t>(w2_weights[i]);
         }
         *out = static_cast<cactus_node_t>(as_graph(graph)->graph.moe_layer(static_cast<size_t>(hidden), static_cast<size_t>(routing_probs), static_cast<size_t>(topk_indices), w1, w3, w2, num_experts, num_experts_per_tok, normalize_routing, epsilon, routed_scaling_factor));
+        return 0;
+    } catch (const std::exception& e) {
+        last_error_message = e.what();
+        return -1;
+    }
+}
+
+int cactus_graph_dense_mlp_tq_fused(cactus_graph_t graph, cactus_node_t hidden, cactus_node_t gate_weight, cactus_node_t up_weight, cactus_node_t down_weight, float product_scale, cactus_node_t* out) {
+    if (!graph || !out) return fail_invalid("Invalid args to cactus_graph_dense_mlp_tq_fused");
+    try {
+        *out = static_cast<cactus_node_t>(
+            as_graph(graph)->graph.dense_mlp_tq_fused(
+                static_cast<size_t>(hidden),
+                static_cast<size_t>(gate_weight),
+                static_cast<size_t>(up_weight),
+                static_cast<size_t>(down_weight),
+                product_scale
+            )
+        );
         return 0;
     } catch (const std::exception& e) {
         last_error_message = e.what();

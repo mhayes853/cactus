@@ -13,6 +13,7 @@ from .test import cmd_test
 from .convert import cmd_convert
 from .eval import cmd_eval
 from .misc import cmd_auth, cmd_clean, cmd_list
+from .transpile import cmd_run_transpiled
 
 
 def create_parser():
@@ -62,7 +63,7 @@ def create_parser():
 
    -----------------------------------------------------------------
 
-  cactus download <model>              downloads CQ model weights
+  cactus download <model>              downloads CQ model files
                                        auto-resolves Cactus-Compute CQ repo
 
     Optional flags:
@@ -75,10 +76,16 @@ def create_parser():
   -----------------------------------------------------------------
 
   cactus convert <model> [output_dir]  converts HuggingFace model to CQ format
+                                       and transpiles the graph into the same folder
 
     Optional flags:
     --bits 1|2|3|4                     CQ quantization bits (default: 4)
     --token <token>                    HuggingFace API token
+
+  -----------------------------------------------------------------
+
+  cactus run <bundle_dir>              runs a transpiled Cactus bundle
+  cactus run-transpiled <bundle_dir>   explicit transpiled bundle runner
 
   -----------------------------------------------------------------
 
@@ -156,7 +163,7 @@ def create_parser():
 
     parser._action_groups = []
 
-    download_parser = subparsers.add_parser('download', help='Download CQ model weights')
+    download_parser = subparsers.add_parser('download', help='Download CQ model files')
     download_parser.add_argument('model_id', nargs='?', default=DEFAULT_MODEL_ID,
                                  help=f'HuggingFace model ID or Cactus-Compute CQ repo (default: {DEFAULT_MODEL_ID})')
     download_parser.add_argument('--language-bits', type=int, choices=[1, 2, 3, 4], default=4,
@@ -193,12 +200,54 @@ def create_parser():
                             help='Path to image file for VLM inference (attached to first message)')
     run_parser.add_argument('--audio',
                             help='Path to audio file (WAV) for audio chat (attached to first message)')
+    run_parser.add_argument('--file', dest='audio_file', default=None,
+                            help='Audio file for transpiled bundles when model_id points to a transpiled folder')
+    run_parser.add_argument('--image-file', action='append', default=[],
+                            help='Repeatable image input for transpiled bundles')
+    run_parser.add_argument('--weights-dir', default=None,
+                            help='Converted weights directory for transpiled bundles with bound weights')
     run_parser.add_argument('--system',
                             help='System prompt to prepend to all messages')
     run_parser.add_argument('--prompt',
                             help='Initial prompt to send immediately')
+    run_parser.add_argument('--input-ids', default=None,
+                            help='Comma-separated token ids for transpiled causal-LM bundles')
+    run_parser.add_argument('--max-new-tokens', type=int, default=None,
+                            help='Maximum tokens to generate for transpiled causal-LM bundles')
+    run_parser.add_argument('--stop-sequence', action='append', default=[],
+                            help='Optional stop sequence for transpiled causal-LM bundles. Repeatable.')
+    run_parser.add_argument('--result-json', default=None,
+                            help='Optional path to save transpiled bundle results as JSON')
     run_parser.add_argument('--thinking', action='store_true',
                             help='Enable thinking/reasoning for models that support it')
+
+    run_transpiled_parser = subparsers.add_parser('run-transpiled', help='Run a saved transpiled component bundle')
+    run_transpiled_parser.add_argument('bundle_dir',
+                                       help='Bundle root directory or manifest.json path from the transpiler')
+    run_transpiled_parser.add_argument('--file', dest='audio_file', default=None,
+                                       help='Audio file for transcription bundles such as parakeet-tdt')
+    run_transpiled_parser.add_argument('--audio', default=None,
+                                       help='Alias for --file, matching cactus run')
+    run_transpiled_parser.add_argument('--image', default=None,
+                                       help='Image file for multimodal transpiled bundles')
+    run_transpiled_parser.add_argument('--image-file', action='append', default=[],
+                                       help='Repeatable image input for multimodal transpiled bundles')
+    run_transpiled_parser.add_argument('--weights-dir', default=None,
+                                       help='Optional converted weights directory for bound-weight bundles')
+    run_transpiled_parser.add_argument('--prompt', default=None,
+                                       help='Prompt for causal-LM bundles')
+    run_transpiled_parser.add_argument('--input-ids', default=None,
+                                       help='Comma-separated token ids for causal-LM bundles')
+    run_transpiled_parser.add_argument('--max-new-tokens', type=int, default=None,
+                                       help='Maximum tokens to generate for causal-LM bundles')
+    run_transpiled_parser.add_argument('--stop-sequence', action='append', default=[],
+                                       help='Optional stop sequence for causal-LM bundles. Repeatable.')
+    run_transpiled_parser.add_argument('--result-json', default=None,
+                                       help='Optional path to save the result payload as JSON')
+    run_transpiled_parser.add_argument('--system', default=None,
+                                       help='Optional system prompt for multimodal transpiled bundles')
+    run_transpiled_parser.add_argument('--thinking', action='store_true',
+                                       help='Enable thinking/reasoning markers when supported by the transpiled bundle')
 
     transcribe_parser = subparsers.add_parser('transcribe', help='Download ASR model and run transcription')
     transcribe_parser.add_argument('model_id', nargs='?', default=DEFAULT_ASR_MODEL_ID,
@@ -276,6 +325,29 @@ def create_parser():
                                 help='CQ quantization bits (default: 4)')
     convert_parser.add_argument('--cache-dir', help='Cache directory for HuggingFace models')
     convert_parser.add_argument('--token', help='HuggingFace API token')
+    convert_parser.add_argument('--task', default='auto',
+                                choices=['auto', 'causal_lm_logits', 'multimodal_causal_lm_logits',
+                                         'ctc_logits', 'encoder_hidden_states',
+                                         'seq2seq_transcription', 'tdt_transcription'],
+                                help='Transpile task after conversion (default: auto)')
+    convert_parser.add_argument('--prompt',
+                                help='Prompt used for causal or multimodal graph shape capture')
+    convert_parser.add_argument('--system-prompt', default='',
+                                help='Optional system prompt for multimodal prompt construction')
+    convert_parser.add_argument('--image-file', action='append', default=[],
+                                help='Representative image file for multimodal transpile')
+    convert_parser.add_argument('--audio-file',
+                                help='Representative audio file for audio/multimodal transpile')
+    convert_parser.add_argument('--max-new-tokens', type=int, default=32,
+                                help='Generation room to preallocate for causal decode graphs')
+    convert_parser.add_argument('--component-pipeline', default='auto', choices=['auto', 'on', 'off'],
+                                help='Use split component graph transpilation when supported')
+    convert_parser.add_argument('--components',
+                                help='Comma-separated component subset for component-pipeline models')
+    convert_parser.add_argument('--trust-remote-code', action='store_true',
+                                help='Allow HF remote code during the transpile phase')
+    convert_parser.add_argument('--local-files-only', action='store_true',
+                                help='Require HF model/processor files to already be local during transpile')
 
     return parser
 
@@ -306,6 +378,8 @@ def main():
         sys.exit(cmd_build(args))
     elif args.command == 'run':
         sys.exit(cmd_run(args))
+    elif args.command == 'run-transpiled':
+        sys.exit(cmd_run_transpiled(args))
     elif args.command == 'transcribe':
         sys.exit(cmd_transcribe(args))
     elif args.command == 'test':

@@ -1,7 +1,8 @@
 import ctypes
+from os import wait
 import numpy as np
 
-from .cactus import _lib, cactus_node_t, cactus_tensor_info_t
+from .cactus import _err, _lib, cactus_node_t, cactus_tensor_info_t
 
 
 class Graph:
@@ -12,6 +13,7 @@ class Graph:
     CQ2 = 4
     CQ3 = 5
     CQ4 = 6
+    INT4 = CQ1
     CPU = 0
     NPU = 1
     ACT_SILU = 0
@@ -52,7 +54,7 @@ class Graph:
         out = cactus_node_t()
         rc = _lib.cactus_graph_input(self.h, arr, len(shape), int(dtype), ctypes.byref(out))
         if rc != 0:
-            raise RuntimeError("graph_input failed")
+            raise RuntimeError(_err("graph_input failed"))
         return self._tensor_from_node(out.value)
 
     def set_input(self, tensor, data, dtype=None):
@@ -62,6 +64,25 @@ class Graph:
             raise ValueError("tensor belongs to a different graph")
         target_dtype = int(tensor.dtype if dtype is None else dtype)
         arr = self._coerce_input_array(data, target_dtype)
+        info = self._get_output_info(tensor.id)
+        expected_shape = tuple(int(x) for x in info["shape"])
+        expected_num_elements = int(info["num_elements"])
+        expected_byte_size = int(info["byte_size"])
+        if tuple(int(x) for x in arr.shape) != expected_shape:
+            raise ValueError(
+                "graph input shape mismatch for node "
+                f"{tensor.id}: expected {expected_shape}, got {tuple(int(x) for x in arr.shape)}"
+            )
+        if int(arr.size) != expected_num_elements:
+            raise ValueError(
+                "graph input element-count mismatch for node "
+                f"{tensor.id}: expected {expected_num_elements}, got {int(arr.size)}"
+            )
+        if int(arr.nbytes) != expected_byte_size:
+            raise ValueError(
+                "graph input byte-size mismatch for node "
+                f"{tensor.id}: expected {expected_byte_size}, got {int(arr.nbytes)}"
+            )
         rc = _lib.cactus_graph_set_input(
             self.h,
             cactus_node_t(tensor.id),
@@ -69,7 +90,7 @@ class Graph:
             target_dtype,
         )
         if rc != 0:
-            raise RuntimeError("graph_set_input failed")
+            raise RuntimeError(_err("graph_set_input failed"))
 
     def set_external_input(self, tensor, data_ptr, dtype=None):
         if not isinstance(tensor, Tensor):
@@ -85,7 +106,7 @@ class Graph:
             target_dtype,
         )
         if rc != 0:
-            raise RuntimeError("graph_set_external_input failed")
+            raise RuntimeError(_err("graph_set_external_input failed"))
 
     def hard_reset(self):
         rc = _lib.cactus_graph_hard_reset(self.h)
@@ -95,7 +116,7 @@ class Graph:
     def execute(self):
         rc = _lib.cactus_graph_execute(self.h)
         if rc != 0:
-            raise RuntimeError("graph_execute failed")
+            raise RuntimeError(_err("graph_execute failed"))
 
     def add(self, a, b):
         return self._binary("cactus_graph_add", a, b)
@@ -111,6 +132,9 @@ class Graph:
 
     def divide(self, a, b):
         return self._binary("cactus_graph_divide", a, b)
+
+    def not_equal(self, a, b):
+        return self._binary("cactus_graph_not_equal", a, b)
 
     def abs(self, x):
         x = self._ensure_tensor(x)
@@ -136,6 +160,13 @@ class Graph:
             raise RuntimeError("graph_precision_cast failed")
         return self._tensor_from_node(out.value)
 
+    def quantize_activations(self, x):
+        x = self._ensure_tensor(x)
+        out = cactus_node_t()
+        rc = _lib.cactus_graph_quantize_activations(self.h, cactus_node_t(x.id), ctypes.byref(out))
+        if rc != 0:
+            raise RuntimeError("graph_quantize_activations failed")
+        return self._tensor_from_node(out.value)
 
     def _scalar(self, fn_name, x, value=None):
         x = self._ensure_tensor(x)
@@ -161,6 +192,12 @@ class Graph:
     def scalar_divide(self, x, value):
         return self._scalar("cactus_graph_scalar_divide", x, value)
 
+    def scalar_floor_divide(self, x, value):
+        return self._scalar("cactus_graph_scalar_floor_divide", x, value)
+
+    def scalar_not_equal(self, x, value):
+        return self._scalar("cactus_graph_scalar_not_equal", x, value)
+
     def scalar_exp(self, x):
         return self._scalar("cactus_graph_scalar_exp", x)
 
@@ -175,6 +212,39 @@ class Graph:
 
     def scalar_log(self, x):
         return self._scalar("cactus_graph_scalar_log", x)
+
+    def clamp(self, x, lo, hi):
+        x = self._ensure_tensor(x)
+        out = cactus_node_t()
+        rc = _lib.cactus_graph_clamp(
+            self.h,
+            cactus_node_t(x.id),
+            ctypes.c_float(float(lo)),
+            ctypes.c_float(float(hi)),
+            ctypes.byref(out),
+        )
+        if rc != 0:
+            raise RuntimeError(_err("graph_clamp failed"))
+        return self._tensor_from_node(out.value)
+
+    def masked_select_prefix(self, x, mask):
+        return self._binary("cactus_graph_masked_select_prefix", x, mask)
+
+    def masked_scatter(self, x, mask, source):
+        x = self._ensure_tensor(x)
+        mask = self._ensure_tensor(mask)
+        source = self._ensure_tensor(source)
+        out = cactus_node_t()
+        rc = _lib.cactus_graph_masked_scatter(
+            self.h,
+            cactus_node_t(x.id),
+            cactus_node_t(mask.id),
+            cactus_node_t(source.id),
+            ctypes.byref(out),
+        )
+        if rc != 0:
+            raise RuntimeError(_err("graph_masked_scatter failed"))
+        return self._tensor_from_node(out.value)
 
     def view(self, x, shape):
         x = self._ensure_tensor(x)
@@ -194,6 +264,16 @@ class Graph:
         rc = _lib.cactus_graph_reshape(self.h, cactus_node_t(x.id), arr, len(shape), ctypes.byref(out))
         if rc != 0:
             raise RuntimeError("graph_reshape failed")
+        return self._tensor_from_node(out.value)
+
+    def expand(self, x, shape):
+        x = self._ensure_tensor(x)
+        shape = tuple(int(v) for v in shape)
+        arr = (ctypes.c_size_t * len(shape))(*shape)
+        out = cactus_node_t()
+        rc = _lib.cactus_graph_expand(self.h, cactus_node_t(x.id), arr, len(shape), ctypes.byref(out))
+        if rc != 0:
+            raise RuntimeError("graph_expand failed")
         return self._tensor_from_node(out.value)
 
     def flatten(self, x, start_dim=0, end_dim=-1):
@@ -269,27 +349,35 @@ class Graph:
             raise RuntimeError("graph_transpose_n failed")
         return self._tensor_from_node(out.value)
 
-    def matmul(self, a, b, pretransposed_rhs=False, backend=CPU):
+    def matmul(self, a, b, pretransposed_rhs=False, backend=CPU, output_dtype=None):
         a = self._ensure_tensor(a)
         b = self._ensure_tensor(b)
         out = cactus_node_t()
+        target_dtype = int(a.dtype if output_dtype is None else output_dtype)
         rc = _lib.cactus_graph_matmul(
             self.h,
             cactus_node_t(a.id),
             cactus_node_t(b.id),
             ctypes.c_bool(bool(pretransposed_rhs)),
             ctypes.c_int32(int(backend)),
+            ctypes.c_int32(target_dtype),
             ctypes.byref(out),
         )
         if rc != 0:
-            raise RuntimeError("graph_matmul failed")
+            raise RuntimeError(_err("graph_matmul failed"))
         return self._tensor_from_node(out.value)
 
-    def gather(self, tensor, indices):
+    def gather(self, tensor, indices, axis=0):
         tensor = self._ensure_tensor(tensor)
         indices = self._ensure_tensor(indices)
         out = cactus_node_t()
-        rc = _lib.cactus_graph_gather(self.h, cactus_node_t(tensor.id), cactus_node_t(indices.id), ctypes.byref(out))
+        rc = _lib.cactus_graph_gather(
+            self.h,
+            cactus_node_t(tensor.id),
+            cactus_node_t(indices.id),
+            ctypes.c_int32(int(axis)),
+            ctypes.byref(out),
+        )
         if rc != 0:
             raise RuntimeError("graph_gather failed")
         return self._tensor_from_node(out.value)
@@ -327,6 +415,12 @@ class Graph:
             raise RuntimeError("graph_mmap_weights failed")
         return self._tensor_from_node(out.value)
 
+    def bind_mmap_weights(self, tensor, filename):
+        tensor = self._ensure_tensor(tensor)
+        rc = _lib.cactus_graph_bind_mmap_weights(self.h, cactus_node_t(tensor.id), str(filename).encode())
+        if rc != 0:
+            raise RuntimeError("graph_bind_mmap_weights failed")
+
     def bilinear_interpolation(self, pos_embeds, dst_height, dst_width):
         pos_embeds = self._ensure_tensor(pos_embeds)
         out = cactus_node_t()
@@ -336,6 +430,27 @@ class Graph:
         if rc != 0:
             raise RuntimeError("graph_bilinear_interpolation failed")
         return self._tensor_from_node(out.value)
+
+    def set_grouped_scales(self, tensor, group_size, num_groups, scales):
+        tensor = self._ensure_tensor(tensor)
+        arr = np.ascontiguousarray(scales, dtype=np.float16)
+        rc = _lib.cactus_graph_set_grouped_scales(
+            self.h,
+            cactus_node_t(tensor.id),
+            ctypes.c_size_t(int(group_size)),
+            ctypes.c_size_t(int(num_groups)),
+            arr.ctypes.data_as(ctypes.c_void_p),
+        )
+        if rc != 0:
+            raise RuntimeError("graph_set_grouped_scales failed")
+
+    def set_interleaved(self, tensor, interleaved=True, original_n=0):
+        tensor = self._ensure_tensor(tensor)
+        rc = _lib.cactus_graph_set_interleaved(
+            self.h, cactus_node_t(tensor.id), ctypes.c_bool(bool(interleaved)), ctypes.c_size_t(int(original_n))
+        )
+        if rc != 0:
+            raise RuntimeError("graph_set_interleaved failed")
 
     def release_weight_pages(self, tensor):
         tensor = self._ensure_tensor(tensor)
@@ -373,18 +488,13 @@ class Graph:
         tensors = [self._ensure_tensor(t) for t in tensors]
         if not tensors:
             raise ValueError("cat requires at least one tensor")
-        ids = (cactus_node_t * len(tensors))(*(cactus_node_t(t.id) for t in tensors))
-        out = cactus_node_t()
-        rc = _lib.cactus_graph_cat(
-            self.h,
-            ids,
-            ctypes.c_size_t(len(tensors)),
-            ctypes.c_int32(int(axis)),
-            ctypes.byref(out),
-        )
-        if rc != 0:
-            raise RuntimeError("graph_cat failed")
-        return self._tensor_from_node(out.value)
+        if len(tensors) == 1:
+            return tensors[0]
+
+        result = tensors[0]
+        for tensor in tensors[1:]:
+            result = self.concat(result, tensor, axis=axis)
+        return result
 
     def groupnorm(self, x, weight, bias, num_groups, eps=1e-5):
         x = self._ensure_tensor(x)
@@ -524,6 +634,9 @@ class Graph:
 
     def max(self, x, axis):
         return self._reduce("cactus_graph_max", x, axis)
+
+    def cumsum(self, x, axis):
+        return self._reduce("cactus_graph_cumsum", x, axis)
     
     def softmax(self, x, axis=-1):
         x = self._ensure_tensor(x)
@@ -565,6 +678,98 @@ class Graph:
         )
         if rc != 0:
             raise RuntimeError("graph_attention failed")
+        return self._tensor_from_node(out.value)
+
+    def kv_cache_state(self, max_seq_len, num_kv_heads, head_dim, window_size=0, sink_size=0):
+        out = cactus_node_t()
+        rc = _lib.cactus_graph_kv_cache_state(
+            self.h,
+            ctypes.c_size_t(int(max_seq_len)),
+            ctypes.c_size_t(int(num_kv_heads)),
+            ctypes.c_size_t(int(head_dim)),
+            ctypes.c_size_t(int(window_size)),
+            ctypes.c_size_t(int(sink_size)),
+            ctypes.byref(out),
+        )
+        if rc != 0:
+            raise RuntimeError(_err("graph_kv_cache_state failed"))
+        return self._tensor_from_node(out.value)
+
+    def kv_cache_append(self, new_kv, cache_state, window_size=0, sink_size=0):
+        new_kv = self._ensure_tensor(new_kv)
+        cache_state = self._ensure_tensor(cache_state)
+        out = cactus_node_t()
+        rc = _lib.cactus_graph_kv_cache_append(
+            self.h,
+            cactus_node_t(new_kv.id),
+            cactus_node_t(cache_state.id),
+            ctypes.c_size_t(int(window_size)),
+            ctypes.c_size_t(int(sink_size)),
+            ctypes.byref(out),
+        )
+        if rc != 0:
+            raise RuntimeError(_err("graph_kv_cache_append failed"))
+        return self._tensor_from_node(out.value)
+
+    def attention_cached(
+        self,
+        query,
+        key_new,
+        value_new,
+        k_cache_state,
+        v_cache_state,
+        scale,
+        position_offset=0,
+        window_size=0,
+        v_head_dim=0,
+    ):
+        query = self._ensure_tensor(query)
+        key_new = self._ensure_tensor(key_new)
+        value_new = self._ensure_tensor(value_new)
+        k_cache_state = self._ensure_tensor(k_cache_state)
+        v_cache_state = self._ensure_tensor(v_cache_state)
+        out = cactus_node_t()
+        rc = _lib.cactus_graph_attention_cached(
+            self.h,
+            cactus_node_t(query.id),
+            cactus_node_t(key_new.id),
+            cactus_node_t(value_new.id),
+            cactus_node_t(k_cache_state.id),
+            cactus_node_t(v_cache_state.id),
+            ctypes.c_float(float(scale)),
+            ctypes.c_size_t(int(position_offset)),
+            ctypes.c_size_t(int(window_size)),
+            ctypes.c_size_t(int(v_head_dim)),
+            ctypes.byref(out),
+        )
+        if rc != 0:
+            raise RuntimeError(_err("graph_attention_cached failed"))
+        return self._tensor_from_node(out.value)
+
+    def conv_cache_state(self, window_size, hidden_dim):
+        out = cactus_node_t()
+        rc = _lib.cactus_graph_conv_cache_state(
+            self.h,
+            ctypes.c_size_t(int(window_size)),
+            ctypes.c_size_t(int(hidden_dim)),
+            ctypes.byref(out),
+        )
+        if rc != 0:
+            raise RuntimeError(_err("graph_conv_cache_state failed"))
+        return self._tensor_from_node(out.value)
+
+    def conv_cache_append(self, new_data, cache_state):
+        new_data = self._ensure_tensor(new_data)
+        cache_state = self._ensure_tensor(cache_state)
+        out = cactus_node_t()
+        rc = _lib.cactus_graph_conv_cache_append(
+            self.h,
+            cactus_node_t(new_data.id),
+            cactus_node_t(cache_state.id),
+            ctypes.byref(out),
+        )
+        if rc != 0:
+            raise RuntimeError(_err("graph_conv_cache_append failed"))
         return self._tensor_from_node(out.value)
 
     def rel_pos_bias(self, query, relative_key, scale):
@@ -719,6 +924,21 @@ class Graph:
     def conv2d_pointwise_1x1(self, x, weight, bias=None):
         return self._conv_with_optional_bias("cactus_graph_conv2d_pointwise_1x1", x, weight, bias)
 
+    def conv2d_k3s1p1(self, x, weight, bias=None):
+        return self._conv_with_optional_bias("cactus_graph_conv2d_k3s1p1", x, weight, bias)
+
+    def conv2d(self, x, weight, bias=None, stride=1, padding=0, dilation=1, groups=1):
+        return self._conv_with_optional_bias(
+            "cactus_graph_conv2d",
+            x,
+            weight,
+            bias,
+            ctypes.c_size_t(int(stride)),
+            ctypes.c_size_t(int(padding)),
+            ctypes.c_size_t(int(dilation)),
+            ctypes.c_size_t(int(groups)),
+        )
+
     def _conv_with_optional_bias(self, fn_name, x, weight, bias=None, *extra):
         x = self._ensure_tensor(x)
         weight = self._ensure_tensor(weight)
@@ -820,6 +1040,25 @@ class Graph:
         )
         if rc != 0:
             raise RuntimeError("graph_moe_layer_gated failed")
+        return self._tensor_from_node(out.value)
+
+    def dense_mlp_tq_fused(self, hidden, gate_weight, up_weight, down_weight, product_scale=1.0):
+        hidden = self._ensure_tensor(hidden)
+        gate_weight = self._ensure_tensor(gate_weight)
+        up_weight = self._ensure_tensor(up_weight)
+        down_weight = self._ensure_tensor(down_weight)
+        out = cactus_node_t()
+        rc = _lib.cactus_graph_dense_mlp_tq_fused(
+            self.h,
+            cactus_node_t(hidden.id),
+            cactus_node_t(gate_weight.id),
+            cactus_node_t(up_weight.id),
+            cactus_node_t(down_weight.id),
+            ctypes.c_float(float(product_scale)),
+            ctypes.byref(out),
+        )
+        if rc != 0:
+            raise RuntimeError(_err("graph_dense_mlp_tq_fused failed"))
         return self._tensor_from_node(out.value)
 
     def moe_layer_ungated(self, hidden, routing_probs, topk_indices, w1_weights, w2_weights,
@@ -934,6 +1173,8 @@ class Graph:
             arr = np.ascontiguousarray(arr, dtype=np.float16)
         elif precision == self.FP32:
             arr = np.ascontiguousarray(arr, dtype=np.float32)
+        elif precision in (self.INT4, self.CQ2, self.CQ3, self.CQ4):
+            arr = np.ascontiguousarray(arr, dtype=np.uint8)
         else:
             raise RuntimeError("unsupported precision")
         return arr
@@ -958,6 +1199,11 @@ class Tensor:
     def __truediv__(self, other):
         return self.g.divide(self, other)
 
+    def __ne__(self, other):
+        if isinstance(other, Tensor):
+            return self.g.not_equal(self, other)
+        return self.g.scalar_not_equal(self, other)
+
     def abs(self):
         return self.g.abs(self)
 
@@ -967,6 +1213,8 @@ class Tensor:
     def precision_cast(self, dtype):
         return self.g.precision_cast(self, dtype)
 
+    def quantize_activations(self):
+        return self.g.quantize_activations(self)
 
     def scalar_add(self, value):
         return self.g.scalar_add(self, value)
@@ -979,6 +1227,12 @@ class Tensor:
 
     def scalar_divide(self, value):
         return self.g.scalar_divide(self, value)
+
+    def scalar_floor_divide(self, value):
+        return self.g.scalar_floor_divide(self, value)
+
+    def scalar_not_equal(self, value):
+        return self.g.scalar_not_equal(self, value)
 
     def scalar_exp(self):
         return self.g.scalar_exp(self)
@@ -994,6 +1248,9 @@ class Tensor:
 
     def scalar_log(self):
         return self.g.scalar_log(self)
+
+    def clamp(self, lo, hi):
+        return self.g.clamp(self, lo, hi)
 
     def relu(self):
         return self.g.relu(self)
@@ -1018,6 +1275,9 @@ class Tensor:
 
     def reshape(self, shape):
         return self.g.reshape(self, shape)
+
+    def expand(self, shape):
+        return self.g.expand(self, shape)
 
     def flatten(self, start_dim=0, end_dim=-1):
         return self.g.flatten(self, start_dim=start_dim, end_dim=end_dim)
@@ -1067,8 +1327,14 @@ class Tensor:
     def glu(self, axis=-1):
         return self.g.glu(self, axis=axis)
 
-    def matmul(self, other, pretransposed_rhs=False, backend=Graph.CPU):
-        return self.g.matmul(self, other, pretransposed_rhs=pretransposed_rhs, backend=backend)
+    def matmul(self, other, pretransposed_rhs=False, backend=Graph.CPU, output_dtype=None):
+        return self.g.matmul(
+            self,
+            other,
+            pretransposed_rhs=pretransposed_rhs,
+            backend=backend,
+            output_dtype=output_dtype,
+        )
 
     def sum(self, axis):
         return self.g.sum(self, axis)
@@ -1084,6 +1350,9 @@ class Tensor:
 
     def max(self, axis):
         return self.g.max(self, axis)
+
+    def cumsum(self, axis):
+        return self.g.cumsum(self, axis)
 
     def numpy(self):
         info = cactus_tensor_info_t()
@@ -1107,6 +1376,9 @@ class Tensor:
             arr = np.ctypeslib.as_array((ctypes.c_float * num_elements).from_address(out_ptr.value))
         elif precision == Graph.INT8:
             arr = np.ctypeslib.as_array((ctypes.c_int8 * num_elements).from_address(out_ptr.value))
+        elif precision in (Graph.INT4, Graph.CQ2, Graph.CQ3, Graph.CQ4):
+            arr = np.ctypeslib.as_array((ctypes.c_uint8 * int(info.byte_size)).from_address(out_ptr.value))
+            return arr.copy()
         else:
             raise RuntimeError("unsupported precision")
 

@@ -91,7 +91,7 @@ enum class OpType {
     ABS, POW, FLATTEN, VIEW,
     MATMUL, TRANSPOSE, RESHAPE, SLICE, GATHER, EMBEDDING,
     BILINEAR_INTERPOLATION,
-    SUM, MEAN, VARIANCE, MIN, MAX,
+    SUM, MEAN, VARIANCE, MIN, MAX, CUMSUM,
     RMS_NORM, ROPE, ROPE_GPTJ, SOFTMAX,
     ATTENTION, ATTENTION_INT8_HYBRID, REL_POS_BIAS,
     CONV1D_CAUSAL, CONV1D_K3, CONV1D_K7S3, CONV1D,
@@ -497,6 +497,7 @@ public:
     size_t variance(size_t input, int axis);
     size_t min(size_t input, int axis);
     size_t max(size_t input, int axis);
+    size_t cumsum(size_t input, int axis);
     size_t softmax(size_t input, int axis = -1);
     size_t topk(size_t input, size_t k);
 
@@ -648,7 +649,7 @@ public:
         size_t num_experts, size_t num_experts_per_tok,
         bool normalize_routing, float epsilon, float routed_scaling_factor,
         Activation activation);
-    size_t dense_mlp_tq_fused(size_t hidden, size_t gate_weight, size_t up_weight, size_t down_weight);
+    size_t dense_mlp_tq_fused(size_t hidden, size_t gate_weight, size_t up_weight, size_t down_weight, float product_scale = 1.0f);
     size_t stats_pool(size_t input);
     size_t weighted_stats_pool(size_t input, size_t weights);
 
@@ -665,6 +666,7 @@ public:
     size_t embedding(size_t embedding_tensor, size_t indices);
     size_t mmap_embeddings(const std::string& filename);
     size_t mmap_weights(const std::string& filename);
+    void bind_mmap_weights(size_t node_id, const std::string& filename);
     void release_weight_pages(size_t node_id);
     void prefetch_weight_pages(size_t node_id);
     void release_all_weight_pages();
@@ -752,6 +754,7 @@ namespace GraphFile {
         size_t num_groups() const { return num_groups_; }
         const void* scales_data() const;
         bool is_orthogonal_rotation() const { return is_orthogonal_rotation_; }
+        bool is_interleaved_4row() const { return is_interleaved_4row_; }
         size_t original_N() const { return original_N_; }
         void* data();
         const void* data() const;
@@ -772,6 +775,7 @@ namespace GraphFile {
         size_t scales_bytes_ = 0;
         uint32_t alignment_ = 32;
         bool is_orthogonal_rotation_ = false;
+        bool is_interleaved_4row_ = false;
         size_t original_N_ = 0;
 
         void parse_header();

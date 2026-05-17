@@ -1,5 +1,4 @@
 #include "engine.h"
-#include "../models/model.h"
 #include "cactus_graph.h"
 #include <fstream>
 #include <iostream>
@@ -208,7 +207,9 @@ bool Model::init_internal(CactusGraph* gb, const std::string& model_folder, size
 
     initialized_ = true;
 
-    if (do_warmup) {
+    if (do_warmup &&
+        config_.model_type != Config::ModelType::WHISPER &&
+        config_.model_type != Config::ModelType::PARAKEET_TDT) {
         std::vector<uint32_t> warmup_tokens = {2};
         forward(warmup_tokens);
         auto* gb = static_cast<CactusGraph*>(graph_handle_);
@@ -632,6 +633,8 @@ bool Config::from_json(const std::string& config_path) {
             else if (mt == "gemma") model_type = ModelType::GEMMA;
             else if (mt == "gemma3n") model_type = ModelType::GEMMA3N;
             else if (mt == "lfm2") model_type = ModelType::LFM2;
+            else if (mt == "whisper") model_type = ModelType::WHISPER;
+            else if (mt == "parakeet_tdt" || mt == "parakeet-tdt") model_type = ModelType::PARAKEET_TDT;
             else if (mt == "youtu") model_type = ModelType::YOUTU;
             else if (mt == "needle") model_type = ModelType::NEEDLE;
             else model_type = ModelType::GEMMA4;
@@ -830,35 +833,10 @@ std::unique_ptr<Model> create_model(const std::string& model_folder) {
         return nullptr;
     }
 
-    const bool has_vision_support =
-        config.use_image_tokens ||
-        config.vision_num_layers > 0 ||
-        config.vision_embed_dim > 0 ||
-        config.vision_hidden_dim > 0 ||
-        config.visual_tokens_per_img > 0;
-
-    const bool has_audio_support =
-        config.audio_num_layers > 0 ||
-        config.audio_hidden_dim > 0;
-
-    if (config.model_type == Config::ModelType::LFM2 && has_vision_support) {
-        return std::make_unique<Lfm2VlModel>(config);
-    }
-
-    if (config.model_type == Config::ModelType::GEMMA4 && (has_vision_support || has_audio_support)) {
-        return std::make_unique<Gemma4MmModel>(config);
-    }
-
-    switch (config.model_type) {
-        case Config::ModelType::QWEN:
-            return std::make_unique<QwenModel>(config);
-        case Config::ModelType::LFM2:
-            return std::make_unique<LFM2Model>(config);
-        case Config::ModelType::GEMMA4:
-            return std::make_unique<Gemma4Model>(config);
-        default:
-            return std::make_unique<Gemma4Model>(config);
-    }
+    CACTUS_LOG_ERROR("model",
+        "Native model subclasses are not present in this build. "
+        "Use cactus run-transpiled for transpiled graph bundles.");
+    return nullptr;
 }
 
 void Model::capture_debug_node(uint32_t layer_idx, const std::string& name, size_t node_id) const {

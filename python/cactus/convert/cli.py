@@ -31,6 +31,7 @@ from .export.validate import validate_qdq
 from .model_adapters.detection import SUPPORTED_FAMILIES, detect_family
 from .model_adapters.adapters import adapter_for_family
 from .quantization.cq import quantize_hadamard, quantize_orthogonal, write_cq_tensor
+from .compat import patch_transformers_import_compat
 
 ALPHA = 0.25
 
@@ -45,6 +46,8 @@ def _load_hf(model_id_or_path: str, device: str):
     import logging, warnings
     logging.getLogger("transformers").setLevel(logging.ERROR)
     warnings.filterwarnings("ignore", message=".*You are using a model of type.*")
+    for note in patch_transformers_import_compat():
+        print(f"note={note}")
     try:
         from transformers import AutoConfig, AutoModel
     except Exception as exc:  # pragma: no cover
@@ -379,7 +382,7 @@ def convert(args: argparse.Namespace) -> None:
     model_config = adapter.runtime_config(cfg)
     model_config["model_type"] = adapter.runtime_model_type()
     write_config_txt({**_config_dict(cfg), **model_config}, out_dir)
-    copy_runtime_files(args.model, out_dir)
+    copy_runtime_files(args.model, out_dir, token=getattr(args, "token", None), cache_dir=_hf_cache_dir())
     try:
         from .cactus_adapters.tokenizer import convert_hf_tokenizer
 
@@ -541,7 +544,7 @@ def convert(args: argparse.Namespace) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="python -m src.convert")
+    parser = argparse.ArgumentParser(prog="python -m cactus.convert")
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("convert")
     p.add_argument("--model", required=True)

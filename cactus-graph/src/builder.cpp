@@ -213,6 +213,23 @@ size_t CactusGraph::variance(size_t input, int axis) { return reduction_op(OpTyp
 size_t CactusGraph::min(size_t input, int axis) { return reduction_op(OpType::MIN, input, axis); }
 size_t CactusGraph::max(size_t input, int axis) { return reduction_op(OpType::MAX, input, axis); }
 
+size_t CactusGraph::cumsum(size_t input, int axis) {
+    const auto& input_buffer = get_output_buffer(input);
+    if (input_buffer.shape.empty()) {
+        throw std::runtime_error("Cumsum requires at least one dimension");
+    }
+
+    int actual_axis = axis;
+    if (actual_axis < 0) {
+        actual_axis += static_cast<int>(input_buffer.shape.size());
+    }
+    if (actual_axis < 0 || static_cast<size_t>(actual_axis) >= input_buffer.shape.size()) {
+        throw std::runtime_error("Invalid axis for cumsum operation");
+    }
+
+    return add_node(OpType::CUMSUM, {input}, input_buffer.shape, {.axis = actual_axis, .output_precision = input_buffer.precision});
+}
+
 size_t CactusGraph::rms_norm(size_t input, size_t weight, float epsilon) {
     OpParams params{.epsilon = epsilon};
     return add_node(OpType::RMS_NORM, {input, weight}, {}, params);
@@ -294,7 +311,7 @@ size_t CactusGraph::moe_layer(size_t hidden,
     return add_node(OpType::MOE_LAYER, input_ids, hidden_buffer.shape, params);
 }
 
-size_t CactusGraph::dense_mlp_tq_fused(size_t hidden, size_t gate_weight, size_t up_weight, size_t down_weight) {
+size_t CactusGraph::dense_mlp_tq_fused(size_t hidden, size_t gate_weight, size_t up_weight, size_t down_weight, float product_scale) {
     const auto& hidden_buffer = get_output_buffer(hidden);
     const auto& down_buffer = get_output_buffer(down_weight);
     if (hidden_buffer.shape.empty()) {
@@ -309,6 +326,7 @@ size_t CactusGraph::dense_mlp_tq_fused(size_t hidden, size_t gate_weight, size_t
 
     OpParams params;
     params.output_precision = Precision::FP16;
+    params.scalar = product_scale;
     return add_node(OpType::DENSE_MLP_TQ_FUSED,
                     {hidden, gate_weight, up_weight, down_weight},
                     output_shape, params);

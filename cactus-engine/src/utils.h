@@ -3,7 +3,6 @@
 
 #include "../cactus_engine.h"
 #include "engine.h"
-#include "../models/model.h"
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -114,7 +113,7 @@ inline cactus::engine::SpectrogramConfig get_whisper_spectrogram_config() {
     cfg.log_mel      = "log10";
     cfg.reference    = 1.0f;
     cfg.min_value    = 1e-10f;
-    cfg.remove_dc_offset = true;
+    cfg.remove_dc_offset = false;
     return cfg;
 }
 
