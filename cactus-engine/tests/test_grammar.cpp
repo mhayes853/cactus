@@ -82,6 +82,10 @@ static cactus_grammar_t make_grammar_structural_tag(
     );
 }
 
+static cactus_grammar_t make_grammar_model_thinking(const char* model_type) {
+    return make_grammar_handle(cactus_grammar_init_model_thinking(model_type));
+}
+
 static cactus_grammar_t make_grammar_optional(cactus_grammar_t grammar) {
     return make_grammar_handle(cactus_grammar_optional(grammar));
 }
@@ -440,6 +444,38 @@ static bool test_json_schema_accepts_expected_text(const GrammarFixture& fixture
         && rejects_text(json_schema.get(), fixture, R"({"age":1})");
 }
 
+static bool test_model_thinking_unsupported_types_return_empty_grammar() {
+    auto unknown = GrammarHandle(make_grammar_model_thinking("i made this up"), &cactus_grammar_destroy);
+    return cactus_grammar_is_empty(unknown.get());
+}
+
+static bool test_model_thinking_gemma4_uses_channel_tags(const GrammarFixture& fixture) {
+    auto grammar = GrammarHandle(make_grammar_model_thinking("gemma4"), &cactus_grammar_destroy);
+
+    return !cactus_grammar_is_empty(grammar.get())
+        && accepts_complete_text(grammar.get(), fixture, "<|channel>blah blah blah<channel|>")
+        && rejects_text(grammar.get(), fixture, "<|channel>blah blah blah<channel|> more <channel|>")
+        && rejects_eos_after_text(grammar.get(), fixture, "<|channel>blah blah blah");
+}
+
+static bool test_model_thinking_qwen_uses_think_tags(const GrammarFixture& fixture) {
+    auto grammar = GrammarHandle(make_grammar_model_thinking("qwen"), &cactus_grammar_destroy);
+
+    return !cactus_grammar_is_empty(grammar.get())
+        && accepts_complete_text(grammar.get(), fixture, "<think>blah blah blah</think>")
+        && rejects_text(grammar.get(), fixture, "<think>blah blah blah</think> more </think>")
+        && rejects_eos_after_text(grammar.get(), fixture, "<think>blah blah blah");
+}
+
+static bool test_model_thinking_lfm2_uses_think_tags(const GrammarFixture& fixture) {
+    auto grammar = GrammarHandle(make_grammar_model_thinking("lfm2"), &cactus_grammar_destroy);
+
+    return !cactus_grammar_is_empty(grammar.get())
+        && accepts_complete_text(grammar.get(), fixture, "<think>blah blah blah</think>")
+        && rejects_text(grammar.get(), fixture, "<think>blah blah blah</think> more </think>")
+        && rejects_eos_after_text(grammar.get(), fixture, "<think>blah blah blah");
+}
+
 static bool test_grammar_matcher_reset_restores_initial_state(const GrammarFixture& fixture) {
     auto grammar = GrammarHandle(make_grammar_ebnf("root ::= \"hello\""), &cactus_grammar_destroy);
     auto matcher = GrammarMatcherHandle(make_matcher(grammar.get(), fixture.engine.get()), &cactus_grammar_matcher_destroy);
@@ -594,6 +630,10 @@ int main() {
         runner.run_test("unordred_choice", test_unordered_choice(fixture));
         runner.run_test("regex_language", test_regex_accepts_expected_text(fixture));
         runner.run_test("json_schema_language", test_json_schema_accepts_expected_text(fixture));
+        runner.run_test("model_thinking_unsupported_empty", test_model_thinking_unsupported_types_return_empty_grammar());
+        runner.run_test("model_thinking_gemma4", test_model_thinking_gemma4_uses_channel_tags(fixture));
+        runner.run_test("model_thinking_qwen", test_model_thinking_qwen_uses_think_tags(fixture));
+        runner.run_test("model_thinking_lfm2", test_model_thinking_lfm2_uses_think_tags(fixture));
         runner.run_test("universal", test_universal_grammar_accepts_anything(fixture));
         runner.run_test("structural_tag_language", test_structural_tag_accepts_and_rejects_expected_text(fixture));
         runner.run_test("grammar_matcher_reset", test_grammar_matcher_reset_restores_initial_state(fixture));

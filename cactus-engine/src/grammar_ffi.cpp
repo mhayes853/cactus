@@ -1,9 +1,11 @@
 #include "../cactus_engine.h"
+#include "picojson/picojson.h"
 #include "utils.h"
 #include "engine.h"
 
 #include <algorithm>
 #include <cstring>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -99,6 +101,18 @@ static cactus_grammar_t make_grammar(const char* operation, Factory&& factory) {
     } catch (const std::exception& e) {
         return handle_exception(operation, e.what());
     }
+}
+
+static Grammar thinking_structural_tag(const std::string& begin, const std::string& end) {
+    return Grammar::structural_tag(R"({
+        "type": "structural_tag",
+        "format": {
+            "type": "tag",
+            "begin": ")" + begin + R"(",
+            "content": { "type": "any_text" },
+            "end": ")" + end + R"("
+        }
+    })");
 }
 
 } // anonymous namespace
@@ -257,6 +271,19 @@ cactus_grammar_t cactus_grammar_init_structural_tag(
             structural_tag_json,
             handle ? handle->vocabulary.get() : nullptr
         );
+    });
+}
+
+cactus_grammar_t cactus_grammar_init_model_thinking(const char* model_type) {
+    if (!model_type) return nullptr;
+    return make_grammar(__func__, [&] {
+        std::string type(model_type);
+        if (type.find("gemma4") != std::string::npos || type.find("gemma-4") != std::string::npos) {
+            return thinking_structural_tag("<|channel>", "<channel|>");
+        } else if (type.find("lfm2") != std::string::npos || type.find("qwen") != std::string::npos) {
+            return thinking_structural_tag("<think>", "</think>");
+        }
+        return Grammar();
     });
 }
 

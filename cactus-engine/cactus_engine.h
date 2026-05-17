@@ -478,6 +478,7 @@ CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_structural_tag(
     const char* structural_tag_json,
     cactus_grammar_vocabulary_t vocabulary    // optional
 );
+CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_init_model_thinking(const char* model_type);
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_union(cactus_grammar_t* grammars, size_t num_grammars);
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_concatenate(cactus_grammar_t* grammars, size_t num_grammars);
 CACTUS_FFI_EXPORT cactus_grammar_t cactus_grammar_optional(cactus_grammar_t grammar);
