@@ -34,7 +34,7 @@ inline std::string escape(const std::string& s) {
     return "<|\"|>" + s + "<|\"|>";
 }
 
-inline void rewrite_dynamic_key_json_wrappers(std::string& ebnf) {
+inline void rewrite_pattern_property_wrappers(std::string& ebnf) {
     static const std::regex dynamic_key_wrapper_pattern(
         R"("\\""\s*([A-Za-z_][A-Za-z0-9_]*)\s*"\\""\s*":")"
     );
@@ -123,21 +123,30 @@ inline void collect_schema_string_literals(
 }
 
 inline EbnfSyntax xgrammar_json_schema_ebnf_to_gemma4_ebnf(
-    const std::string& json_ebnf,
+    const std::string& json_schema_syntax,
     const std::unordered_set<std::string>& property_names,
     const std::unordered_set<std::string>& string_literals
 ) {
-    auto parsed = EbnfSyntax::from_string(json_ebnf);
+    auto parsed = EbnfSyntax::from_string(json_schema_syntax);
+
+    static const std::string string_sub_rule =
+        "\"\" | "
+        "[^<] gemma_string_sub | "
+        "\"<\" [^|] gemma_string_sub | "
+        "\"<|\" [^\"] gemma_string_sub | "
+        "\"<|\\\"\" [^|] gemma_string_sub | "
+        "\"<|\\\"|\" [^>] gemma_string_sub";
+
+    parsed.rules["gemma_string_sub"] = string_sub_rule;
+    parsed.rules["basic_string"] = "(\"<|\\\"|>\" gemma_string_sub \"<|\\\"|>\")";
+    parsed.rules.erase("basic_string_sub");
+    parsed.rules.erase("basic_escape");
 
     for (auto& [rule_name, rule_expr] : parsed.rules) {
         replace_all(rule_expr, "\"\\n\"", "\"\"");
         replace_all(rule_expr, "\",\\n\"", "\",\"");
         replace_all(rule_expr, "\", \"", "\",\"");
         replace_all(rule_expr, "\": \"", "\":\"");
-
-        if (rule_name == "basic_string") {
-            rule_expr = "(\"<|\\\"|>\" gemma_string_sub \"<|\\\"|>\")";
-        }
 
         for (const auto& property_name : property_names) {
             const std::string escaped_property_name = EbnfSyntax::escape_string_literal(property_name);
@@ -148,7 +157,7 @@ inline EbnfSyntax xgrammar_json_schema_ebnf_to_gemma4_ebnf(
             );
         }
 
-        rewrite_dynamic_key_json_wrappers(rule_expr);
+        rewrite_pattern_property_wrappers(rule_expr);
 
         for (const auto& string_literal : string_literals) {
             const std::string escaped_string_literal = EbnfSyntax::escape_string_literal(string_literal);
@@ -161,11 +170,6 @@ inline EbnfSyntax xgrammar_json_schema_ebnf_to_gemma4_ebnf(
 
         replace_all(rule_expr, "\"\\\"\"", "\"<|\\\"|>\"");
     }
-
-    parsed.rules["gemma_string_sub"] =
-        "\"\" | [^<] gemma_string_sub | \"<\" [^|] gemma_string_sub | \"<|\" [^\"] gemma_string_sub | \"<|\\\"\" [^|] gemma_string_sub | \"<|\\\"|\" [^>] gemma_string_sub";
-    parsed.rules.erase("basic_string_sub");
-    parsed.rules.erase("basic_escape");
     return parsed;
 }
 
@@ -189,7 +193,7 @@ inline std::string extract_json_string(const std::string& json, size_t& pos) {
         }
         pos++;
     }
-    if (pos < json.length()) pos++; 
+    if (pos < json.length()) pos++;
     return value;
 }
 
@@ -208,7 +212,7 @@ inline std::string format_argument(const std::string& json, size_t& pos, bool es
         return escape(value);
     } else if (c == '{') {
         std::string result = "{";
-        pos++; 
+        pos++;
         bool first = true;
 
         while (pos < json.length()) {
@@ -237,7 +241,7 @@ inline std::string format_argument(const std::string& json, size_t& pos, bool es
         return result;
     } else if (c == '[') {
         std::string result = "[";
-        pos++; 
+        pos++;
         bool first = true;
 
         while (pos < json.length()) {
@@ -276,7 +280,7 @@ inline std::map<std::string, std::string> parse_json_object_raw(const std::strin
     std::map<std::string, std::string> result;
     skip_whitespace(json, pos);
     if (pos >= json.length() || json[pos] != '{') return result;
-    pos++; 
+    pos++;
 
     while (pos < json.length()) {
         skip_whitespace(json, pos);
@@ -298,7 +302,7 @@ inline std::map<std::string, std::string> parse_json_object_raw(const std::strin
                 if (json[pos] == '\\') pos++;
                 pos++;
             }
-            pos++; 
+            pos++;
         } else if (json[pos] == '{') {
             int depth = 1;
             pos++;
@@ -593,7 +597,7 @@ inline std::string args_to_json(const std::string& args_content) {
         size_t key_start = pos;
         while (pos < args_content.length() && args_content[pos] != ':') pos++;
         std::string key = args_content.substr(key_start, pos - key_start);
-        if (pos < args_content.length()) pos++; 
+        if (pos < args_content.length()) pos++;
 
         std::string value;
         while (pos < args_content.length() && std::isspace(args_content[pos])) pos++;
