@@ -132,9 +132,8 @@ static Grammar gemma_tool_grammar(const std::vector<ToolFunction>& tools, bool u
         std::unordered_set<std::string> string_literals;
         gemma::collect_schema_string_literals(schema_value, string_literals);
 
-        auto schema_grammar = Grammar::json_schema(schema_it->second, false, 0);
-        EbnfSyntax tool_syntax = gemma::xgrammar_json_schema_ebnf_to_gemma_ebnf(
-            schema_grammar.ebnf(),
+        EbnfSyntax tool_syntax = gemma::xgrammar_tools_ebnf_to_gemma_tools_ebnf(
+            Grammar::json_schema(schema_it->second, false, 0).ebnf(),
             property_names,
             string_literals,
             use_pipe_tags

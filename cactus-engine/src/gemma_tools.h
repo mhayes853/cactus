@@ -164,13 +164,13 @@ inline void apply_gemma_basic_string_rule(
     syntax.rules.erase("basic_escape");
 }
 
-inline EbnfSyntax xgrammar_json_schema_ebnf_to_gemma_ebnf(
-    const std::string& json_schema_syntax,
+inline EbnfSyntax xgrammar_tools_ebnf_to_gemma_tools_ebnf(
+    const std::string& tools_ebnf,
     const std::unordered_set<std::string>& property_names,
     const std::unordered_set<std::string>& string_literals,
     bool use_pipe_tags
 ) {
-    auto parsed = EbnfSyntax::from_string(json_schema_syntax);
+    auto parsed = EbnfSyntax::from_string(tools_ebnf);
 
     const std::string quote = quote_tag(use_pipe_tags);
     const std::string escaped_quote = EbnfSyntax::escape_string_literal(quote);
