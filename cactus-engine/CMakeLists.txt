@@ -81,8 +81,10 @@ set(ENGINE_SOURCES
     src/complete.cpp
     src/transcribe.cpp
     src/tokenizer.cpp
-    src/npu.cpp
 )
+if(NOT APPLE)
+    list(APPEND ENGINE_SOURCES src/npu.cpp)
+endif()
 
 if(APPLE)
     enable_language(OBJCXX)
@@ -96,6 +98,7 @@ target_include_directories(cactus_engine
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
             ${CACTUS_XGRAMMAR_INCLUDE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/libs
             ${CACTUS_KERNELS_DIR}/src
             ${CACTUS_KERNELS_DIR}/libs
 )
