@@ -109,7 +109,7 @@ static cactus_grammar_t make_grammar(const char* operation, Factory&& factory) {
     }
 }
 
-static Grammar gemma_tool_grammar(const std::vector<ToolFunction>& tools) {
+static Grammar gemma_tool_grammar(const std::vector<ToolFunction>& tools, bool use_pipe_tags) {
     std::vector<std::pair<std::string, EbnfSyntax>> tool_rule_sets;
     tool_rule_sets.reserve(tools.size());
 
@@ -133,10 +133,11 @@ static Grammar gemma_tool_grammar(const std::vector<ToolFunction>& tools) {
         gemma::collect_schema_string_literals(schema_value, string_literals);
 
         auto schema_grammar = Grammar::json_schema(schema_it->second, false, 0);
-        EbnfSyntax tool_syntax = gemma::xgrammar_json_schema_ebnf_to_gemma4_ebnf(
+        EbnfSyntax tool_syntax = gemma::xgrammar_json_schema_ebnf_to_gemma_ebnf(
             schema_grammar.ebnf(),
             property_names,
-            string_literals
+            string_literals,
+            use_pipe_tags
         );
 
         const std::string args_rule_name = tool.name + "_args";
@@ -162,7 +163,12 @@ static Grammar gemma_tool_grammar(const std::vector<ToolFunction>& tools) {
         call_body_expr += call_rule_names[i];
     }
     merged.rules["call_body"] = call_body_expr;
-    merged.rules["root"] = "\"<|tool_call>call:\" call_body \"<tool_call|>\"";
+
+    const std::string tool_call_start =
+        EbnfSyntax::escape_string_literal(gemma::tool_call_start_tag(use_pipe_tags) + "call:");
+    const std::string tool_call_end =
+        EbnfSyntax::escape_string_literal(gemma::tool_call_end_tag(use_pipe_tags));
+    merged.rules["root"] = "\"" + tool_call_start + "\" call_body \"" + tool_call_end + "\"";
 
     return Grammar::ebnf(merged.ebnf());
 }
@@ -334,8 +340,8 @@ cactus_grammar_t cactus_grammar_init_model_tools(const char* model_type, const c
         const std::string type(model_type);
         const auto tools = parse_tools_json(tools_json);
         if (tools.empty()) return Grammar();
-        if (type == "gemma4" || type == "gemma-4") {
-            return gemma_tool_grammar(tools);
+        if (type == "gemma4" || type == "gemma-4" || type == "functiongemma") {
+            return gemma_tool_grammar(tools, type != "functiongemma");
         }
         return Grammar();
     });

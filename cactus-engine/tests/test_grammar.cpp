@@ -579,6 +579,15 @@ static bool test_model_tools_gemma4_accepts_valid_calls(const GrammarFixture& fi
         && accepts_complete_text(grammar.get(), fixture, get_weather_call);
 }
 
+static bool test_model_tools_functiongemma_accepts_valid_calls(const GrammarFixture& fixture) {
+    auto grammar = GrammarHandle(make_grammar_model_tools("functiongemma", test_model_tools_json()), &cactus_grammar_destroy);
+
+    const auto get_weather_call =
+        "<start_function_call>call:get_weather{location:<escape>Seoul<escape>}<end_function_call>";
+
+    return accepts_complete_text(grammar.get(), fixture, get_weather_call);
+}
+
 static bool test_model_tools_gemma4_rejects_invalid_calls(const GrammarFixture& fixture) {
     auto grammar = GrammarHandle(make_grammar_model_tools("gemma4", test_model_tools_json()), &cactus_grammar_destroy);
 
@@ -972,6 +981,7 @@ int main() {
         runner.run_test("universal", test_universal_grammar_accepts_anything(fixture));
         runner.run_test("structural_tag_language", test_structural_tag_accepts_and_rejects_expected_text(fixture));
         runner.run_test("model_tools_gemma4_valid", test_model_tools_gemma4_accepts_valid_calls(fixture));
+        runner.run_test("model_tools_functiongemma_valid", test_model_tools_functiongemma_accepts_valid_calls(fixture));
         runner.run_test("model_tools_gemma4_invalid", test_model_tools_gemma4_rejects_invalid_calls(fixture));
         runner.run_test("model_tools_gemma4_invalid_tool_name", test_model_tools_gemma4_rejects_invalid_tool_name(fixture));
         runner.run_test("grammar_matcher_reset", test_grammar_matcher_reset_restores_initial_state(fixture));

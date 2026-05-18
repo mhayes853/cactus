@@ -34,6 +34,18 @@ inline std::string escape(const std::string& s) {
     return "<|\"|>" + s + "<|\"|>";
 }
 
+inline std::string quote_tag(bool use_pipe_tags) {
+    return use_pipe_tags ? "<|\"|>" : "<escape>";
+}
+
+inline std::string tool_call_start_tag(bool use_pipe_tags) {
+    return use_pipe_tags ? "<|tool_call>" : "<start_function_call>";
+}
+
+inline std::string tool_call_end_tag(bool use_pipe_tags) {
+    return use_pipe_tags ? "<tool_call|>" : "<end_function_call>";
+}
+
 inline void rewrite_pattern_property_wrappers(std::string& ebnf) {
     static const std::regex dynamic_key_wrapper_pattern(
         R"("\\""\s*([A-Za-z_][A-Za-z0-9_]*)\s*"\\""\s*":")"
@@ -122,13 +134,11 @@ inline void collect_schema_string_literals(
     }
 }
 
-inline EbnfSyntax xgrammar_json_schema_ebnf_to_gemma4_ebnf(
-    const std::string& json_schema_syntax,
-    const std::unordered_set<std::string>& property_names,
-    const std::unordered_set<std::string>& string_literals
+inline void apply_gemma_basic_string_rule(
+    EbnfSyntax& syntax,
+    const std::string& escaped_quote,
+    bool use_pipe_tags
 ) {
-    auto parsed = EbnfSyntax::from_string(json_schema_syntax);
-
     static const std::string string_sub_rule =
         "\"\" | "
         "[^<] gemma_string_sub | "
@@ -137,10 +147,35 @@ inline EbnfSyntax xgrammar_json_schema_ebnf_to_gemma4_ebnf(
         "\"<|\\\"\" [^|] gemma_string_sub | "
         "\"<|\\\"|\" [^>] gemma_string_sub";
 
-    parsed.rules["gemma_string_sub"] = string_sub_rule;
-    parsed.rules["basic_string"] = "(\"<|\\\"|>\" gemma_string_sub \"<|\\\"|>\")";
-    parsed.rules.erase("basic_string_sub");
-    parsed.rules.erase("basic_escape");
+    static const std::string functiongemma_string_sub_rule =
+        "\"\" | "
+        "[^<] gemma_string_sub | "
+        "\"<\" [^e] gemma_string_sub | "
+        "\"<e\" [^s] gemma_string_sub | "
+        "\"<es\" [^c] gemma_string_sub | "
+        "\"<esc\" [^a] gemma_string_sub | "
+        "\"<esca\" [^p] gemma_string_sub | "
+        "\"<escap\" [^e] gemma_string_sub | "
+        "\"<escape\" [^>] gemma_string_sub";
+
+    syntax.rules["gemma_string_sub"] = use_pipe_tags ? string_sub_rule : functiongemma_string_sub_rule;
+    syntax.rules["basic_string"] = "(\"" + escaped_quote + "\" gemma_string_sub \"" + escaped_quote + "\")";
+    syntax.rules.erase("basic_string_sub");
+    syntax.rules.erase("basic_escape");
+}
+
+inline EbnfSyntax xgrammar_json_schema_ebnf_to_gemma_ebnf(
+    const std::string& json_schema_syntax,
+    const std::unordered_set<std::string>& property_names,
+    const std::unordered_set<std::string>& string_literals,
+    bool use_pipe_tags
+) {
+    auto parsed = EbnfSyntax::from_string(json_schema_syntax);
+
+    const std::string quote = quote_tag(use_pipe_tags);
+    const std::string escaped_quote = EbnfSyntax::escape_string_literal(quote);
+
+    apply_gemma_basic_string_rule(parsed, escaped_quote, use_pipe_tags);
 
     for (auto& [rule_name, rule_expr] : parsed.rules) {
         replace_all(rule_expr, "\"\\n\"", "\"\"");
@@ -164,11 +199,11 @@ inline EbnfSyntax xgrammar_json_schema_ebnf_to_gemma4_ebnf(
             replace_all(
                 rule_expr,
                 "\"\\\"" + escaped_string_literal + "\\\"\"",
-                "\"<|\\\"|>" + escaped_string_literal + "<|\\\"|>\""
+                "\"" + escaped_quote + escaped_string_literal + escaped_quote + "\""
             );
         }
 
-        replace_all(rule_expr, "\"\\\"\"", "\"<|\\\"|>\"");
+        replace_all(rule_expr, "\"\\\"\"", "\"" + escaped_quote + "\"");
     }
     return parsed;
 }
