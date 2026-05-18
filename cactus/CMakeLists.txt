@@ -46,3 +46,40 @@ end
         COMMENT "Merging static libraries into libcactus.a"
     )
 endif()
+
+file(WRITE ${CMAKE_BINARY_DIR}/cactus_shared_stub.cpp "")
+add_library(cactus_shared SHARED ${CMAKE_BINARY_DIR}/cactus_shared_stub.cpp)
+set_target_properties(cactus_shared PROPERTIES OUTPUT_NAME cactus)
+add_dependencies(cactus_shared cactus_engine cactus_graph cactus_kernels)
+set(_CACTUS_XGRAMMAR_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../cactus-engine/libs/xgrammar")
+if(APPLE)
+    target_link_options(cactus_shared PRIVATE
+        -Wl,-force_load,$<TARGET_FILE:cactus_engine>
+        -Wl,-force_load,$<TARGET_FILE:cactus_graph>
+        -Wl,-force_load,$<TARGET_FILE:cactus_kernels>
+    )
+    set(_CACTUS_XGRAMMAR_LIBRARY "${_CACTUS_XGRAMMAR_ROOT}/macos/libxgrammar.a")
+    if(EXISTS ${_CACTUS_XGRAMMAR_LIBRARY})
+        target_link_libraries(cactus_shared PRIVATE ${_CACTUS_XGRAMMAR_LIBRARY})
+    endif()
+    set(_CACTUS_CURL_MACOS "${CMAKE_CURRENT_SOURCE_DIR}/../cactus-engine/libs/curl/macos/libcurl.a")
+    if(EXISTS ${_CACTUS_CURL_MACOS})
+        target_link_libraries(cactus_shared PRIVATE ${_CACTUS_CURL_MACOS})
+    endif()
+    target_link_libraries(cactus_shared PRIVATE
+        "-framework CoreML" "-framework Foundation" "-framework Accelerate"
+        "-framework Security" "-framework SystemConfiguration" "-framework CFNetwork"
+    )
+else()
+    target_link_options(cactus_shared PRIVATE
+        -Wl,--whole-archive
+        $<TARGET_FILE:cactus_engine>
+        $<TARGET_FILE:cactus_graph>
+        $<TARGET_FILE:cactus_kernels>
+        -Wl,--no-whole-archive
+    )
+    set(_CACTUS_XGRAMMAR_LIBRARY "${_CACTUS_XGRAMMAR_ROOT}/linux/aarch64/libxgrammar.a")
+    if(EXISTS ${_CACTUS_XGRAMMAR_LIBRARY})
+        target_link_libraries(cactus_shared PRIVATE ${_CACTUS_XGRAMMAR_LIBRARY})
+    endif()
+endif()
