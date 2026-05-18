@@ -5,9 +5,24 @@
 #include <algorithm>
 #include <cctype>
 #include <map>
+#include <regex>
 #include <set>
+#include <unordered_set>
+
+#include <picojson/picojson.h>
+
+#include "ebnf_syntax.h"
 
 namespace gemma {
+
+inline void replace_all(std::string& text, const std::string& needle, const std::string& replacement) {
+    if (needle.empty()) return;
+    size_t pos = 0;
+    while ((pos = text.find(needle, pos)) != std::string::npos) {
+        text.replace(pos, needle.size(), replacement);
+        pos += replacement.size();
+    }
+}
 
 inline std::string to_upper(const std::string& s) {
     std::string result = s;
@@ -17,6 +32,141 @@ inline std::string to_upper(const std::string& s) {
 
 inline std::string escape(const std::string& s) {
     return "<|\"|>" + s + "<|\"|>";
+}
+
+inline void rewrite_dynamic_key_json_wrappers(std::string& ebnf) {
+    static const std::regex dynamic_key_wrapper_pattern(
+        R"("\\""\s*([A-Za-z_][A-Za-z0-9_]*)\s*"\\""\s*":")"
+    );
+    ebnf = std::regex_replace(ebnf, dynamic_key_wrapper_pattern, "$1 \":\"");
+}
+
+inline void collect_schema_property_names(
+    const picojson::value& schema,
+    std::unordered_set<std::string>& property_names
+) {
+    if (!schema.is<picojson::object>()) {
+        if (schema.is<picojson::array>()) {
+            for (const auto& item : schema.get<picojson::array>()) {
+                collect_schema_property_names(item, property_names);
+            }
+        }
+        return;
+    }
+
+    const auto& object = schema.get<picojson::object>();
+
+    auto properties_it = object.find("properties");
+    if (properties_it != object.end() && properties_it->second.is<picojson::object>()) {
+        const auto& properties = properties_it->second.get<picojson::object>();
+        for (const auto& key : properties.ordered_keys()) {
+            property_names.insert(key);
+            collect_schema_property_names(properties.at(key), property_names);
+        }
+    }
+
+    auto items_it = object.find("items");
+    if (items_it != object.end()) {
+        collect_schema_property_names(items_it->second, property_names);
+    }
+
+    auto prefix_items_it = object.find("prefixItems");
+    if (prefix_items_it != object.end() && prefix_items_it->second.is<picojson::array>()) {
+        for (const auto& item : prefix_items_it->second.get<picojson::array>()) {
+            collect_schema_property_names(item, property_names);
+        }
+    }
+
+    for (const char* key : {"anyOf", "oneOf", "allOf"}) {
+        auto it = object.find(key);
+        if (it != object.end() && it->second.is<picojson::array>()) {
+            for (const auto& item : it->second.get<picojson::array>()) {
+                collect_schema_property_names(item, property_names);
+            }
+        }
+    }
+}
+
+inline void collect_schema_string_literals(
+    const picojson::value& schema,
+    std::unordered_set<std::string>& string_literals
+) {
+    if (schema.is<picojson::array>()) {
+        for (const auto& item : schema.get<picojson::array>()) {
+            collect_schema_string_literals(item, string_literals);
+        }
+        return;
+    }
+    if (!schema.is<picojson::object>()) {
+        return;
+    }
+
+    const auto& object = schema.get<picojson::object>();
+
+    auto const_it = object.find("const");
+    if (const_it != object.end() && const_it->second.is<std::string>()) {
+        string_literals.insert(const_it->second.get<std::string>());
+    }
+
+    auto enum_it = object.find("enum");
+    if (enum_it != object.end() && enum_it->second.is<picojson::array>()) {
+        for (const auto& item : enum_it->second.get<picojson::array>()) {
+            if (item.is<std::string>()) {
+                string_literals.insert(item.get<std::string>());
+            }
+        }
+    }
+
+    for (const auto& key : object.ordered_keys()) {
+        collect_schema_string_literals(object.at(key), string_literals);
+    }
+}
+
+inline EbnfSyntax xgrammar_json_schema_ebnf_to_gemma4_ebnf(
+    const std::string& json_ebnf,
+    const std::unordered_set<std::string>& property_names,
+    const std::unordered_set<std::string>& string_literals
+) {
+    auto parsed = EbnfSyntax::from_string(json_ebnf);
+
+    for (auto& [rule_name, rule_expr] : parsed.rules) {
+        replace_all(rule_expr, "\"\\n\"", "\"\"");
+        replace_all(rule_expr, "\",\\n\"", "\",\"");
+        replace_all(rule_expr, "\", \"", "\",\"");
+        replace_all(rule_expr, "\": \"", "\":\"");
+
+        if (rule_name == "basic_string") {
+            rule_expr = "(\"<|\\\"|>\" gemma_string_sub \"<|\\\"|>\")";
+        }
+
+        for (const auto& property_name : property_names) {
+            const std::string escaped_property_name = EbnfSyntax::escape_string_literal(property_name);
+            replace_all(
+                rule_expr,
+                "\"\\\"" + escaped_property_name + "\\\"\"",
+                "\"" + escaped_property_name + "\""
+            );
+        }
+
+        rewrite_dynamic_key_json_wrappers(rule_expr);
+
+        for (const auto& string_literal : string_literals) {
+            const std::string escaped_string_literal = EbnfSyntax::escape_string_literal(string_literal);
+            replace_all(
+                rule_expr,
+                "\"\\\"" + escaped_string_literal + "\\\"\"",
+                "\"<|\\\"|>" + escaped_string_literal + "<|\\\"|>\""
+            );
+        }
+
+        replace_all(rule_expr, "\"\\\"\"", "\"<|\\\"|>\"");
+    }
+
+    parsed.rules["gemma_string_sub"] =
+        "\"\" | [^<] gemma_string_sub | \"<\" [^|] gemma_string_sub | \"<|\" [^\"] gemma_string_sub | \"<|\\\"\" [^|] gemma_string_sub | \"<|\\\"|\" [^>] gemma_string_sub";
+    parsed.rules.erase("basic_string_sub");
+    parsed.rules.erase("basic_escape");
+    return parsed;
 }
 
 inline void skip_whitespace(const std::string& json, size_t& pos) {

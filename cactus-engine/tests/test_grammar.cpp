@@ -82,6 +82,10 @@ static cactus_grammar_t make_grammar_structural_tag(
     );
 }
 
+static cactus_grammar_t make_grammar_model_tools(const std::string& model_type, const std::string& tools_json) {
+    return make_grammar_handle(cactus_grammar_init_model_tools(model_type.c_str(), tools_json.c_str()));
+}
+
 static cactus_grammar_t make_grammar_optional(cactus_grammar_t grammar) {
     return make_grammar_handle(cactus_grammar_optional(grammar));
 }
@@ -225,6 +229,115 @@ static std::string tool_call_structural_tag_json() {
             ]
         }
     })";
+}
+
+static std::string test_model_tools_json() {
+    return R"([
+        {
+            "type": "function",
+            "function": {
+                "name": "complex_tool",
+                "description": "A tool with broad parameter coverage.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "count": {"type": "number"},
+                        "enabled": {"type": "boolean"},
+                        "mode": {
+                            "type": "string",
+                            "enum": ["dry_run", "execute"]
+                        },
+                        "ticket_id": {
+                            "type": "string",
+                            "pattern": "[A-Z]{3}-[0-9]{2}"
+                        },
+                        "priority": {
+                            "anyOf": [
+                                {"type": "integer"},
+                                {
+                                    "type": "string",
+                                    "enum": ["low", "high"]
+                                }
+                            ]
+                        },
+                        "routing": {
+                            "oneOf": [
+                                {
+                                    "type": "string",
+                                    "enum": ["auto"]
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "region": {"type": "string"}
+                                    },
+                                    "required": ["region"],
+                                    "additionalProperties": false
+                                }
+                            ]
+                        },
+                        "labels": {
+                            "type": "object",
+                            "patternProperties": {
+                                "[A-Z_]+": {"type": "integer"}
+                            },
+                            "additionalProperties": false
+                        },
+                        "window": {
+                            "allOf": [
+                                {"type": "integer", "minimum": 1, "maximum": 5}
+                            ]
+                        },
+                        "tuple_args": {
+                            "type": "array",
+                            "prefixItems": [
+                                {"type": "string"},
+                                {"type": "integer"},
+                                {"type": "boolean"}
+                            ],
+                            "items": false
+                        },
+                        "optional_note": {"type": ["string", "null"]},
+                        "tags": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "uniqueItems": true
+                        },
+                        "config": {
+                            "type": "object",
+                            "properties": {
+                                "threshold": {"type": "number"},
+                                "flags": {
+                                    "type": "array",
+                                    "items": {"type": "boolean"}
+                                }
+                            },
+                            "required": ["threshold", "flags"],
+                            "additionalProperties": false
+                        }
+                    },
+                    "required": ["title", "count", "enabled", "mode", "ticket_id", "priority", "routing", "labels", "window", "tuple_args", "optional_note", "tags", "config"],
+                    "additionalProperties": false
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Weather lookup.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {"type": "string"}
+                    },
+                    "required": ["location"],
+                    "additionalProperties": false
+                }
+            }
+        }
+    ])";
 }
 
 static bool test_vocab_accessors(const GrammarFixture& fixture) {
@@ -423,6 +536,268 @@ static bool test_structural_tag_accepts_and_rejects_expected_text(const GrammarF
         && cactus_grammar_matcher_next_bitmask(matcher.get(), bitmask.data(), fixture.vocab_size) == 1;
 }
 
+static bool test_model_tools_gemma4_accepts_valid_calls(const GrammarFixture& fixture) {
+    auto grammar = GrammarHandle(make_grammar_model_tools("gemma4", test_model_tools_json()), &cactus_grammar_destroy);
+
+    const auto complex_tool_call =
+        "<|tool_call>call:complex_tool{"
+        "title:<|\"|>alpha<|\"|>,"
+        "count:3.5,"
+        "enabled:true,"
+        "mode:<|\"|>execute<|\"|>,"
+        "ticket_id:<|\"|>ABC-12<|\"|>,"
+        "priority:4,"
+        "routing:{region:<|\"|>us-west<|\"|>},"
+        "labels:{ALPHA:1,BETA_LABEL:2},"
+        "window:3,"
+        "tuple_args:[<|\"|>alpha<|\"|>,2,true],"
+        "optional_note:null,"
+        "tags:[<|\"|>a<|\"|>,<|\"|>b<|\"|>],"
+        "config:{threshold:0.75,flags:[true,false]}"
+        "}<tool_call|>";
+    const auto complex_tool_call_with_string_whitespace =
+        "<|tool_call>call:complex_tool{"
+        "title:<|\"|>alpha beta<|\"|>,"
+        "count:3.5,"
+        "enabled:true,"
+        "mode:<|\"|>execute<|\"|>,"
+        "ticket_id:<|\"|>XYZ-34<|\"|>,"
+        "priority:<|\"|>high<|\"|>,"
+        "routing:{region:<|\"|>us west<|\"|>},"
+        "labels:{ALPHA:1},"
+        "window:5,"
+        "tuple_args:[<|\"|>alpha beta<|\"|>,2,true],"
+        "optional_note:<|\"|>contains spaces<|\"|>,"
+        "tags:[<|\"|>first value<|\"|>,<|\"|>second value<|\"|>],"
+        "config:{threshold:0.75,flags:[true,false]}"
+        "}<tool_call|>";
+    const auto get_weather_call =
+        "<|tool_call>call:get_weather{location:<|\"|>Seoul<|\"|>}<tool_call|>";
+
+    return accepts_complete_text(grammar.get(), fixture, complex_tool_call)
+        && accepts_complete_text(grammar.get(), fixture, complex_tool_call_with_string_whitespace)
+        && accepts_complete_text(grammar.get(), fixture, get_weather_call);
+}
+
+static bool test_model_tools_gemma4_rejects_invalid_calls(const GrammarFixture& fixture) {
+    auto grammar = GrammarHandle(make_grammar_model_tools("gemma4", test_model_tools_json()), &cactus_grammar_destroy);
+
+    const auto missing_required_field =
+        "<|tool_call>call:complex_tool{"
+        "title:<|\"|>alpha<|\"|>,"
+        "count:3.5,"
+        "enabled:true,"
+        "mode:<|\"|>execute<|\"|>,"
+        "ticket_id:<|\"|>ABC-12<|\"|>,"
+        "priority:4,"
+        "routing:{region:<|\"|>us-west<|\"|>},"
+        "labels:{ALPHA:1},"
+        "window:3,"
+        "tuple_args:[<|\"|>alpha<|\"|>,2,true],"
+        "optional_note:null,"
+        "tags:[<|\"|>a<|\"|>,<|\"|>b<|\"|>]"
+        "}<tool_call|>";
+    const auto wrong_type =
+        "<|tool_call>call:complex_tool{"
+        "title:<|\"|>alpha<|\"|>,"
+        "count:<|\"|>3.5<|\"|>,"
+        "enabled:true,"
+        "mode:<|\"|>execute<|\"|>,"
+        "ticket_id:<|\"|>ABC-12<|\"|>,"
+        "priority:4,"
+        "routing:{region:<|\"|>us-west<|\"|>},"
+        "labels:{ALPHA:1},"
+        "window:3,"
+        "tuple_args:[<|\"|>alpha<|\"|>,2,true],"
+        "optional_note:null,"
+        "tags:[<|\"|>a<|\"|>,<|\"|>b<|\"|>],"
+        "config:{threshold:0.75,flags:[true,false]}"
+        "}<tool_call|>";
+    const auto invalid_enum =
+        "<|tool_call>call:complex_tool{"
+        "title:<|\"|>alpha<|\"|>,"
+        "count:3.5,"
+        "enabled:true,"
+        "mode:<|\"|>preview<|\"|>,"
+        "ticket_id:<|\"|>ABC-12<|\"|>,"
+        "priority:4,"
+        "routing:{region:<|\"|>us-west<|\"|>},"
+        "labels:{ALPHA:1},"
+        "window:3,"
+        "tuple_args:[<|\"|>alpha<|\"|>,2,true],"
+        "optional_note:null,"
+        "tags:[<|\"|>a<|\"|>,<|\"|>b<|\"|>],"
+        "config:{threshold:0.75,flags:[true,false]}"
+        "}<tool_call|>";
+    const auto invalid_any_of =
+        "<|tool_call>call:complex_tool{"
+        "title:<|\"|>alpha<|\"|>,"
+        "count:3.5,"
+        "enabled:true,"
+        "mode:<|\"|>execute<|\"|>,"
+        "ticket_id:<|\"|>ABC-12<|\"|>,"
+        "priority:false,"
+        "routing:{region:<|\"|>us-west<|\"|>},"
+        "labels:{ALPHA:1},"
+        "window:3,"
+        "tuple_args:[<|\"|>alpha<|\"|>,2,true],"
+        "optional_note:null,"
+        "tags:[<|\"|>a<|\"|>,<|\"|>b<|\"|>],"
+        "config:{threshold:0.75,flags:[true,false]}"
+        "}<tool_call|>";
+    const auto invalid_one_of =
+        "<|tool_call>call:complex_tool{"
+        "title:<|\"|>alpha<|\"|>,"
+        "count:3.5,"
+        "enabled:true,"
+        "mode:<|\"|>execute<|\"|>,"
+        "ticket_id:<|\"|>ABC-12<|\"|>,"
+        "priority:4,"
+        "routing:{zone:<|\"|>us-west<|\"|>},"
+        "labels:{ALPHA:1},"
+        "window:3,"
+        "tuple_args:[<|\"|>alpha<|\"|>,2,true],"
+        "optional_note:null,"
+        "tags:[<|\"|>a<|\"|>,<|\"|>b<|\"|>],"
+        "config:{threshold:0.75,flags:[true,false]}"
+        "}<tool_call|>";
+    const auto invalid_pattern_properties =
+        "<|tool_call>call:complex_tool{"
+        "title:<|\"|>alpha<|\"|>,"
+        "count:3.5,"
+        "enabled:true,"
+        "mode:<|\"|>execute<|\"|>,"
+        "ticket_id:<|\"|>ABC-12<|\"|>,"
+        "priority:4,"
+        "routing:{region:<|\"|>us-west<|\"|>},"
+        "labels:{alpha:1},"
+        "window:3,"
+        "tuple_args:[<|\"|>alpha<|\"|>,2,true],"
+        "optional_note:null,"
+        "tags:[<|\"|>a<|\"|>,<|\"|>b<|\"|>],"
+        "config:{threshold:0.75,flags:[true,false]}"
+        "}<tool_call|>";
+    const auto invalid_regex_string =
+        "<|tool_call>call:complex_tool{"
+        "title:<|\"|>alpha<|\"|>,"
+        "count:3.5,"
+        "enabled:true,"
+        "mode:<|\"|>execute<|\"|>,"
+        "ticket_id:<|\"|>abc-12<|\"|>,"
+        "priority:4,"
+        "routing:{region:<|\"|>us-west<|\"|>},"
+        "labels:{ALPHA:1},"
+        "window:3,"
+        "tuple_args:[<|\"|>alpha<|\"|>,2,true],"
+        "optional_note:null,"
+        "tags:[<|\"|>a<|\"|>,<|\"|>b<|\"|>],"
+        "config:{threshold:0.75,flags:[true,false]}"
+        "}<tool_call|>";
+    const auto invalid_all_of =
+        "<|tool_call>call:complex_tool{"
+        "title:<|\"|>alpha<|\"|>,"
+        "count:3.5,"
+        "enabled:true,"
+        "mode:<|\"|>execute<|\"|>,"
+        "ticket_id:<|\"|>ABC-12<|\"|>,"
+        "priority:4,"
+        "routing:{region:<|\"|>us-west<|\"|>},"
+        "labels:{ALPHA:1},"
+        "window:0,"
+        "tuple_args:[<|\"|>alpha<|\"|>,2,true],"
+        "optional_note:null,"
+        "tags:[<|\"|>a<|\"|>,<|\"|>b<|\"|>],"
+        "config:{threshold:0.75,flags:[true,false]}"
+        "}<tool_call|>";
+    const auto invalid_prefix_items_type =
+        "<|tool_call>call:complex_tool{"
+        "title:<|\"|>alpha<|\"|>,"
+        "count:3.5,"
+        "enabled:true,"
+        "mode:<|\"|>execute<|\"|>,"
+        "ticket_id:<|\"|>ABC-12<|\"|>,"
+        "priority:4,"
+        "routing:{region:<|\"|>us-west<|\"|>},"
+        "labels:{ALPHA:1},"
+        "window:3,"
+        "tuple_args:[<|\"|>alpha<|\"|>,<|\"|>2<|\"|>,true],"
+        "optional_note:null,"
+        "tags:[<|\"|>a<|\"|>,<|\"|>b<|\"|>],"
+        "config:{threshold:0.75,flags:[true,false]}"
+        "}<tool_call|>";
+    const auto invalid_prefix_items_length =
+        "<|tool_call>call:complex_tool{"
+        "title:<|\"|>alpha<|\"|>,"
+        "count:3.5,"
+        "enabled:true,"
+        "mode:<|\"|>execute<|\"|>,"
+        "ticket_id:<|\"|>ABC-12<|\"|>,"
+        "priority:4,"
+        "routing:{region:<|\"|>us-west<|\"|>},"
+        "labels:{ALPHA:1},"
+        "window:3,"
+        "tuple_args:[<|\"|>alpha<|\"|>,2,true,<|\"|>extra<|\"|>],"
+        "optional_note:null,"
+        "tags:[<|\"|>a<|\"|>,<|\"|>b<|\"|>],"
+        "config:{threshold:0.75,flags:[true,false]}"
+        "}<tool_call|>";
+    const auto extra_property =
+        "<|tool_call>call:complex_tool{"
+        "title:<|\"|>alpha<|\"|>,"
+        "count:3.5,"
+        "enabled:true,"
+        "mode:<|\"|>execute<|\"|>,"
+        "ticket_id:<|\"|>ABC-12<|\"|>,"
+        "priority:4,"
+        "routing:{region:<|\"|>us-west<|\"|>},"
+        "labels:{ALPHA:1},"
+        "window:3,"
+        "tuple_args:[<|\"|>alpha<|\"|>,2,true],"
+        "optional_note:null,"
+        "tags:[<|\"|>a<|\"|>,<|\"|>b<|\"|>],"
+        "config:{threshold:0.75,flags:[true,false]},"
+        "extra:1"
+        "}<tool_call|>";
+    const auto malformed_arguments =
+        "<|tool_call>call:complex_tool{"
+        "title:<|\"|>alpha<|\"|>,"
+        "count:3.5,"
+        "enabled:true,"
+        "mode:<|\"|>execute<|\"|>,"
+        "ticket_id:<|\"|>ABC-12<|\"|>,"
+        "priority:4,"
+        "routing:{region:<|\"|>us-west<|\"|>},"
+        "labels:{ALPHA:1},"
+        "window:3,"
+        "tuple_args:[<|\"|>alpha<|\"|>,2,true],"
+        "optional_note:null,"
+        "tags:[<|\"|>a<|\"|>,<|\"|>b<|\"|>],"
+        "config:{threshold:0.75,flags:[true,false]}"
+        "<tool_call|>";
+
+    return rejects_text(grammar.get(), fixture, missing_required_field)
+        && rejects_text(grammar.get(), fixture, wrong_type)
+        && rejects_text(grammar.get(), fixture, invalid_enum)
+        && rejects_text(grammar.get(), fixture, invalid_any_of)
+        && rejects_text(grammar.get(), fixture, invalid_one_of)
+        && rejects_text(grammar.get(), fixture, invalid_pattern_properties)
+        && rejects_text(grammar.get(), fixture, invalid_regex_string)
+        && rejects_text(grammar.get(), fixture, invalid_all_of)
+        && rejects_text(grammar.get(), fixture, invalid_prefix_items_type)
+        && rejects_text(grammar.get(), fixture, invalid_prefix_items_length)
+        && rejects_text(grammar.get(), fixture, extra_property)
+        && rejects_text(grammar.get(), fixture, malformed_arguments);
+}
+
+static bool test_model_tools_gemma4_rejects_invalid_tool_name(const GrammarFixture& fixture) {
+    auto grammar = GrammarHandle(make_grammar_model_tools("gemma4", test_model_tools_json()), &cactus_grammar_destroy);
+
+    const auto invalid_tool_name =
+        "<|tool_call>call:not_a_real_tool{location:<|\"|>Seoul<|\"|>}<tool_call|>";
+
+    return rejects_text(grammar.get(), fixture, invalid_tool_name);
+}
+
 static bool test_regex_accepts_expected_text(const GrammarFixture& fixture) {
     auto regex = GrammarHandle(make_grammar_regex("(cat|dog)"), &cactus_grammar_destroy);
 
@@ -596,6 +971,9 @@ int main() {
         runner.run_test("json_schema_language", test_json_schema_accepts_expected_text(fixture));
         runner.run_test("universal", test_universal_grammar_accepts_anything(fixture));
         runner.run_test("structural_tag_language", test_structural_tag_accepts_and_rejects_expected_text(fixture));
+        runner.run_test("model_tools_gemma4_valid", test_model_tools_gemma4_accepts_valid_calls(fixture));
+        runner.run_test("model_tools_gemma4_invalid", test_model_tools_gemma4_rejects_invalid_calls(fixture));
+        runner.run_test("model_tools_gemma4_invalid_tool_name", test_model_tools_gemma4_rejects_invalid_tool_name(fixture));
         runner.run_test("grammar_matcher_reset", test_grammar_matcher_reset_restores_initial_state(fixture));
         runner.run_test("grammar_matcher_rollback", test_grammar_matcher_rollback_restores_previous_state(fixture));
         runner.run_test("grammar_matcher_completion_state", test_grammar_matcher_completion_state(fixture));

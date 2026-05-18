@@ -1,11 +1,19 @@
 #include "../cactus_engine.h"
+#include "ebnf_syntax.h"
+#include "gemma_tools.h"
 #include "utils.h"
 #include "engine.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cstddef>
 #include <cstring>
+#include <stdexcept>
+#include <unordered_set>
 #include <utility>
 #include <vector>
+
+#include <picojson/picojson.h>
 
 using namespace cactus::ffi;
 using namespace cactus::engine;
@@ -99,6 +107,64 @@ static cactus_grammar_t make_grammar(const char* operation, Factory&& factory) {
     } catch (const std::exception& e) {
         return handle_exception(operation, e.what());
     }
+}
+
+static Grammar gemma_tool_grammar(const std::vector<ToolFunction>& tools) {
+    std::vector<std::pair<std::string, EbnfSyntax>> tool_rule_sets;
+    tool_rule_sets.reserve(tools.size());
+
+    for (const auto& tool : tools) {
+        if (tool.name.empty()) throw std::runtime_error("Tool name is required");
+
+        auto schema_it = tool.parameters.find("schema");
+        if (schema_it == tool.parameters.end() || schema_it->second.empty()) {
+            throw std::runtime_error("Tool '" + tool.name + "' is missing a parameters schema");
+        }
+
+        picojson::value schema_value;
+        const std::string parse_error = picojson::parse(schema_value, schema_it->second);
+        if (!parse_error.empty()) {
+            throw std::runtime_error("Tool '" + tool.name + "' schema parse failed: " + parse_error);
+        }
+
+        std::unordered_set<std::string> property_names;
+        gemma::collect_schema_property_names(schema_value, property_names);
+        std::unordered_set<std::string> string_literals;
+        gemma::collect_schema_string_literals(schema_value, string_literals);
+
+        auto schema_grammar = Grammar::json_schema(schema_it->second, false, 0);
+        EbnfSyntax tool_syntax = gemma::xgrammar_json_schema_ebnf_to_gemma4_ebnf(
+            schema_grammar.ebnf(),
+            property_names,
+            string_literals
+        );
+
+        const std::string args_rule_name = tool.name + "_args";
+        tool_syntax.rename_rules({{"root", args_rule_name}});
+        tool_rule_sets.push_back({tool.name, std::move(tool_syntax)});
+    }
+
+    EbnfSyntax merged;
+    merged.merge_with(tool_rule_sets);
+
+    std::vector<std::string> call_rule_names;
+    call_rule_names.reserve(tools.size());
+    for (const auto& tool : tools) {
+        const std::string call_rule_name = tool.name + "_call";
+        const std::string args_rule_name = tool.name + "_args";
+        merged.rules[call_rule_name] = "(\"" + EbnfSyntax::escape_string_literal(tool.name) + "\" " + args_rule_name + ")";
+        call_rule_names.push_back(call_rule_name);
+    }
+
+    std::string call_body_expr;
+    for (size_t i = 0; i < call_rule_names.size(); ++i) {
+        if (i != 0) call_body_expr += " | ";
+        call_body_expr += call_rule_names[i];
+    }
+    merged.rules["call_body"] = call_body_expr;
+    merged.rules["root"] = "\"<|tool_call>call:\" call_body \"<tool_call|>\"";
+
+    return Grammar::ebnf(merged.ebnf());
 }
 
 } // anonymous namespace
@@ -257,6 +323,21 @@ cactus_grammar_t cactus_grammar_init_structural_tag(
             structural_tag_json,
             handle ? handle->vocabulary.get() : nullptr
         );
+    });
+}
+
+cactus_grammar_t cactus_grammar_init_model_tools(const char* model_type, const char* tools_json) {
+    if (!model_type) return handle_exception(__func__, "model_type is null");
+    if (!tools_json) return handle_exception(__func__, "tools_json is null");
+
+    return make_grammar(__func__, [&] {
+        const std::string type(model_type);
+        const auto tools = parse_tools_json(tools_json);
+        if (tools.empty()) return Grammar();
+        if (type == "gemma4" || type == "gemma-4") {
+            return gemma_tool_grammar(tools);
+        }
+        return Grammar();
     });
 }
 
