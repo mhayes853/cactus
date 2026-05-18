@@ -21,6 +21,28 @@ using GrammarVocabularyHandle = std::unique_ptr<void, decltype(&cactus_grammar_v
 using GrammarEngineHandle = std::unique_ptr<void, decltype(&cactus_grammar_engine_destroy)>;
 using GrammarMatcherHandle = std::unique_ptr<void, decltype(&cactus_grammar_matcher_destroy)>;
 
+static GrammarHandle grammar_handle(cactus_grammar_t grammar) {
+    if (!grammar) {
+        throw std::runtime_error(cactus_get_last_error());
+    }
+    return GrammarHandle(grammar, &cactus_grammar_destroy);
+}
+
+static GrammarVocabularyHandle vocab_handle(cactus_grammar_vocabulary_t vocabulary) {
+    return GrammarVocabularyHandle(vocabulary, &cactus_grammar_vocabulary_destroy);
+}
+
+static GrammarEngineHandle engine_handle(cactus_grammar_engine_t engine) {
+    return GrammarEngineHandle(engine, &cactus_grammar_engine_destroy);
+}
+
+static GrammarMatcherHandle matcher_handle(cactus_grammar_matcher_t matcher) {
+    if (!matcher) {
+        throw std::runtime_error(cactus_get_last_error());
+    }
+    return GrammarMatcherHandle(matcher, &cactus_grammar_matcher_destroy);
+}
+
 static const std::string require_model_path() {
     const char* model_path = std::getenv("CACTUS_TEST_MODEL");
     if (!model_path) {
@@ -37,65 +59,11 @@ static std::unique_ptr<cactus::engine::Tokenizer> create_test_tokenizer() {
     return tokenizer;
 }
 
-static cactus_grammar_t make_grammar_handle(cactus_grammar_t grammar) {
-    if (!grammar) {
-        throw std::runtime_error(cactus_get_last_error());
-    }
-    return grammar;
-}
-
-static cactus_grammar_t make_grammar_ebnf(const std::string& ebnf, const char* start_symbol = "root") {
-    return make_grammar_handle(cactus_grammar_init_ebnf(ebnf.c_str(), start_symbol));
-}
-
-static cactus_grammar_t make_grammar_empty() {
-    return make_grammar_handle(cactus_grammar_init_empty());
-}
-
-static cactus_grammar_t make_grammar_epsilon() {
-    return make_grammar_handle(cactus_grammar_init_epsilon());
-}
-
-static cactus_grammar_t make_grammar_universal() {
-    return make_grammar_handle(cactus_grammar_init_universal());
-}
-
-static cactus_grammar_t make_grammar_json_schema(const std::string& json_schema) {
-    return make_grammar_handle(
-        cactus_grammar_init_json_schema(
-            json_schema.c_str(),
-            cactus_grammar_json_schema_default_options()
-        )
+static cactus_grammar_t json_schema_grammar(const std::string& json_schema) {
+    return cactus_grammar_init_json_schema(
+        json_schema.c_str(),
+        cactus_grammar_json_schema_default_options()
     );
-}
-
-static cactus_grammar_t make_grammar_regex(const std::string& regex) {
-    return make_grammar_handle(cactus_grammar_init_regex(regex.c_str()));
-}
-
-static cactus_grammar_t make_grammar_structural_tag(
-    const std::string& structural_tag_json,
-    cactus_grammar_vocabulary_t vocabulary = nullptr
-) {
-    return make_grammar_handle(
-        cactus_grammar_init_structural_tag(structural_tag_json.c_str(), vocabulary)
-    );
-}
-
-static cactus_grammar_t make_grammar_optional(cactus_grammar_t grammar) {
-    return make_grammar_handle(cactus_grammar_optional(grammar));
-}
-
-static cactus_grammar_t make_grammar_star(cactus_grammar_t grammar) {
-    return make_grammar_handle(cactus_grammar_star(grammar));
-}
-
-static cactus_grammar_t make_grammar_repeat(cactus_grammar_t grammar, size_t count) {
-    return make_grammar_handle(cactus_grammar_repeat(grammar, count));
-}
-
-static cactus_grammar_t make_grammar_repeat_range(cactus_grammar_t grammar, size_t min_count, size_t max_count) {
-    return make_grammar_handle(cactus_grammar_repeat_range(grammar, min_count, max_count));
 }
 
 static cactus_grammar_matcher_t make_matcher(cactus_grammar_t grammar, cactus_grammar_engine_t engine) {
@@ -116,8 +84,8 @@ struct GrammarFixture {
 
     GrammarFixture()
         : tokenizer(create_test_tokenizer()),
-          vocab(cactus_grammar_vocabulary_init(require_model_path().c_str()), &cactus_grammar_vocabulary_destroy),
-          engine(cactus_grammar_engine_init(vocab.get()), &cactus_grammar_engine_destroy) {
+          vocab(vocab_handle(cactus_grammar_vocabulary_init(require_model_path().c_str()))),
+          engine(engine_handle(cactus_grammar_engine_init(vocab.get()))) {
         if (!engine) {
             throw std::runtime_error(cactus_get_last_error());
         }
@@ -150,18 +118,18 @@ static bool accept_text(cactus_grammar_matcher_t matcher, const GrammarFixture& 
 }
 
 static bool accepts_complete_text(cactus_grammar_t grammar, const GrammarFixture& fixture, const std::string& text) {
-    auto matcher = GrammarMatcherHandle(make_matcher(grammar, fixture.engine.get()), &cactus_grammar_matcher_destroy);
+    auto matcher = matcher_handle(make_matcher(grammar, fixture.engine.get()));
     if (!accept_text(matcher.get(), fixture, text)) return false;
     return cactus_grammar_matcher_accept(matcher.get(), fixture.tokenizer->get_eos_token());
 }
 
 static bool rejects_text(cactus_grammar_t grammar, const GrammarFixture& fixture, const std::string& text) {
-    auto matcher = GrammarMatcherHandle(make_matcher(grammar, fixture.engine.get()), &cactus_grammar_matcher_destroy);
+    auto matcher = matcher_handle(make_matcher(grammar, fixture.engine.get()));
     return !accept_text(matcher.get(), fixture, text);
 }
 
 static bool rejects_eos_after_text(cactus_grammar_t grammar, const GrammarFixture& fixture, const std::string& text) {
-    auto matcher = GrammarMatcherHandle(make_matcher(grammar, fixture.engine.get()), &cactus_grammar_matcher_destroy);
+    auto matcher = matcher_handle(make_matcher(grammar, fixture.engine.get()));
     if (!accept_text(matcher.get(), fixture, text)) return true;
     return !cactus_grammar_matcher_accept(matcher.get(), fixture.tokenizer->get_eos_token());
 }
@@ -236,9 +204,9 @@ static bool test_vocab_accessors(const GrammarFixture& fixture) {
 }
 
 static bool test_empty_grammar_properties() {
-    auto empty = GrammarHandle(make_grammar_empty(), &cactus_grammar_destroy);
-    auto empty2 = GrammarHandle(make_grammar_empty(), &cactus_grammar_destroy);
-    auto simple = GrammarHandle(make_grammar_ebnf("root ::= \"hello\""), &cactus_grammar_destroy);
+    auto empty = grammar_handle(cactus_grammar_init_empty());
+    auto empty2 = grammar_handle(cactus_grammar_init_empty());
+    auto simple = grammar_handle(cactus_grammar_init_ebnf("root ::= \"hello\"", "root"));
 
     if (!cactus_grammar_is_empty(empty.get())
         || !cactus_grammar_is_empty(empty2.get())
@@ -247,12 +215,12 @@ static bool test_empty_grammar_properties() {
     }
 
     cactus_grammar_t empty_union_inputs[] = {empty.get(), empty2.get()};
-    auto empty_union = GrammarHandle(make_grammar_handle(cactus_grammar_union(empty_union_inputs, 2)), &cactus_grammar_destroy);
-    auto empty_concat = GrammarHandle(make_grammar_handle(cactus_grammar_concatenate(empty_union_inputs, 2)), &cactus_grammar_destroy);
+    auto empty_union = grammar_handle(cactus_grammar_union(empty_union_inputs, 2));
+    auto empty_concat = grammar_handle(cactus_grammar_concatenate(empty_union_inputs, 2));
 
     cactus_grammar_t union_with_simple_inputs[] = {empty.get(), simple.get()};
-    auto union_with_simple = GrammarHandle(make_grammar_handle(cactus_grammar_union(union_with_simple_inputs, 2)), &cactus_grammar_destroy);
-    auto concat_with_simple = GrammarHandle(make_grammar_handle(cactus_grammar_concatenate(union_with_simple_inputs, 2)), &cactus_grammar_destroy);
+    auto union_with_simple = grammar_handle(cactus_grammar_union(union_with_simple_inputs, 2));
+    auto concat_with_simple = grammar_handle(cactus_grammar_concatenate(union_with_simple_inputs, 2));
 
     return cactus_grammar_is_empty(empty_union.get())
         && cactus_grammar_is_empty(empty_concat.get())
@@ -261,14 +229,14 @@ static bool test_empty_grammar_properties() {
 }
 
 static bool test_epsilon_grammar_accepts_only_empty_string(const GrammarFixture& fixture) {
-    auto epsilon = GrammarHandle(make_grammar_epsilon(), &cactus_grammar_destroy);
+    auto epsilon = grammar_handle(cactus_grammar_init_epsilon());
     return accepts_complete_text(epsilon.get(), fixture, "")
         && rejects_text(epsilon.get(), fixture, "hello");
 }
 
 static bool test_optional_grammar_accepts_zero_or_one_occurrence(const GrammarFixture& fixture) {
-    auto hello = GrammarHandle(make_grammar_ebnf("root ::= \"hello\""), &cactus_grammar_destroy);
-    auto optional = GrammarHandle(make_grammar_optional(hello.get()), &cactus_grammar_destroy);
+    auto hello = grammar_handle(cactus_grammar_init_ebnf("root ::= \"hello\"", "root"));
+    auto optional = grammar_handle(cactus_grammar_optional(hello.get()));
 
     return accepts_complete_text(optional.get(), fixture, "")
         && accepts_complete_text(optional.get(), fixture, "hello")
@@ -277,14 +245,14 @@ static bool test_optional_grammar_accepts_zero_or_one_occurrence(const GrammarFi
 }
 
 static bool test_optional_empty_grammar_stays_empty() {
-    auto empty = GrammarHandle(make_grammar_empty(), &cactus_grammar_destroy);
-    auto optional = GrammarHandle(make_grammar_optional(empty.get()), &cactus_grammar_destroy);
+    auto empty = grammar_handle(cactus_grammar_init_empty());
+    auto optional = grammar_handle(cactus_grammar_optional(empty.get()));
     return cactus_grammar_is_empty(optional.get());
 }
 
 static bool test_star_grammar_accepts_zero_or_more_occurrences(const GrammarFixture& fixture) {
-    auto ha = GrammarHandle(make_grammar_ebnf("root ::= \"ha\""), &cactus_grammar_destroy);
-    auto star = GrammarHandle(make_grammar_star(ha.get()), &cactus_grammar_destroy);
+    auto ha = grammar_handle(cactus_grammar_init_ebnf("root ::= \"ha\"", "root"));
+    auto star = grammar_handle(cactus_grammar_star(ha.get()));
 
     return accepts_complete_text(star.get(), fixture, "")
         && accepts_complete_text(star.get(), fixture, "ha")
@@ -293,14 +261,14 @@ static bool test_star_grammar_accepts_zero_or_more_occurrences(const GrammarFixt
 }
 
 static bool test_star_empty_grammar_stays_empty() {
-    auto empty = GrammarHandle(make_grammar_empty(), &cactus_grammar_destroy);
-    auto star = GrammarHandle(make_grammar_star(empty.get()), &cactus_grammar_destroy);
+    auto empty = grammar_handle(cactus_grammar_init_empty());
+    auto star = grammar_handle(cactus_grammar_star(empty.get()));
     return cactus_grammar_is_empty(star.get());
 }
 
 static bool test_repeat_exact_language(const GrammarFixture& fixture) {
-    auto ha = GrammarHandle(make_grammar_ebnf("root ::= \"ha\""), &cactus_grammar_destroy);
-    auto repeated = GrammarHandle(make_grammar_repeat(ha.get(), 3), &cactus_grammar_destroy);
+    auto ha = grammar_handle(cactus_grammar_init_ebnf("root ::= \"ha\"", "root"));
+    auto repeated = grammar_handle(cactus_grammar_repeat(ha.get(), 3));
 
     return accepts_complete_text(repeated.get(), fixture, "hahaha")
         && rejects_eos_after_text(repeated.get(), fixture, "")
@@ -310,8 +278,8 @@ static bool test_repeat_exact_language(const GrammarFixture& fixture) {
 }
 
 static bool test_repeat_range_language(const GrammarFixture& fixture) {
-    auto ha = GrammarHandle(make_grammar_ebnf("root ::= \"ha\""), &cactus_grammar_destroy);
-    auto repeated = GrammarHandle(make_grammar_repeat_range(ha.get(), 2, 4), &cactus_grammar_destroy);
+    auto ha = grammar_handle(cactus_grammar_init_ebnf("root ::= \"ha\"", "root"));
+    auto repeated = grammar_handle(cactus_grammar_repeat_range(ha.get(), 2, 4));
 
     return accepts_complete_text(repeated.get(), fixture, "haha")
         && accepts_complete_text(repeated.get(), fixture, "hahaha")
@@ -322,8 +290,8 @@ static bool test_repeat_range_language(const GrammarFixture& fixture) {
 }
 
 static bool test_repeat_range_unbounded_language(const GrammarFixture& fixture) {
-    auto ha = GrammarHandle(make_grammar_ebnf("root ::= \"ha\""), &cactus_grammar_destroy);
-    auto repeated = GrammarHandle(make_grammar_repeat_range(ha.get(), 2, -1), &cactus_grammar_destroy);
+    auto ha = grammar_handle(cactus_grammar_init_ebnf("root ::= \"ha\"", "root"));
+    auto repeated = grammar_handle(cactus_grammar_repeat_range(ha.get(), 2, -1));
 
     return accepts_complete_text(repeated.get(), fixture, "haha")
         && accepts_complete_text(repeated.get(), fixture, "hahaha")
@@ -333,23 +301,23 @@ static bool test_repeat_range_unbounded_language(const GrammarFixture& fixture) 
 }
 
 static bool test_repeat_empty_grammar_stays_empty() {
-    auto empty = GrammarHandle(make_grammar_empty(), &cactus_grammar_destroy);
-    auto exact = GrammarHandle(make_grammar_repeat(empty.get(), 3), &cactus_grammar_destroy);
-    auto range = GrammarHandle(make_grammar_repeat_range(empty.get(), 1, 3), &cactus_grammar_destroy);
+    auto empty = grammar_handle(cactus_grammar_init_empty());
+    auto exact = grammar_handle(cactus_grammar_repeat(empty.get(), 3));
+    auto range = grammar_handle(cactus_grammar_repeat_range(empty.get(), 1, 3));
     return cactus_grammar_is_empty(exact.get()) && cactus_grammar_is_empty(range.get());
 }
 
 static bool test_ebnf_string_export_matches_parenthesized_input_ebnf() {
     const std::string source = "root ::= ((\"hello\") | (\"hi\"))\n";
-    auto grammar = GrammarHandle(make_grammar_ebnf(source), &cactus_grammar_destroy);
+    auto grammar = grammar_handle(cactus_grammar_init_ebnf(source.c_str(), "root"));
     return grammar_ebnf(grammar.get()) == source;
 }
 
 static bool test_concat_accepts_expected_language(const GrammarFixture& fixture) {
-    auto left = GrammarHandle(make_grammar_ebnf("root ::= \"hello\""), &cactus_grammar_destroy);
-    auto right = GrammarHandle(make_grammar_ebnf("root ::= \" world\""), &cactus_grammar_destroy);
+    auto left = grammar_handle(cactus_grammar_init_ebnf("root ::= \"hello\"", "root"));
+    auto right = grammar_handle(cactus_grammar_init_ebnf("root ::= \" world\"", "root"));
     cactus_grammar_t handles[] = {left.get(), right.get()};
-    auto combined = GrammarHandle(make_grammar_handle(cactus_grammar_concatenate(handles, 2)), &cactus_grammar_destroy);
+    auto combined = grammar_handle(cactus_grammar_concatenate(handles, 2));
 
     return accepts_complete_text(combined.get(), fixture, "hello world")
         && rejects_text(combined.get(), fixture, "world hello")
@@ -357,10 +325,10 @@ static bool test_concat_accepts_expected_language(const GrammarFixture& fixture)
 }
 
 static bool test_union_accepts_expected_language(const GrammarFixture& fixture) {
-    auto left = GrammarHandle(make_grammar_ebnf("root ::= \"hello\""), &cactus_grammar_destroy);
-    auto right = GrammarHandle(make_grammar_ebnf("root ::= \"goodbye\""), &cactus_grammar_destroy);
+    auto left = grammar_handle(cactus_grammar_init_ebnf("root ::= \"hello\"", "root"));
+    auto right = grammar_handle(cactus_grammar_init_ebnf("root ::= \"goodbye\"", "root"));
     cactus_grammar_t handles[] = {left.get(), right.get()};
-    auto combined = GrammarHandle(make_grammar_handle(cactus_grammar_union(handles, 2)), &cactus_grammar_destroy);
+    auto combined = grammar_handle(cactus_grammar_union(handles, 2));
 
     return accepts_complete_text(combined.get(), fixture, "hello")
         && accepts_complete_text(combined.get(), fixture, "goodbye")
@@ -368,11 +336,11 @@ static bool test_union_accepts_expected_language(const GrammarFixture& fixture) 
 }
 
 static bool test_three_way_concat(const GrammarFixture& fixture) {
-    auto alpha = GrammarHandle(make_grammar_ebnf("root ::= \"alpha\""), &cactus_grammar_destroy);
-    auto dash = GrammarHandle(make_grammar_ebnf("root ::= \"-\""), &cactus_grammar_destroy);
-    auto beta = GrammarHandle(make_grammar_ebnf("root ::= \"beta\""), &cactus_grammar_destroy);
+    auto alpha = grammar_handle(cactus_grammar_init_ebnf("root ::= \"alpha\"", "root"));
+    auto dash = grammar_handle(cactus_grammar_init_ebnf("root ::= \"-\"", "root"));
+    auto beta = grammar_handle(cactus_grammar_init_ebnf("root ::= \"beta\"", "root"));
     cactus_grammar_t handles[] = {alpha.get(), dash.get(), beta.get()};
-    auto combined = GrammarHandle(make_grammar_handle(cactus_grammar_concatenate(handles, 3)), &cactus_grammar_destroy);
+    auto combined = grammar_handle(cactus_grammar_concatenate(handles, 3));
 
     return accepts_complete_text(combined.get(), fixture, "alpha-beta")
         && rejects_text(combined.get(), fixture, "alphabeta")
@@ -380,11 +348,11 @@ static bool test_three_way_concat(const GrammarFixture& fixture) {
 }
 
 static bool test_three_way_union(const GrammarFixture& fixture) {
-    auto red = GrammarHandle(make_grammar_ebnf("root ::= \"red\""), &cactus_grammar_destroy);
-    auto green = GrammarHandle(make_grammar_ebnf("root ::= \"green\""), &cactus_grammar_destroy);
-    auto blue = GrammarHandle(make_grammar_ebnf("root ::= \"blue\""), &cactus_grammar_destroy);
+    auto red = grammar_handle(cactus_grammar_init_ebnf("root ::= \"red\"", "root"));
+    auto green = grammar_handle(cactus_grammar_init_ebnf("root ::= \"green\"", "root"));
+    auto blue = grammar_handle(cactus_grammar_init_ebnf("root ::= \"blue\"", "root"));
     cactus_grammar_t handles[] = {red.get(), green.get(), blue.get()};
-    auto combined = GrammarHandle(make_grammar_handle(cactus_grammar_union(handles, 3)), &cactus_grammar_destroy);
+    auto combined = grammar_handle(cactus_grammar_union(handles, 3));
 
     return accepts_complete_text(combined.get(), fixture, "red")
         && accepts_complete_text(combined.get(), fixture, "green")
@@ -393,7 +361,7 @@ static bool test_three_way_union(const GrammarFixture& fixture) {
 }
 
 static bool test_unordered_choice(const GrammarFixture& fixture) {
-    auto combined = GrammarHandle(make_grammar_ebnf("root ::= \"a\" | \"ab\""), &cactus_grammar_destroy);
+    auto combined = grammar_handle(cactus_grammar_init_ebnf("root ::= \"a\" | \"ab\"", "root"));
 
     return accepts_complete_text(combined.get(), fixture, "a")
         && accepts_complete_text(combined.get(), fixture, "ab")
@@ -401,21 +369,23 @@ static bool test_unordered_choice(const GrammarFixture& fixture) {
 }
 
 static bool test_regex_and_json_schema_construction() {
-    auto regex = GrammarHandle(make_grammar_regex("(cat|dog)"), &cactus_grammar_destroy);
-    auto json_schema = GrammarHandle(make_grammar_json_schema(R"({"type":"object","properties":{"name":{"type":"string"}},"required":["name"]})"), &cactus_grammar_destroy);
+    auto regex = grammar_handle(cactus_grammar_init_regex("(cat|dog)"));
+    auto json_schema = grammar_handle(json_schema_grammar(R"({"type":"object","properties":{"name":{"type":"string"}},"required":["name"]})"));
     return !cactus_grammar_is_empty(regex.get()) && !cactus_grammar_is_empty(json_schema.get());
 }
 
 static bool test_universal_grammar_accepts_anything(const GrammarFixture& fixture) {
-    auto grammar = GrammarHandle(make_grammar_universal(), &cactus_grammar_destroy);
+    auto grammar = grammar_handle(cactus_grammar_init_universal());
     return accepts_complete_text(grammar.get(), fixture, "")
         && accepts_complete_text(grammar.get(), fixture, "blob says hello from cactus")
         && accepts_complete_text(grammar.get(), fixture, "line one\nline two\nline three");
 }
 
 static bool test_structural_tag_accepts_and_rejects_expected_text(const GrammarFixture& fixture) {
-    auto grammar = GrammarHandle(make_grammar_structural_tag(tool_call_structural_tag_json(), fixture.vocab.get()), &cactus_grammar_destroy);
-    auto matcher = GrammarMatcherHandle(make_matcher(grammar.get(), fixture.engine.get()), &cactus_grammar_matcher_destroy);
+    auto grammar = grammar_handle(
+        cactus_grammar_init_structural_tag(tool_call_structural_tag_json().c_str(), fixture.vocab.get())
+    );
+    auto matcher = matcher_handle(make_matcher(grammar.get(), fixture.engine.get()));
     std::vector<int32_t> bitmask(bitmask_size(fixture.vocab_size));
 
     return !cactus_grammar_is_empty(grammar.get())
@@ -424,7 +394,7 @@ static bool test_structural_tag_accepts_and_rejects_expected_text(const GrammarF
 }
 
 static bool test_regex_accepts_expected_text(const GrammarFixture& fixture) {
-    auto regex = GrammarHandle(make_grammar_regex("(cat|dog)"), &cactus_grammar_destroy);
+    auto regex = grammar_handle(cactus_grammar_init_regex("(cat|dog)"));
 
     return accepts_complete_text(regex.get(), fixture, "cat")
         && accepts_complete_text(regex.get(), fixture, "dog")
@@ -432,17 +402,17 @@ static bool test_regex_accepts_expected_text(const GrammarFixture& fixture) {
 }
 
 static bool test_json_schema_accepts_expected_text(const GrammarFixture& fixture) {
-    auto json_schema = GrammarHandle(make_grammar_json_schema(
+    auto json_schema = grammar_handle(json_schema_grammar(
         R"({"type":"object","properties":{"name":{"type":"string"}},"required":["name"]})"
-    ), &cactus_grammar_destroy);
+    ));
 
     return accepts_complete_text(json_schema.get(), fixture, R"({"name":"cactus"})")
         && rejects_text(json_schema.get(), fixture, R"({"age":1})");
 }
 
 static bool test_grammar_matcher_reset_restores_initial_state(const GrammarFixture& fixture) {
-    auto grammar = GrammarHandle(make_grammar_ebnf("root ::= \"hello\""), &cactus_grammar_destroy);
-    auto matcher = GrammarMatcherHandle(make_matcher(grammar.get(), fixture.engine.get()), &cactus_grammar_matcher_destroy);
+    auto grammar = grammar_handle(cactus_grammar_init_ebnf("root ::= \"hello\"", "root"));
+    auto matcher = matcher_handle(make_matcher(grammar.get(), fixture.engine.get()));
 
     if (!accept_text(matcher.get(), fixture, "hello")) return false;
     if (!cactus_grammar_matcher_accept(matcher.get(), fixture.tokenizer->get_eos_token())) return false;
@@ -454,8 +424,8 @@ static bool test_grammar_matcher_reset_restores_initial_state(const GrammarFixtu
 }
 
 static bool test_grammar_matcher_rollback_restores_previous_state(const GrammarFixture& fixture) {
-    auto grammar = GrammarHandle(make_grammar_ebnf("root ::= \"hello\" | \"hi\""), &cactus_grammar_destroy);
-    auto matcher = GrammarMatcherHandle(make_matcher(grammar.get(), fixture.engine.get()), &cactus_grammar_matcher_destroy);
+    auto grammar = grammar_handle(cactus_grammar_init_ebnf("root ::= \"hello\" | \"hi\"", "root"));
+    auto matcher = matcher_handle(make_matcher(grammar.get(), fixture.engine.get()));
     const std::vector<uint32_t> hello_tokens = fixture.tokenizer->encode("hello");
     const std::vector<uint32_t> hi_tokens = fixture.tokenizer->encode("hi");
     const uint32_t eos_token = fixture.tokenizer->get_eos_token();
@@ -474,8 +444,8 @@ static bool test_grammar_matcher_rollback_restores_previous_state(const GrammarF
 }
 
 static bool test_grammar_matcher_completion_state(const GrammarFixture& fixture) {
-    auto grammar = GrammarHandle(make_grammar_ebnf("root ::= \"hello\""), &cactus_grammar_destroy);
-    auto matcher = GrammarMatcherHandle(make_matcher(grammar.get(), fixture.engine.get()), &cactus_grammar_matcher_destroy);
+    auto grammar = grammar_handle(cactus_grammar_init_ebnf("root ::= \"hello\"", "root"));
+    auto matcher = matcher_handle(make_matcher(grammar.get(), fixture.engine.get()));
     const uint32_t eos_token = fixture.tokenizer->get_eos_token();
 
     if (cactus_grammar_matcher_is_completed(matcher.get()) || cactus_grammar_matcher_is_terminated(matcher.get())) return false;
@@ -486,8 +456,8 @@ static bool test_grammar_matcher_completion_state(const GrammarFixture& fixture)
 }
 
 static bool test_grammar_matcher_fork_preserves_accept_state(const GrammarFixture& fixture) {
-    auto grammar = GrammarHandle(make_grammar_ebnf("root ::= \"hello world\""), &cactus_grammar_destroy);
-    auto matcher = GrammarMatcherHandle(make_matcher(grammar.get(), fixture.engine.get()), &cactus_grammar_matcher_destroy);
+    auto grammar = grammar_handle(cactus_grammar_init_ebnf("root ::= \"hello world\"", "root"));
+    auto matcher = matcher_handle(make_matcher(grammar.get(), fixture.engine.get()));
     const std::vector<uint32_t> tokens = fixture.tokenizer->encode("hello world");
     const uint32_t eos_token = fixture.tokenizer->get_eos_token();
 
@@ -499,7 +469,7 @@ static bool test_grammar_matcher_fork_preserves_accept_state(const GrammarFixtur
         if (!cactus_grammar_matcher_accept(matcher.get(), tokens[i])) return false;
     }
 
-    auto forked = GrammarMatcherHandle(cactus_grammar_matcher_fork(matcher.get()), &cactus_grammar_matcher_destroy);
+    auto forked = matcher_handle(cactus_grammar_matcher_fork(matcher.get()));
     if (!forked) return false;
 
     for (size_t i = fork_point; i < tokens.size(); ++i) {
@@ -514,29 +484,29 @@ static bool test_grammar_matcher_fork_preserves_accept_state(const GrammarFixtur
 }
 
 static bool test_grammar_matcher_get_grammar_round_trips_source(const GrammarFixture& fixture) {
-    auto grammar = GrammarHandle(make_grammar_ebnf("root ::= \"hello world\""), &cactus_grammar_destroy);
-    auto matcher = GrammarMatcherHandle(make_matcher(grammar.get(), fixture.engine.get()), &cactus_grammar_matcher_destroy);
-    auto retrieved = GrammarHandle(cactus_grammar_matcher_get_grammar(matcher.get()), &cactus_grammar_destroy);
+    auto grammar = grammar_handle(cactus_grammar_init_ebnf("root ::= \"hello world\"", "root"));
+    auto matcher = matcher_handle(make_matcher(grammar.get(), fixture.engine.get()));
+    auto retrieved = grammar_handle(cactus_grammar_matcher_get_grammar(matcher.get()));
     if (!retrieved) return false;
 
     return grammar_ebnf(retrieved.get()) == grammar_ebnf(grammar.get());
 }
 
 static bool test_grammar_matcher_fork_preserves_source_grammar(const GrammarFixture& fixture) {
-    auto grammar = GrammarHandle(make_grammar_ebnf("root ::= \"hello world\""), &cactus_grammar_destroy);
-    auto matcher = GrammarMatcherHandle(make_matcher(grammar.get(), fixture.engine.get()), &cactus_grammar_matcher_destroy);
-    auto forked = GrammarMatcherHandle(cactus_grammar_matcher_fork(matcher.get()), &cactus_grammar_matcher_destroy);
+    auto grammar = grammar_handle(cactus_grammar_init_ebnf("root ::= \"hello world\"", "root"));
+    auto matcher = matcher_handle(make_matcher(grammar.get(), fixture.engine.get()));
+    auto forked = matcher_handle(cactus_grammar_matcher_fork(matcher.get()));
     if (!forked) return false;
 
-    auto retrieved = GrammarHandle(cactus_grammar_matcher_get_grammar(forked.get()), &cactus_grammar_destroy);
+    auto retrieved = grammar_handle(cactus_grammar_matcher_get_grammar(forked.get()));
     if (!retrieved) return false;
 
     return grammar_ebnf(retrieved.get()) == grammar_ebnf(grammar.get());
 }
 
 static bool test_grammar_matcher_next_bitmask_tracks_simple_grammar(const GrammarFixture& fixture) {
-    auto grammar = GrammarHandle(make_grammar_ebnf("root ::= \"hello\""), &cactus_grammar_destroy);
-    auto matcher = GrammarMatcherHandle(make_matcher(grammar.get(), fixture.engine.get()), &cactus_grammar_matcher_destroy);
+    auto grammar = grammar_handle(cactus_grammar_init_ebnf("root ::= \"hello\"", "root"));
+    auto matcher = matcher_handle(make_matcher(grammar.get(), fixture.engine.get()));
     const std::vector<uint32_t> hello_tokens = fixture.tokenizer->encode("hello");
     const uint32_t eos_token = fixture.tokenizer->get_eos_token();
 
@@ -559,8 +529,8 @@ static bool test_grammar_matcher_next_bitmask_tracks_simple_grammar(const Gramma
 }
 
 static bool test_grammar_matcher_next_bitmask_zeroes_overallocated_tail(const GrammarFixture& fixture) {
-    auto grammar = GrammarHandle(make_grammar_ebnf("root ::= \"hello\""), &cactus_grammar_destroy);
-    auto matcher = GrammarMatcherHandle(make_matcher(grammar.get(), fixture.engine.get()), &cactus_grammar_matcher_destroy);
+    auto grammar = grammar_handle(cactus_grammar_init_ebnf("root ::= \"hello\"", "root"));
+    auto matcher = matcher_handle(make_matcher(grammar.get(), fixture.engine.get()));
     std::vector<int32_t> bitmask(bitmask_size(fixture.vocab_size + 1), -1);
 
     if (cactus_grammar_matcher_next_bitmask(matcher.get(), bitmask.data(), fixture.vocab_size + 1) != 1) return false;
