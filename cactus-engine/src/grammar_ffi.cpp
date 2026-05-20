@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <picojson/picojson.h>
@@ -339,8 +340,10 @@ cactus_grammar_t cactus_grammar_init_model_tools(const char* model_type, const c
         const std::string type(model_type);
         const auto tools = parse_tools_json(tools_json);
         if (tools.empty()) return Grammar();
-        if (type == "gemma4" || type == "gemma-4" || type == "functiongemma") {
-            return gemma_tool_grammar(tools, type != "functiongemma");
+
+        const auto is_function_gemma = type.find("functiongemma") != std::string::npos;
+        if (gemma::is_gemma4_model_type(type) || is_function_gemma) {
+            return gemma_tool_grammar(tools, !is_function_gemma);
         }
         return Grammar();
     });

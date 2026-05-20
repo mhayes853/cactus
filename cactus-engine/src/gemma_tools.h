@@ -208,6 +208,10 @@ inline EbnfSyntax xgrammar_tools_ebnf_to_gemma_tools_ebnf(
     return parsed;
 }
 
+inline bool is_gemma4_model_type(const std::string& model_type) {
+    return model_type.find("gemma4") != std::string::npos || model_type.find("gemma-4") != std::string::npos;
+}
+
 inline void skip_whitespace(const std::string& json, size_t& pos) {
     while (pos < json.length() && std::isspace(json[pos])) pos++;
 }
