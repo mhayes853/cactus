@@ -103,7 +103,7 @@ struct EbnfSyntax {
     std::string ebnf() {
         std::string out;
         for (const auto& [name, expresion] : rules) {
-            out += name + " ::= " + expresion + "\n";
+            out += name + EBNF_LINE_SEPARATOR + expresion + "\n";
         }
         return out;
     }
