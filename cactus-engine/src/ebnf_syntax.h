@@ -7,7 +7,16 @@
 #include <vector>
 #include <sstream>
 
-const std::string EBNF_LINE_SEPARATOR = " ::= ";
+constexpr std::string EBNF_LINE_SEPARATOR = " ::= ";
+
+inline void replace_all(std::string& text, const std::string& needle, const std::string& replacement) {
+    if (needle.empty()) return;
+    size_t pos = 0;
+    while ((pos = text.find(needle, pos)) != std::string::npos) {
+        text.replace(pos, needle.size(), replacement);
+        pos += replacement.size();
+    }
+}
 
 struct EbnfSyntax {
     using RuleExpression = std::string;
@@ -91,6 +100,15 @@ struct EbnfSyntax {
             out += name + " ::= " + expresion + "\n";
         }
         return out;
+    }
+
+    void remove_json_whitespaces() {
+        for (auto& [_, rule_expression] : rules) {
+            replace_all(rule_expression, "\"\\n\"", "\"\"");
+            replace_all(rule_expression, "\",\\n\"", "\",\"");
+            replace_all(rule_expression, "\", \"", "\",\"");
+            replace_all(rule_expression, "\": \"", "\":\"");
+        }
     }
 
 private:

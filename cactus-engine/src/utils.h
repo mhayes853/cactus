@@ -486,6 +486,30 @@ inline std::string escape_json_string(const std::string& s) {
     return o.str();
 }
 
+inline std::string to_snake_case(std::string name) {
+    name = std::regex_replace(name, std::regex(R"([^a-zA-Z0-9_]+)"), "_");
+    name = std::regex_replace(name, std::regex(R"(([a-z0-9])([A-Z]))"), "$1_$2");
+    name = std::regex_replace(name, std::regex(R"(([A-Z]+)([A-Z][a-z]))"), "$1_$2");
+    name = std::regex_replace(name, std::regex(R"(_+)"), "_");
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+
+    size_t start = 0;
+    while (start < name.size() && name[start] == '_') ++start;
+    size_t end = name.size();
+    while (end > start && name[end - 1] == '_') --end;
+    return name.substr(start, end - start);
+}
+
+inline void replace_all(std::string& text, const std::string& needle, const std::string& replacement) {
+    if (needle.empty()) return;
+    size_t pos = 0;
+    while ((pos = text.find(needle, pos)) != std::string::npos) {
+        text.replace(pos, needle.size(), replacement);
+        pos += replacement.size();
+    }
+}
 
 inline std::string trim_string(const std::string& s) {
     size_t start = 0;

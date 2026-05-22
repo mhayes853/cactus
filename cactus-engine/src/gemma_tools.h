@@ -15,15 +15,6 @@
 
 namespace gemma {
 
-inline void replace_all(std::string& text, const std::string& needle, const std::string& replacement) {
-    if (needle.empty()) return;
-    size_t pos = 0;
-    while ((pos = text.find(needle, pos)) != std::string::npos) {
-        text.replace(pos, needle.size(), replacement);
-        pos += replacement.size();
-    }
-}
-
 inline std::string to_upper(const std::string& s) {
     std::string result = s;
     for (auto& c : result) c = std::toupper(c);
@@ -177,12 +168,9 @@ inline EbnfSyntax xgrammar_tools_ebnf_to_gemma_tools_ebnf(
 
     apply_gemma_basic_string_rule(parsed, escaped_quote, use_pipe_tags);
 
-    for (auto& [rule_name, rule_expr] : parsed.rules) {
-        replace_all(rule_expr, "\"\\n\"", "\"\"");
-        replace_all(rule_expr, "\",\\n\"", "\",\"");
-        replace_all(rule_expr, "\", \"", "\",\"");
-        replace_all(rule_expr, "\": \"", "\":\"");
+    parsed.remove_json_whitespaces();
 
+    for (auto& [rule_name, rule_expr] : parsed.rules) {
         for (const auto& property_name : property_names) {
             const std::string escaped_property_name = EbnfSyntax::escape_string_literal(property_name);
             replace_all(
