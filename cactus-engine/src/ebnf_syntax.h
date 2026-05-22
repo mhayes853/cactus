@@ -33,6 +33,12 @@ struct EbnfSyntax {
         return escaped;
     }
 
+    static std::string escape_multiline_literal(const std::string& text) {
+        std::string escaped = EbnfSyntax::escape_string_literal(text);
+        replace_all(escaped, "\n", "\\n");
+        return escaped;
+    };
+
     static EbnfSyntax from_string(const std::string& ebnf) {
         EbnfSyntax parsed;
 

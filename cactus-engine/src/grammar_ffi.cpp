@@ -110,20 +110,34 @@ static cactus_grammar_t make_grammar(const char* operation, Factory&& factory) {
     }
 }
 
+static const std::string& require_tool_schema(const ToolFunction& tool) {
+    if (tool.name.empty()) throw std::runtime_error("Tool name is required");
+
+    auto schema_it = tool.parameters.find("schema");
+    if (schema_it == tool.parameters.end() || schema_it->second.empty()) {
+        throw std::runtime_error("Tool '" + tool.name + "' is missing a parameters schema");
+    }
+
+    return schema_it->second;
+}
+
+static std::string require_normalized_tool_name(const ToolFunction& tool, const char* model_name) {
+    const std::string normalized_name = to_snake_case(tool.name);
+    if (normalized_name.empty()) {
+        throw std::runtime_error("Tool '" + tool.name + "' normalized to an empty " + std::string(model_name) + " name");
+    }
+    return normalized_name;
+}
+
 static Grammar gemma_tool_grammar(const std::vector<ToolFunction>& tools, bool use_pipe_tags) {
     std::vector<std::pair<std::string, EbnfSyntax>> tool_rule_sets;
     tool_rule_sets.reserve(tools.size());
 
     for (const auto& tool : tools) {
-        if (tool.name.empty()) throw std::runtime_error("Tool name is required");
-
-        auto schema_it = tool.parameters.find("schema");
-        if (schema_it == tool.parameters.end() || schema_it->second.empty()) {
-            throw std::runtime_error("Tool '" + tool.name + "' is missing a parameters schema");
-        }
+        const std::string& schema = require_tool_schema(tool);
 
         picojson::value schema_value;
-        const std::string parse_error = picojson::parse(schema_value, schema_it->second);
+        const std::string parse_error = picojson::parse(schema_value, schema);
         if (!parse_error.empty()) {
             throw std::runtime_error("Tool '" + tool.name + "' schema parse failed: " + parse_error);
         }
@@ -134,7 +148,7 @@ static Grammar gemma_tool_grammar(const std::vector<ToolFunction>& tools, bool u
         gemma::collect_schema_string_literals(schema_value, string_literals);
 
         EbnfSyntax tool_syntax = gemma::xgrammar_tools_ebnf_to_gemma_tools_ebnf(
-            Grammar::json_schema(schema_it->second, false, 0).ebnf(),
+            Grammar::json_schema(schema, false, 0).ebnf(),
             property_names,
             string_literals,
             use_pipe_tags
@@ -178,19 +192,10 @@ static Grammar needle_tool_grammar(const std::vector<ToolFunction>& tools) {
     tool_rule_sets.reserve(tools.size());
 
     for (const auto& tool : tools) {
-        if (tool.name.empty()) throw std::runtime_error("Tool name is required");
+        const std::string& schema = require_tool_schema(tool);
+        const std::string normalized_name = require_normalized_tool_name(tool, "Needle");
 
-        auto schema_it = tool.parameters.find("schema");
-        if (schema_it == tool.parameters.end() || schema_it->second.empty()) {
-            throw std::runtime_error("Tool '" + tool.name + "' is missing a parameters schema");
-        }
-
-        const std::string normalized_name = to_snake_case(tool.name);
-        if (normalized_name.empty()) {
-            throw std::runtime_error("Tool '" + tool.name + "' normalized to an empty Needle name");
-        }
-
-        EbnfSyntax tool_syntax = EbnfSyntax::from_string(Grammar::json_schema(schema_it->second, false, 0).ebnf());
+        EbnfSyntax tool_syntax = EbnfSyntax::from_string(Grammar::json_schema(schema, false, 0).ebnf());
         tool_syntax.remove_json_whitespaces();
         tool_syntax.rename_rules({{"root", normalized_name + "_args"}});
         tool_rule_sets.push_back({normalized_name, std::move(tool_syntax)});
@@ -221,32 +226,16 @@ static Grammar needle_tool_grammar(const std::vector<ToolFunction>& tools) {
 }
 
 static Grammar qwen_tool_grammar(const std::vector<ToolFunction>& tools) {
-    auto escape_multiline_literal = [](const std::string& text) {
-        std::string escaped = EbnfSyntax::escape_string_literal(text);
-        replace_all(escaped, "\n", "\\n");
-        return escaped;
-    };
-
     std::vector<std::pair<std::string, EbnfSyntax>> tool_rule_sets;
     tool_rule_sets.reserve(tools.size());
 
     for (const auto& tool : tools) {
-        if (tool.name.empty()) throw std::runtime_error("Tool name is required");
+        const std::string& schema = require_tool_schema(tool);
 
-        auto schema_it = tool.parameters.find("schema");
-        if (schema_it == tool.parameters.end() || schema_it->second.empty()) {
-            throw std::runtime_error("Tool '" + tool.name + "' is missing a parameters schema");
-        }
-
-        const std::string normalized_name = to_snake_case(tool.name);
-        if (normalized_name.empty()) {
-            throw std::runtime_error("Tool '" + tool.name + "' normalized to an empty Qwen name");
-        }
-
-        EbnfSyntax tool_syntax = EbnfSyntax::from_string(Grammar::json_schema(schema_it->second, false, 0).ebnf());
+        EbnfSyntax tool_syntax = EbnfSyntax::from_string(Grammar::json_schema(schema, false, 0).ebnf());
         tool_syntax.remove_json_whitespaces();
-        tool_syntax.rename_rules({{"root", normalized_name + "_args"}});
-        tool_rule_sets.push_back({normalized_name, std::move(tool_syntax)});
+        tool_syntax.rename_rules({{"root", tool.name + "_args"}});
+        tool_rule_sets.push_back({tool.name, std::move(tool_syntax)});
     }
 
     EbnfSyntax merged;
@@ -257,10 +246,10 @@ static Grammar qwen_tool_grammar(const std::vector<ToolFunction>& tools) {
     for (const auto& [normalized_name, _] : tool_rule_sets) {
         const std::string call_rule_name = normalized_name + "_call";
         const std::string args_rule_name = normalized_name + "_args";
-        const std::string call_prefix = escape_multiline_literal(
+        const std::string call_prefix = EbnfSyntax::escape_multiline_literal(
             "<tool_call>\n{\"name\":\"" + normalized_name + "\",\"arguments\":"
         );
-        const std::string call_suffix = escape_multiline_literal("}\n</tool_call>");
+        const std::string call_suffix = EbnfSyntax::escape_multiline_literal("}\n</tool_call>");
         merged.rules[call_rule_name] = "(\"" + call_prefix + "\" " + args_rule_name + " \"" + call_suffix + "\")";
         call_rule_names.push_back(call_rule_name);
     }
@@ -460,7 +449,7 @@ cactus_grammar_t cactus_grammar_init_model_tools(const char* model_type, const c
             return gemma_tool_grammar(tools, !is_function_gemma);
         } else if (type.find("qwen") != std::string::npos) {
             return qwen_tool_grammar(tools);
-        } else if (type == "needle") {
+        } else if (type.find("needle") != std::string::npos) {
             return needle_tool_grammar(tools);
         }
         return Grammar();
