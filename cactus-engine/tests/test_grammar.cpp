@@ -574,6 +574,75 @@ static bool test_model_tools_functiongemma_accepts_valid_calls(const GrammarFixt
         && accepts_complete_text(grammar.get(), fixture, multiple_tool_calls);
 }
 
+static bool test_model_tools_qwen_accepts_valid_calls(const GrammarFixture& fixture) {
+    auto grammar = grammar_handle(cactus_grammar_init_model_tools("qwen3p5", test_model_tools_json().c_str()));
+
+    const auto complex_tool_call =
+        R"(<tool_call>
+{)"
+        R"("name":"complex_tool",)"
+        R"("arguments":{)"
+        R"("title":"alpha",)"
+        R"("count":3.5,)"
+        R"("enabled":true,)"
+        R"("mode":"execute",)"
+        R"("ticket_id":"ABC-12",)"
+        R"("priority":4,)"
+        R"("routing":{"region":"us-west"},)"
+        R"("labels":{"ALPHA":1,"BETA_LABEL":2},)"
+        R"("window":3,)"
+        R"("tuple_args":["alpha",2,true],)"
+        R"("optional_note":null,)"
+        R"("tags":["a","b"],)"
+        R"("config":{"threshold":0.75,"flags":[true,false]})"
+        R"(}}
+</tool_call>)";
+    const auto get_weather_call =
+        R"(<tool_call>
+{)"
+        R"("name":"get_weather",)"
+        R"("arguments":{"location":"Seoul"})"
+        R"(}
+</tool_call>)";
+
+    return accepts_complete_text(grammar.get(), fixture, complex_tool_call)
+        && accepts_complete_text(grammar.get(), fixture, get_weather_call);
+}
+
+static bool test_model_tools_qwen_accepts_simple_call(const GrammarFixture& fixture) {
+    auto grammar = grammar_handle(cactus_grammar_init_model_tools("qwen3p5", test_model_tools_json().c_str()));
+
+    const auto get_weather_call =
+        R"(<tool_call>
+{)"
+        R"("name":"get_weather",)"
+        R"("arguments":{"location":"Seoul"})"
+        R"(}
+</tool_call>)";
+
+    return accepts_complete_text(grammar.get(), fixture, get_weather_call);
+}
+
+static bool test_model_tools_qwen_accepts_multiple_calls(const GrammarFixture& fixture) {
+    auto grammar = grammar_handle(cactus_grammar_init_model_tools("qwen3p5", test_model_tools_json().c_str()));
+
+    const auto multiple_tool_calls =
+        R"(<tool_call>
+{)"
+        R"("name":"get_weather",)"
+        R"("arguments":{"location":"Seoul"})"
+        R"(}
+</tool_call>
+<tool_call>
+{)"
+        R"("name":"get_weather",)"
+        R"("arguments":{"location":"Henry's Cave"})"
+        R"(}
+</tool_call>)";
+
+    return accepts_complete_text(grammar.get(), fixture, multiple_tool_calls);
+}
+
 static bool test_model_tools_needle_accepts_valid_calls(const GrammarFixture& fixture) {
     auto grammar = grammar_handle(cactus_grammar_init_model_tools("needle", test_model_tools_json().c_str()));
 
@@ -824,6 +893,102 @@ static bool test_model_tools_gemma4_rejects_invalid_calls(const GrammarFixture& 
         && rejects_text(grammar.get(), fixture, malformed_arguments);
 }
 
+static bool test_model_tools_qwen_rejects_invalid_calls(const GrammarFixture& fixture) {
+    auto grammar = grammar_handle(cactus_grammar_init_model_tools("qwen3p5", test_model_tools_json().c_str()));
+
+    const auto missing_required_field =
+        R"(<tool_call>
+{)"
+        R"("name":"complex_tool",)"
+        R"("arguments":{)"
+        R"("title":"alpha",)"
+        R"("count":3.5,)"
+        R"("enabled":true,)"
+        R"("mode":"execute",)"
+        R"("ticket_id":"ABC-12",)"
+        R"("priority":4,)"
+        R"("routing":{"region":"us-west"},)"
+        R"("labels":{"ALPHA":1},)"
+        R"("window":3,)"
+        R"("tuple_args":["alpha",2,true],)"
+        R"("optional_note":null,)"
+        R"("tags":["a","b"])"
+        R"(}}
+</tool_call>)";
+    const auto wrong_type =
+        R"(<tool_call>
+{)"
+        R"("name":"complex_tool",)"
+        R"("arguments":{)"
+        R"("title":"alpha",)"
+        R"("count":"3.5",)"
+        R"("enabled":true,)"
+        R"("mode":"execute",)"
+        R"("ticket_id":"ABC-12",)"
+        R"("priority":4,)"
+        R"("routing":{"region":"us-west"},)"
+        R"("labels":{"ALPHA":1},)"
+        R"("window":3,)"
+        R"("tuple_args":["alpha",2,true],)"
+        R"("optional_note":null,)"
+        R"("tags":["a","b"],)"
+        R"("config":{"threshold":0.75,"flags":[true,false]})"
+        R"(}}
+</tool_call>)";
+    const auto extra_property =
+        R"(<tool_call>
+{)"
+        R"("name":"complex_tool",)"
+        R"("arguments":{)"
+        R"("title":"alpha",)"
+        R"("count":3.5,)"
+        R"("enabled":true,)"
+        R"("mode":"execute",)"
+        R"("ticket_id":"ABC-12",)"
+        R"("priority":4,)"
+        R"("routing":{"region":"us-west"},)"
+        R"("labels":{"ALPHA":1},)"
+        R"("window":3,)"
+        R"("tuple_args":["alpha",2,true],)"
+        R"("optional_note":null,)"
+        R"("tags":["a","b"],)"
+        R"("config":{"threshold":0.75,"flags":[true,false]},)"
+        R"("extra":1)"
+        R"(}}
+</tool_call>)";
+    const auto malformed_json =
+        R"(<tool_call>
+{)"
+        R"("name":"complex_tool",)"
+        R"("arguments":{)"
+        R"("title":"alpha",)"
+        R"("count":3.5,)"
+        R"("enabled":true,)"
+        R"("mode":"execute",)"
+        R"("ticket_id":"ABC-12",)"
+        R"("priority":4,)"
+        R"("routing":{"region":"us-west"},)"
+        R"("labels":{"ALPHA":1},)"
+        R"("window":3,)"
+        R"("tuple_args":["alpha",2,true],)"
+        R"("optional_note":null,)"
+        R"("tags":["a","b"],)"
+        R"("config":{"threshold":0.75,"flags":[true,false]})"
+        R"(
+</tool_call>)";
+    const auto malformed_tag =
+        R"(<tool_call>{)"
+        R"("name":"get_weather",)"
+        R"("arguments":{"location":"Seoul"})"
+        R"(}</tool_call>)";
+
+    return rejects_text(grammar.get(), fixture, missing_required_field)
+        && rejects_text(grammar.get(), fixture, wrong_type)
+        && rejects_text(grammar.get(), fixture, extra_property)
+        && rejects_text(grammar.get(), fixture, malformed_json)
+        && rejects_text(grammar.get(), fixture, malformed_tag);
+}
+
 static bool test_model_tools_needle_rejects_invalid_calls(const GrammarFixture& fixture) {
     auto grammar = grammar_handle(cactus_grammar_init_model_tools("needle", test_model_tools_json().c_str()));
 
@@ -932,6 +1097,20 @@ static bool test_model_tools_gemma4_rejects_invalid_tool_name(const GrammarFixtu
         R"(<|tool_call>call:not_a_real_tool{)"
         R"(location:<|"|>Seoul<|"|>)"
         R"(}<tool_call|>)";
+
+    return rejects_text(grammar.get(), fixture, invalid_tool_name);
+}
+
+static bool test_model_tools_qwen_rejects_invalid_tool_name(const GrammarFixture& fixture) {
+    auto grammar = grammar_handle(cactus_grammar_init_model_tools("qwen3p5", test_model_tools_json().c_str()));
+
+    const auto invalid_tool_name =
+        R"(<tool_call>
+{)"
+        R"("name":"not_a_real_tool",)"
+        R"("arguments":{"location":"Seoul"})"
+        R"(}
+</tool_call>)";
 
     return rejects_text(grammar.get(), fixture, invalid_tool_name);
 }
@@ -1159,9 +1338,14 @@ int main() {
         runner.run_test("structural_tag_language", test_structural_tag_accepts_and_rejects_expected_text(fixture));
         runner.run_test("model_tools_gemma4_valid", test_model_tools_gemma4_accepts_valid_calls(fixture));
         runner.run_test("model_tools_functiongemma_valid", test_model_tools_functiongemma_accepts_valid_calls(fixture));
+        runner.run_test("model_tools_qwen_valid", test_model_tools_qwen_accepts_valid_calls(fixture));
+        runner.run_test("model_tools_qwen_simple", test_model_tools_qwen_accepts_simple_call(fixture));
+        runner.run_test("model_tools_qwen_multiple", test_model_tools_qwen_accepts_multiple_calls(fixture));
         runner.run_test("model_tools_needle_valid", test_model_tools_needle_accepts_valid_calls(fixture));
         runner.run_test("model_tools_gemma4_invalid", test_model_tools_gemma4_rejects_invalid_calls(fixture));
         runner.run_test("model_tools_gemma4_invalid_tool_name", test_model_tools_gemma4_rejects_invalid_tool_name(fixture));
+        runner.run_test("model_tools_qwen_invalid", test_model_tools_qwen_rejects_invalid_calls(fixture));
+        runner.run_test("model_tools_qwen_invalid_tool_name", test_model_tools_qwen_rejects_invalid_tool_name(fixture));
         runner.run_test("model_tools_needle_invalid", test_model_tools_needle_rejects_invalid_calls(fixture));
         runner.run_test("model_tools_needle_invalid_tool_name", test_model_tools_needle_rejects_invalid_tool_name(fixture));
         runner.run_test("grammar_matcher_reset", test_grammar_matcher_reset_restores_initial_state(fixture));

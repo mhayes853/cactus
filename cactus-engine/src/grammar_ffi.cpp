@@ -220,6 +220,61 @@ static Grammar needle_tool_grammar(const std::vector<ToolFunction>& tools) {
     return Grammar::ebnf(merged.ebnf());
 }
 
+static Grammar qwen_tool_grammar(const std::vector<ToolFunction>& tools) {
+    auto escape_multiline_literal = [](const std::string& text) {
+        std::string escaped = EbnfSyntax::escape_string_literal(text);
+        replace_all(escaped, "\n", "\\n");
+        return escaped;
+    };
+
+    std::vector<std::pair<std::string, EbnfSyntax>> tool_rule_sets;
+    tool_rule_sets.reserve(tools.size());
+
+    for (const auto& tool : tools) {
+        if (tool.name.empty()) throw std::runtime_error("Tool name is required");
+
+        auto schema_it = tool.parameters.find("schema");
+        if (schema_it == tool.parameters.end() || schema_it->second.empty()) {
+            throw std::runtime_error("Tool '" + tool.name + "' is missing a parameters schema");
+        }
+
+        const std::string normalized_name = to_snake_case(tool.name);
+        if (normalized_name.empty()) {
+            throw std::runtime_error("Tool '" + tool.name + "' normalized to an empty Qwen name");
+        }
+
+        EbnfSyntax tool_syntax = EbnfSyntax::from_string(Grammar::json_schema(schema_it->second, false, 0).ebnf());
+        tool_syntax.remove_json_whitespaces();
+        tool_syntax.rename_rules({{"root", normalized_name + "_args"}});
+        tool_rule_sets.push_back({normalized_name, std::move(tool_syntax)});
+    }
+
+    EbnfSyntax merged;
+    merged.merge_with(tool_rule_sets);
+
+    std::vector<std::string> call_rule_names;
+    call_rule_names.reserve(tool_rule_sets.size());
+    for (const auto& [normalized_name, _] : tool_rule_sets) {
+        const std::string call_rule_name = normalized_name + "_call";
+        const std::string args_rule_name = normalized_name + "_args";
+        const std::string call_prefix = escape_multiline_literal(
+            "<tool_call>\n{\"name\":\"" + normalized_name + "\",\"arguments\":"
+        );
+        const std::string call_suffix = escape_multiline_literal("}\n</tool_call>");
+        merged.rules[call_rule_name] = "(\"" + call_prefix + "\" " + args_rule_name + " \"" + call_suffix + "\")";
+        call_rule_names.push_back(call_rule_name);
+    }
+
+    std::string call_body_expr;
+    for (size_t i = 0; i < call_rule_names.size(); ++i) {
+        if (i != 0) call_body_expr += " | ";
+        call_body_expr += call_rule_names[i];
+    }
+    merged.rules["call_body"] = call_body_expr;
+    merged.rules["root"] = "call_body (\"\\n\" call_body)*";
+    return Grammar::ebnf(merged.ebnf());
+}
+
 static Grammar thinking_structural_tag(const std::string& begin, const std::string& end) {
     return Grammar::structural_tag(R"({
         "type": "structural_tag",
@@ -403,6 +458,8 @@ cactus_grammar_t cactus_grammar_init_model_tools(const char* model_type, const c
         const auto is_function_gemma = type.find("functiongemma") != std::string::npos;
         if (gemma::is_gemma4_model_type(type) || is_function_gemma) {
             return gemma_tool_grammar(tools, !is_function_gemma);
+        } else if (type.find("qwen") != std::string::npos) {
+            return qwen_tool_grammar(tools);
         } else if (type == "needle") {
             return needle_tool_grammar(tools);
         }
