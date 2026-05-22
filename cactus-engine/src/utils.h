@@ -502,15 +502,6 @@ inline std::string to_snake_case(std::string name) {
     return name.substr(start, end - start);
 }
 
-inline void replace_all(std::string& text, const std::string& needle, const std::string& replacement) {
-    if (needle.empty()) return;
-    size_t pos = 0;
-    while ((pos = text.find(needle, pos)) != std::string::npos) {
-        text.replace(pos, needle.size(), replacement);
-        pos += replacement.size();
-    }
-}
-
 inline std::string trim_string(const std::string& s) {
     size_t start = 0;
     while (start < s.size() && std::isspace(static_cast<unsigned char>(s[start]))) ++start;

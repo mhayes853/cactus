@@ -8,11 +8,9 @@
 #include <cctype>
 #include <cstddef>
 #include <cstring>
-#include <regex>
 #include <stdexcept>
 #include <unordered_set>
 #include <utility>
-#include <variant>
 #include <vector>
 
 #include <picojson/picojson.h>
@@ -171,7 +169,7 @@ static Grammar gemma_tool_grammar(const std::vector<ToolFunction>& tools, bool u
         EbnfSyntax::escape_string_literal(gemma::tool_call_end_tag(use_pipe_tags));
     merged.rules["root"] = "\"" + tool_call_start + "\" call_body \"" + tool_call_end + "\"";
 
-    return Grammar::ebnf(merged.ebnf());
+    return Grammar::repeat_range(Grammar::ebnf(merged.ebnf()), 1, -1);
 }
 
 static Grammar needle_tool_grammar(const std::vector<ToolFunction>& tools) {
