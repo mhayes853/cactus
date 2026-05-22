@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstring>
 #include <stdexcept>
+#include <string>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -219,6 +220,18 @@ static Grammar needle_tool_grammar(const std::vector<ToolFunction>& tools) {
     return Grammar::ebnf(merged.ebnf());
 }
 
+static Grammar thinking_structural_tag(const std::string& begin, const std::string& end) {
+    return Grammar::structural_tag(R"({
+        "type": "structural_tag",
+        "format": {
+            "type": "tag",
+            "begin": ")" + begin + R"(",
+            "content": { "type": "any_text" },
+            "end": ")" + end + R"("
+        }
+    })");
+}
+
 } // anonymous namespace
 
 extern "C" {
@@ -390,9 +403,22 @@ cactus_grammar_t cactus_grammar_init_model_tools(const char* model_type, const c
         const auto is_function_gemma = type.find("functiongemma") != std::string::npos;
         if (gemma::is_gemma4_model_type(type) || is_function_gemma) {
             return gemma_tool_grammar(tools, !is_function_gemma);
-        }
-        if (type == "needle") {
+        } else if (type == "needle") {
             return needle_tool_grammar(tools);
+        }
+        return Grammar();
+    });
+}
+
+cactus_grammar_t cactus_grammar_init_model_thinking(const char* model_type) {
+    if (!model_type) return handle_exception(__func__, "model_type is null");
+
+    return make_grammar(__func__, [&] {
+        std::string type(model_type);
+        if (gemma::is_gemma4_model_type(type)) {
+            return thinking_structural_tag("<|channel>", "<channel|>");
+        } else if (type.find("lfm2") != std::string::npos || type.find("qwen") != std::string::npos) {
+            return thinking_structural_tag("<think>", "</think>");
         }
         return Grammar();
     });
