@@ -253,6 +253,28 @@ static void rewrite_lfm2_top_level_object_rule(
     );
 }
 
+static void add_call_body_rule(
+    EbnfSyntax& merged,
+    const std::vector<std::pair<std::string, EbnfSyntax>>& tool_rule_sets,
+    std::function<std::string(const std::string&, const std::string&)>&& build_call_rule
+) {
+    std::vector<std::string> call_rule_names;
+    call_rule_names.reserve(tool_rule_sets.size());
+    for (const auto& [tool_name, _] : tool_rule_sets) {
+        const std::string call_rule_name = tool_name + "_call";
+        const std::string args_rule_name = tool_name + "_args";
+        merged.rules[call_rule_name] = build_call_rule(tool_name, args_rule_name);
+        call_rule_names.push_back(call_rule_name);
+    }
+
+    std::string call_body_expr;
+    for (size_t i = 0; i < call_rule_names.size(); ++i) {
+        if (i != 0) call_body_expr += " | ";
+        call_body_expr += call_rule_names[i];
+    }
+    merged.rules["call_body"] = call_body_expr;
+}
+
 static Grammar lfm2_tool_grammar(const std::vector<ToolFunction>& tools) {
     std::vector<std::pair<std::string, EbnfSyntax>> tool_rule_sets;
     tool_rule_sets.reserve(tools.size());
@@ -272,24 +294,11 @@ static Grammar lfm2_tool_grammar(const std::vector<ToolFunction>& tools) {
 
     EbnfSyntax merged;
     merged.merge_with(tool_rule_sets);
-
-    std::vector<std::string> call_rule_names;
-    call_rule_names.reserve(tool_rule_sets.size());
-    for (const auto& [tool_name, _] : tool_rule_sets) {
-        const std::string call_rule_name = tool_name + "_call";
-        const std::string args_rule_name = tool_name + "_args";
-        merged.rules[call_rule_name] = "(\"" + EbnfSyntax::escape_string_literal(tool_name + "(") + "\" "
-            + args_rule_name + " \"" + EbnfSyntax::escape_string_literal(")") + "\")";
-        call_rule_names.push_back(call_rule_name);
-    }
-
-    std::string call_body_expr;
-    for (size_t i = 0; i < call_rule_names.size(); ++i) {
-        if (i != 0) call_body_expr += " | ";
-        call_body_expr += call_rule_names[i];
-    }
-
-    merged.rules["call_body"] = call_body_expr;
+    add_call_body_rule(merged, tool_rule_sets, [](auto tool_name, auto args_rule_name) {
+        const auto args_start = "(\"" + EbnfSyntax::escape_string_literal(tool_name + "(") + "\" ";
+        const auto args_end = " \"" + EbnfSyntax::escape_string_literal(")") + "\")";
+        return args_start + args_rule_name + args_end;
+    });
     merged.rules["root"] = "\"<|tool_call_start|>[\" call_body (\",\" call_body)* \"]<|tool_call_end|>\"";
     return Grammar::ebnf(merged.ebnf());
 }
@@ -321,29 +330,15 @@ static Grammar gemma_tool_grammar(const std::vector<ToolFunction>& tools, bool u
 
     EbnfSyntax merged;
     merged.merge_with(tool_rule_sets);
-
-    std::vector<std::string> call_rule_names;
-    call_rule_names.reserve(tools.size());
-    for (const auto& tool : tools) {
-        const std::string call_rule_name = tool.name + "_call";
-        const std::string args_rule_name = tool.name + "_args";
-        merged.rules[call_rule_name] = "(\"" + EbnfSyntax::escape_string_literal(tool.name) + "\" " + args_rule_name + ")";
-        call_rule_names.push_back(call_rule_name);
-    }
-
-    std::string call_body_expr;
-    for (size_t i = 0; i < call_rule_names.size(); ++i) {
-        if (i != 0) call_body_expr += " | ";
-        call_body_expr += call_rule_names[i];
-    }
-    merged.rules["call_body"] = call_body_expr;
+    add_call_body_rule(merged, tool_rule_sets, [](auto tool_name, auto args_rule_name) {
+        return "(\"" + EbnfSyntax::escape_string_literal(tool_name) + "\" " + args_rule_name + ")";
+    });
 
     const std::string tool_call_start =
         EbnfSyntax::escape_string_literal(gemma::tool_call_start_tag(use_pipe_tags) + "call:");
     const std::string tool_call_end =
         EbnfSyntax::escape_string_literal(gemma::tool_call_end_tag(use_pipe_tags));
     merged.rules["root"] = "\"" + tool_call_start + "\" call_body \"" + tool_call_end + "\"";
-
     return Grammar::repeat_range(Grammar::ebnf(merged.ebnf()), 1, -1);
 }
 
@@ -363,24 +358,11 @@ static Grammar needle_tool_grammar(const std::vector<ToolFunction>& tools) {
 
     EbnfSyntax merged;
     merged.merge_with(tool_rule_sets);
-
-    std::vector<std::string> call_rule_names;
-    call_rule_names.reserve(tool_rule_sets.size());
-    for (const auto& [normalized_name, _] : tool_rule_sets) {
-        const std::string call_rule_name = normalized_name + "_call";
-        const std::string args_rule_name = normalized_name + "_args";
+    add_call_body_rule(merged, tool_rule_sets, [](auto tool_name, auto args_rule_name) {
         const std::string call_prefix =
-            EbnfSyntax::escape_string_literal("{\"name\":\"" + normalized_name + "\",\"arguments\":");
-        merged.rules[call_rule_name] = "(\"" + call_prefix + "\" " + args_rule_name + " \"}\")";
-        call_rule_names.push_back(call_rule_name);
-    }
-
-    std::string call_body_expr;
-    for (size_t i = 0; i < call_rule_names.size(); ++i) {
-        if (i != 0) call_body_expr += " | ";
-        call_body_expr += call_rule_names[i];
-    }
-    merged.rules["call_body"] = call_body_expr;
+            EbnfSyntax::escape_string_literal("{\"name\":\"" + tool_name + "\",\"arguments\":");
+        return "(\"" + call_prefix + "\" " + args_rule_name + " \"}\")";
+    });
     merged.rules["root"] = "\"<tool_call>[\" call_body (\",\" call_body)* \"]\"";
     return Grammar::ebnf(merged.ebnf());
 }
@@ -400,26 +382,13 @@ static Grammar qwen_tool_grammar(const std::vector<ToolFunction>& tools) {
 
     EbnfSyntax merged;
     merged.merge_with(tool_rule_sets);
-
-    std::vector<std::string> call_rule_names;
-    call_rule_names.reserve(tool_rule_sets.size());
-    for (const auto& [normalized_name, _] : tool_rule_sets) {
-        const std::string call_rule_name = normalized_name + "_call";
-        const std::string args_rule_name = normalized_name + "_args";
+    add_call_body_rule(merged, tool_rule_sets, [](auto tool_name, auto args_rule_name) {
         const std::string call_prefix = EbnfSyntax::escape_multiline_literal(
-            "<tool_call>\n{\"name\":\"" + normalized_name + "\",\"arguments\":"
+            "<tool_call>\n{\"name\":\"" + tool_name + "\",\"arguments\":"
         );
         const std::string call_suffix = EbnfSyntax::escape_multiline_literal("}\n</tool_call>");
-        merged.rules[call_rule_name] = "(\"" + call_prefix + "\" " + args_rule_name + " \"" + call_suffix + "\")";
-        call_rule_names.push_back(call_rule_name);
-    }
-
-    std::string call_body_expr;
-    for (size_t i = 0; i < call_rule_names.size(); ++i) {
-        if (i != 0) call_body_expr += " | ";
-        call_body_expr += call_rule_names[i];
-    }
-    merged.rules["call_body"] = call_body_expr;
+        return "(\"" + call_prefix + "\" " + args_rule_name + " \"" + call_suffix + "\")";
+    });
     merged.rules["root"] = "call_body (\"\\n\" call_body)*";
     return Grammar::ebnf(merged.ebnf());
 }
