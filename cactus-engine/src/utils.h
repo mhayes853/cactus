@@ -22,6 +22,7 @@
 #include <atomic>
 #include <mutex>
 #include <random>
+#include <regex>
 
 #ifdef __APPLE__
 #include <uuid/uuid.h>
@@ -554,10 +555,14 @@ inline std::string escape_json_string(const std::string& s) {
 }
 
 inline std::string to_snake_case(std::string name) {
-    name = std::regex_replace(name, std::regex(R"([^a-zA-Z0-9_]+)"), "_");
-    name = std::regex_replace(name, std::regex(R"(([a-z0-9])([A-Z]))"), "$1_$2");
-    name = std::regex_replace(name, std::regex(R"(([A-Z]+)([A-Z][a-z]))"), "$1_$2");
-    name = std::regex_replace(name, std::regex(R"(_+)"), "_");
+    static const auto underscore_non_alphanumeric = std::regex(R"([^a-zA-Z0-9_]+)");
+    static const auto split_alphanumeric = std::regex(R"(([a-z0-9])([A-Z]))");
+    static const auto split_capitals = std::regex(R"(([A-Z]+)([A-Z][a-z]))");
+    static const auto keep_max_1_underscore_sequence = std::regex(R"(_+)");
+    name = std::regex_replace(name, underscore_non_alphanumeric, "_");
+    name = std::regex_replace(name, split_alphanumeric, "$1_$2");
+    name = std::regex_replace(name, split_capitals, "$1_$2");
+    name = std::regex_replace(name, keep_max_1_underscore_sequence, "_");
     std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
         return static_cast<char>(std::tolower(c));
     });
