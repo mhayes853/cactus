@@ -1,5 +1,6 @@
 #include "test_utils.h"
 
+#include "../src/ebnf_syntax.h"
 #include "../src/utils.h"
 
 #include <cstdlib>
@@ -1311,6 +1312,29 @@ static bool test_json_schema_accepts_expected_text(const GrammarFixture& fixture
         && rejects_text(json_schema.get(), fixture, R"({"age":1})");
 }
 
+static bool grammar_has_no_unreachable_rules(cactus_grammar_t grammar) {
+    EbnfSyntax syntax = EbnfSyntax::from_string(grammar_ebnf(grammar));
+    const size_t rule_count = syntax.rules.size();
+    syntax.remove_unreachable_rules();
+    return syntax.rules.size() == rule_count;
+}
+
+static bool test_model_tool_grammars_have_no_unreachable_rules() {
+    const std::vector<std::string> model_types = {
+        "gemma4",
+        "functiongemma",
+        "qwen3p5",
+        "needle",
+        "lfm2",
+    };
+
+    for (const auto& model_type : model_types) {
+        auto grammar = grammar_handle(cactus_grammar_init_model_tools(model_type.c_str(), test_model_tools_json().c_str()));
+        if (!grammar_has_no_unreachable_rules(grammar.get())) return false;
+    }
+    return true;
+}
+
 static bool test_model_thinking_unsupported_types_return_empty_grammar() {
     auto unknown = grammar_handle(cactus_grammar_init_model_thinking("i made this up"));
     return cactus_grammar_is_empty(unknown.get());
@@ -1497,6 +1521,7 @@ int main() {
         runner.run_test("unordred_choice", test_unordered_choice(fixture));
         runner.run_test("regex_language", test_regex_accepts_expected_text(fixture));
         runner.run_test("json_schema_language", test_json_schema_accepts_expected_text(fixture));
+        runner.run_test("model_tools_no_unreachable_rules", test_model_tool_grammars_have_no_unreachable_rules());
         runner.run_test("model_thinking_unsupported_empty", test_model_thinking_unsupported_types_return_empty_grammar());
         runner.run_test("model_thinking_gemma4", test_model_thinking_gemma4_uses_channel_tags(fixture));
         runner.run_test("model_thinking_qwen", test_model_thinking_qwen_uses_think_tags(fixture));

@@ -117,7 +117,51 @@ struct EbnfSyntax {
         }
     }
 
+    void remove_unreachable_rules(const std::string& start_rule = "root") {
+        if (!rules.contains(start_rule)) return;
+
+        std::unordered_set<std::string> reachable;
+        collect_reachable_rules(start_rule, reachable);
+
+        std::erase_if(rules, [&](const auto& entry) {
+            return !reachable.contains(entry.first);
+        });
+    }
+
 private:
+    static const std::regex& identifier_token_pattern() {
+        static const std::regex token_pattern(
+            R"((("(?:\\.|[^"\\])*")|(\[(?:\\.|[^\]\\])*\])|([A-Za-z_][A-Za-z0-9_]*)))"
+        );
+        return token_pattern;
+    }
+
+    static std::vector<std::string> referenced_rule_names(const std::string& expr) {
+        std::vector<std::string> identifiers;
+        std::sregex_iterator it(expr.begin(), expr.end(), identifier_token_pattern());
+        const std::sregex_iterator end;
+        for (; it != end; ++it) {
+            if ((*it)[4].matched) {
+                identifiers.push_back((*it)[4].str());
+            }
+        }
+        return identifiers;
+    }
+
+    void collect_reachable_rules(const std::string& rule_name, std::unordered_set<std::string>& reachable) const {
+        if (reachable.contains(rule_name)) return;
+
+        reachable.insert(rule_name);
+        const auto rule_it = rules.find(rule_name);
+        if (rule_it == rules.end()) return;
+
+        for (const auto& identifier : referenced_rule_names(rule_it->second)) {
+            if (rules.contains(identifier)) {
+                collect_reachable_rules(identifier, reachable);
+            }
+        }
+    }
+
     struct UniqueNameGenerator {
         std::unordered_set<std::string> names;
 
@@ -138,22 +182,18 @@ private:
         const std::string& expr,
         const std::unordered_map<std::string, std::string>& rename_map
     ) {
-        static const std::regex token_pattern(
-            R"(("(?:\\.|[^"\\])*")|(\[(?:\\.|[^\]\\])*\])|([A-Za-z_][A-Za-z0-9_]*))"
-        );
-
         std::string out;
         out.reserve(expr.size());
 
-        std::sregex_iterator it(expr.begin(), expr.end(), token_pattern);
+        std::sregex_iterator it(expr.begin(), expr.end(), identifier_token_pattern());
         const std::sregex_iterator end;
         size_t last_pos = 0;
         for (; it != end; ++it) {
             const auto& match = *it;
             out += expr.substr(last_pos, static_cast<size_t>(match.position()) - last_pos);
 
-            if (match[3].matched) {
-                const std::string identifier = match[3].str();
+            if (match[4].matched) {
+                const std::string identifier = match[4].str();
                 auto rename = rename_map.find(identifier);
                 out += rename != rename_map.end() ? rename->second : identifier;
             } else {

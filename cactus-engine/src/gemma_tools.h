@@ -70,8 +70,6 @@ inline void apply_gemma_basic_string_rule(
 
     syntax.rules["gemma_string_sub"] = use_pipe_tags ? string_sub_rule : functiongemma_string_sub_rule;
     syntax.rules["basic_string"] = "(\"" + escaped_quote + "\" gemma_string_sub \"" + escaped_quote + "\")";
-    syntax.rules.erase("basic_string_sub");
-    syntax.rules.erase("basic_escape");
 }
 
 inline EbnfSyntax xgrammar_tools_ebnf_to_gemma_tools_ebnf(

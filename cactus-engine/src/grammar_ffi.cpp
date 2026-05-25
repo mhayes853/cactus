@@ -300,6 +300,7 @@ static Grammar lfm2_tool_grammar(const std::vector<ToolFunction>& tools) {
         return args_start + args_rule_name + args_end;
     });
     merged.rules["root"] = "\"<|tool_call_start|>[\" call_body (\",\" call_body)* \"]<|tool_call_end|>\"";
+    merged.remove_unreachable_rules();
     return Grammar::ebnf(merged.ebnf());
 }
 
@@ -339,6 +340,7 @@ static Grammar gemma_tool_grammar(const std::vector<ToolFunction>& tools, bool u
     const std::string tool_call_end =
         EbnfSyntax::escape_string_literal(gemma::tool_call_end_tag(use_pipe_tags));
     merged.rules["root"] = "\"" + tool_call_start + "\" call_body \"" + tool_call_end + "\"";
+    merged.remove_unreachable_rules();
     return Grammar::repeat_range(Grammar::ebnf(merged.ebnf()), 1, -1);
 }
 
@@ -364,6 +366,7 @@ static Grammar needle_tool_grammar(const std::vector<ToolFunction>& tools) {
         return "(\"" + call_prefix + "\" " + args_rule_name + " \"}\")";
     });
     merged.rules["root"] = "\"<tool_call>[\" call_body (\",\" call_body)* \"]\"";
+    merged.remove_unreachable_rules();
     return Grammar::ebnf(merged.ebnf());
 }
 
@@ -390,6 +393,7 @@ static Grammar qwen_tool_grammar(const std::vector<ToolFunction>& tools) {
         return "(\"" + call_prefix + "\" " + args_rule_name + " \"" + call_suffix + "\")";
     });
     merged.rules["root"] = "call_body (\"\\n\" call_body)*";
+    merged.remove_unreachable_rules();
     return Grammar::ebnf(merged.ebnf());
 }
 
