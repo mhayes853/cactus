@@ -223,7 +223,29 @@ static void collect_schema_string_literals(
     }
 }
 
-static void rewrite_lfm2_top_level_object_rule(
+static void add_call_body_rule(
+    EbnfSyntax& merged,
+    const std::vector<std::pair<std::string, EbnfSyntax>>& tool_rule_sets,
+    std::function<std::string(const std::string&, const std::string&)>&& build_call_rule
+) {
+    std::vector<std::string> call_rule_names;
+    call_rule_names.reserve(tool_rule_sets.size());
+    for (const auto& [tool_name, _] : tool_rule_sets) {
+        const std::string call_rule_name = tool_name + "_call";
+        const std::string args_rule_name = tool_name + "_args";
+        merged.rules[call_rule_name] = build_call_rule(tool_name, args_rule_name);
+        call_rule_names.push_back(call_rule_name);
+    }
+
+    std::string call_body_expr;
+    for (size_t i = 0; i < call_rule_names.size(); ++i) {
+        if (i != 0) call_body_expr += " | ";
+        call_body_expr += call_rule_names[i];
+    }
+    merged.rules["call_body"] = call_body_expr;
+}
+
+static void xgrammar_tool_ebnf_to_lfm2_tool_ebnf(
     EbnfSyntax& syntax,
     const std::unordered_set<std::string>& top_level_property_names
 ) {
@@ -253,28 +275,6 @@ static void rewrite_lfm2_top_level_object_rule(
     );
 }
 
-static void add_call_body_rule(
-    EbnfSyntax& merged,
-    const std::vector<std::pair<std::string, EbnfSyntax>>& tool_rule_sets,
-    std::function<std::string(const std::string&, const std::string&)>&& build_call_rule
-) {
-    std::vector<std::string> call_rule_names;
-    call_rule_names.reserve(tool_rule_sets.size());
-    for (const auto& [tool_name, _] : tool_rule_sets) {
-        const std::string call_rule_name = tool_name + "_call";
-        const std::string args_rule_name = tool_name + "_args";
-        merged.rules[call_rule_name] = build_call_rule(tool_name, args_rule_name);
-        call_rule_names.push_back(call_rule_name);
-    }
-
-    std::string call_body_expr;
-    for (size_t i = 0; i < call_rule_names.size(); ++i) {
-        if (i != 0) call_body_expr += " | ";
-        call_body_expr += call_rule_names[i];
-    }
-    merged.rules["call_body"] = call_body_expr;
-}
-
 static Grammar lfm2_tool_grammar(const std::vector<ToolFunction>& tools) {
     std::vector<std::pair<std::string, EbnfSyntax>> tool_rule_sets;
     tool_rule_sets.reserve(tools.size());
@@ -287,7 +287,7 @@ static Grammar lfm2_tool_grammar(const std::vector<ToolFunction>& tools) {
 
         EbnfSyntax tool_syntax = EbnfSyntax::from_string(Grammar::json_schema(schema, false, 0).ebnf());
         tool_syntax.remove_json_whitespaces();
-        rewrite_lfm2_top_level_object_rule(tool_syntax, top_level_property_names);
+        xgrammar_tool_ebnf_to_lfm2_tool_ebnf(tool_syntax, top_level_property_names);
         tool_syntax.rename_rules({{"root", tool.name + "_args"}});
         tool_rule_sets.push_back({tool.name, std::move(tool_syntax)});
     }
@@ -304,6 +304,82 @@ static Grammar lfm2_tool_grammar(const std::vector<ToolFunction>& tools) {
     return Grammar::ebnf(merged.ebnf());
 }
 
+static void rewrite_pattern_property_wrappers(std::string& ebnf) {
+    static const std::regex dynamic_key_wrapper_pattern(
+        R"("\\""\s*([A-Za-z_][A-Za-z0-9_]*)\s*"\\""\s*":")"
+    );
+    ebnf = std::regex_replace(ebnf, dynamic_key_wrapper_pattern, "$1 \":\"");
+}
+
+static void apply_gemma_basic_string_rule(
+    EbnfSyntax& syntax,
+    const std::string& escaped_quote,
+    bool use_pipe_tags
+) {
+    static const std::string pipe_tags_string_sub_rule =
+        "\"\" | "
+        "[^<] gemma_string_sub | "
+        "\"<\" [^|] gemma_string_sub | "
+        "\"<|\" [^\"] gemma_string_sub | "
+        "\"<|\\\"\" [^|] gemma_string_sub | "
+        "\"<|\\\"|\" [^>] gemma_string_sub";
+
+    static const std::string string_sub_rule =
+        "\"\" | "
+        "[^<] gemma_string_sub | "
+        "\"<\" [^e] gemma_string_sub | "
+        "\"<e\" [^s] gemma_string_sub | "
+        "\"<es\" [^c] gemma_string_sub | "
+        "\"<esc\" [^a] gemma_string_sub | "
+        "\"<esca\" [^p] gemma_string_sub | "
+        "\"<escap\" [^e] gemma_string_sub | "
+        "\"<escape\" [^>] gemma_string_sub";
+
+    syntax.rules["gemma_string_sub"] = use_pipe_tags ? pipe_tags_string_sub_rule : string_sub_rule;
+    syntax.rules["basic_string"] = "(\"" + escaped_quote + "\" gemma_string_sub \"" + escaped_quote + "\")";
+}
+
+static EbnfSyntax xgrammar_tool_ebnf_to_gemma_tool_ebnf(
+    const std::string& tools_ebnf,
+    const std::unordered_set<std::string>& property_names,
+    const std::unordered_set<std::string>& string_literals,
+    bool use_pipe_tags
+) {
+    auto parsed = EbnfSyntax::from_string(tools_ebnf);
+
+    const std::string quote = gemma::quote_tag(use_pipe_tags);
+    const std::string escaped_quote = EbnfSyntax::escape_string_literal(quote);
+
+    apply_gemma_basic_string_rule(parsed, escaped_quote, use_pipe_tags);
+
+    parsed.remove_json_whitespaces();
+
+    for (auto& [rule_name, rule_expr] : parsed.rules) {
+        for (const auto& property_name : property_names) {
+            const std::string escaped_property_name = EbnfSyntax::escape_string_literal(property_name);
+            replace_all(
+                rule_expr,
+                "\"\\\"" + escaped_property_name + "\\\"\"",
+                "\"" + escaped_property_name + "\""
+            );
+        }
+
+        rewrite_pattern_property_wrappers(rule_expr);
+
+        for (const auto& string_literal : string_literals) {
+            const std::string escaped_string_literal = EbnfSyntax::escape_string_literal(string_literal);
+            replace_all(
+                rule_expr,
+                "\"\\\"" + escaped_string_literal + "\\\"\"",
+                "\"" + escaped_quote + escaped_string_literal + escaped_quote + "\""
+            );
+        }
+
+        replace_all(rule_expr, "\"\\\"\"", "\"" + escaped_quote + "\"");
+    }
+    return parsed;
+}
+
 static Grammar gemma_tool_grammar(const std::vector<ToolFunction>& tools, bool use_pipe_tags) {
     std::vector<std::pair<std::string, EbnfSyntax>> tool_rule_sets;
     tool_rule_sets.reserve(tools.size());
@@ -317,15 +393,14 @@ static Grammar gemma_tool_grammar(const std::vector<ToolFunction>& tools, bool u
         std::unordered_set<std::string> string_literals;
         collect_schema_string_literals(schema_value, string_literals);
 
-        EbnfSyntax tool_syntax = gemma::xgrammar_tools_ebnf_to_gemma_tools_ebnf(
+        EbnfSyntax tool_syntax = xgrammar_tool_ebnf_to_gemma_tool_ebnf(
             Grammar::json_schema(schema, false, 0).ebnf(),
             property_names,
             string_literals,
             use_pipe_tags
         );
 
-        const std::string args_rule_name = tool.name + "_args";
-        tool_syntax.rename_rules({{"root", args_rule_name}});
+        tool_syntax.rename_rules({{"root", tool.name + "_args"}});
         tool_rule_sets.push_back({tool.name, std::move(tool_syntax)});
     }
 

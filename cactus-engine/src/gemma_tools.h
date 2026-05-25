@@ -5,13 +5,9 @@
 #include <algorithm>
 #include <cctype>
 #include <map>
-#include <regex>
 #include <set>
-#include <unordered_set>
 
 #include <picojson/picojson.h>
-
-#include "ebnf_syntax.h"
 
 namespace gemma {
 
@@ -35,82 +31,6 @@ inline std::string tool_call_start_tag(bool use_pipe_tags) {
 
 inline std::string tool_call_end_tag(bool use_pipe_tags) {
     return use_pipe_tags ? "<tool_call|>" : "<end_function_call>";
-}
-
-inline void rewrite_pattern_property_wrappers(std::string& ebnf) {
-    static const std::regex dynamic_key_wrapper_pattern(
-        R"("\\""\s*([A-Za-z_][A-Za-z0-9_]*)\s*"\\""\s*":")"
-    );
-    ebnf = std::regex_replace(ebnf, dynamic_key_wrapper_pattern, "$1 \":\"");
-}
-
-inline void apply_gemma_basic_string_rule(
-    EbnfSyntax& syntax,
-    const std::string& escaped_quote,
-    bool use_pipe_tags
-) {
-    static const std::string string_sub_rule =
-        "\"\" | "
-        "[^<] gemma_string_sub | "
-        "\"<\" [^|] gemma_string_sub | "
-        "\"<|\" [^\"] gemma_string_sub | "
-        "\"<|\\\"\" [^|] gemma_string_sub | "
-        "\"<|\\\"|\" [^>] gemma_string_sub";
-
-    static const std::string functiongemma_string_sub_rule =
-        "\"\" | "
-        "[^<] gemma_string_sub | "
-        "\"<\" [^e] gemma_string_sub | "
-        "\"<e\" [^s] gemma_string_sub | "
-        "\"<es\" [^c] gemma_string_sub | "
-        "\"<esc\" [^a] gemma_string_sub | "
-        "\"<esca\" [^p] gemma_string_sub | "
-        "\"<escap\" [^e] gemma_string_sub | "
-        "\"<escape\" [^>] gemma_string_sub";
-
-    syntax.rules["gemma_string_sub"] = use_pipe_tags ? string_sub_rule : functiongemma_string_sub_rule;
-    syntax.rules["basic_string"] = "(\"" + escaped_quote + "\" gemma_string_sub \"" + escaped_quote + "\")";
-}
-
-inline EbnfSyntax xgrammar_tools_ebnf_to_gemma_tools_ebnf(
-    const std::string& tools_ebnf,
-    const std::unordered_set<std::string>& property_names,
-    const std::unordered_set<std::string>& string_literals,
-    bool use_pipe_tags
-) {
-    auto parsed = EbnfSyntax::from_string(tools_ebnf);
-
-    const std::string quote = quote_tag(use_pipe_tags);
-    const std::string escaped_quote = EbnfSyntax::escape_string_literal(quote);
-
-    apply_gemma_basic_string_rule(parsed, escaped_quote, use_pipe_tags);
-
-    parsed.remove_json_whitespaces();
-
-    for (auto& [rule_name, rule_expr] : parsed.rules) {
-        for (const auto& property_name : property_names) {
-            const std::string escaped_property_name = EbnfSyntax::escape_string_literal(property_name);
-            replace_all(
-                rule_expr,
-                "\"\\\"" + escaped_property_name + "\\\"\"",
-                "\"" + escaped_property_name + "\""
-            );
-        }
-
-        rewrite_pattern_property_wrappers(rule_expr);
-
-        for (const auto& string_literal : string_literals) {
-            const std::string escaped_string_literal = EbnfSyntax::escape_string_literal(string_literal);
-            replace_all(
-                rule_expr,
-                "\"\\\"" + escaped_string_literal + "\\\"\"",
-                "\"" + escaped_quote + escaped_string_literal + escaped_quote + "\""
-            );
-        }
-
-        replace_all(rule_expr, "\"\\\"\"", "\"" + escaped_quote + "\"");
-    }
-    return parsed;
 }
 
 inline bool is_gemma4_model_type(const std::string& model_type) {
