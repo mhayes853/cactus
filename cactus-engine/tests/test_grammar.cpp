@@ -683,6 +683,42 @@ static bool test_model_tools_needle_accepts_valid_calls(const GrammarFixture& fi
         && accepts_complete_text(grammar.get(), fixture, multiple_tool_calls);
 }
 
+static bool test_model_tools_lfm2_accepts_valid_calls(const GrammarFixture& fixture) {
+    auto grammar = grammar_handle(cactus_grammar_init_model_tools("lfm2", test_model_tools_json().c_str()));
+
+    const auto complex_tool_call =
+        R"(<|tool_call_start|>[)"
+        R"(complex_tool()"
+        R"(title="alpha",)"
+        R"(count=3.5,)"
+        R"(enabled=True,)"
+        R"(mode="execute",)"
+        R"(ticket_id="ABC-12",)"
+        R"(priority=4,)"
+        R"(routing={"region":"us-west"},)"
+        R"(labels={"ALPHA":1,"BETA_LABEL":2},)"
+        R"(window=3,)"
+        R"(tuple_args=["alpha",2,True],)"
+        R"(optional_note=None,)"
+        R"(tags=["a","b"],)"
+        R"(config={"threshold":0.75,"flags":[True,False]})"
+        R"())"
+        R"(]<|tool_call_end|>)";
+    const auto get_weather_call =
+        R"(<|tool_call_start|>[)"
+        R"(get_weather(location="Seoul"))"
+        R"(]<|tool_call_end|>)";
+    const auto multiple_tool_calls =
+        R"(<|tool_call_start|>[)"
+        R"(get_weather(location="Seoul"),)"
+        R"(get_weather(location="Henry's Cave"))"
+        R"(]<|tool_call_end|>)";
+
+    return accepts_complete_text(grammar.get(), fixture, complex_tool_call)
+        && accepts_complete_text(grammar.get(), fixture, get_weather_call)
+        && accepts_complete_text(grammar.get(), fixture, multiple_tool_calls);
+}
+
 static bool test_model_tools_gemma4_rejects_invalid_calls(const GrammarFixture& fixture) {
     auto grammar = grammar_handle(cactus_grammar_init_model_tools("gemma4", test_model_tools_json().c_str()));
 
@@ -989,6 +1025,126 @@ static bool test_model_tools_qwen_rejects_invalid_calls(const GrammarFixture& fi
         && rejects_text(grammar.get(), fixture, malformed_tag);
 }
 
+static bool test_model_tools_lfm2_rejects_invalid_calls(const GrammarFixture& fixture) {
+    auto grammar = grammar_handle(cactus_grammar_init_model_tools("lfm2", test_model_tools_json().c_str()));
+
+    const auto missing_required_field =
+        R"(<|tool_call_start|>[)"
+        R"(complex_tool()"
+        R"(title="alpha",)"
+        R"(count=3.5,)"
+        R"(enabled=True,)"
+        R"(mode="execute",)"
+        R"(ticket_id="ABC-12",)"
+        R"(priority=4,)"
+        R"(routing={"region":"us-west"},)"
+        R"(labels={"ALPHA":1},)"
+        R"(window=3,)"
+        R"(tuple_args=["alpha",2,True],)"
+        R"(optional_note=None,)"
+        R"(tags=["a","b"])"
+        R"())"
+        R"(]<|tool_call_end|>)";
+    const auto wrong_type =
+        R"(<|tool_call_start|>[)"
+        R"(complex_tool()"
+        R"(title="alpha",)"
+        R"(count="3.5",)"
+        R"(enabled=True,)"
+        R"(mode="execute",)"
+        R"(ticket_id="ABC-12",)"
+        R"(priority=4,)"
+        R"(routing={"region":"us-west"},)"
+        R"(labels={"ALPHA":1},)"
+        R"(window=3,)"
+        R"(tuple_args=["alpha",2,True],)"
+        R"(optional_note=None,)"
+        R"(tags=["a","b"],)"
+        R"(config={"threshold":0.75,"flags":[True,False]})"
+        R"())"
+        R"(]<|tool_call_end|>)";
+    const auto invalid_enum =
+        R"(<|tool_call_start|>[)"
+        R"(complex_tool()"
+        R"(title="alpha",)"
+        R"(count=3.5,)"
+        R"(enabled=True,)"
+        R"(mode="preview",)"
+        R"(ticket_id="ABC-12",)"
+        R"(priority=4,)"
+        R"(routing={"region":"us-west"},)"
+        R"(labels={"ALPHA":1},)"
+        R"(window=3,)"
+        R"(tuple_args=["alpha",2,True],)"
+        R"(optional_note=None,)"
+        R"(tags=["a","b"],)"
+        R"(config={"threshold":0.75,"flags":[True,False]})"
+        R"())"
+        R"(]<|tool_call_end|>)";
+    const auto invalid_pattern_properties =
+        R"(<|tool_call_start|>[)"
+        R"(complex_tool()"
+        R"(title="alpha",)"
+        R"(count=3.5,)"
+        R"(enabled=True,)"
+        R"(mode="execute",)"
+        R"(ticket_id="ABC-12",)"
+        R"(priority=4,)"
+        R"(routing={"region":"us-west"},)"
+        R"(labels={"alpha":1},)"
+        R"(window=3,)"
+        R"(tuple_args=["alpha",2,True],)"
+        R"(optional_note=None,)"
+        R"(tags=["a","b"],)"
+        R"(config={"threshold":0.75,"flags":[True,False]})"
+        R"())"
+        R"(]<|tool_call_end|>)";
+    const auto extra_property =
+        R"(<|tool_call_start|>[)"
+        R"(complex_tool()"
+        R"(title="alpha",)"
+        R"(count=3.5,)"
+        R"(enabled=True,)"
+        R"(mode="execute",)"
+        R"(ticket_id="ABC-12",)"
+        R"(priority=4,)"
+        R"(routing={"region":"us-west"},)"
+        R"(labels={"ALPHA":1},)"
+        R"(window=3,)"
+        R"(tuple_args=["alpha",2,True],)"
+        R"(optional_note=None,)"
+        R"(tags=["a","b"],)"
+        R"(config={"threshold":0.75,"flags":[True,False]},)"
+        R"(extra=1)"
+        R"())"
+        R"(]<|tool_call_end|>)";
+    const auto malformed_call =
+        R"(<|tool_call_start|>[)"
+        R"(complex_tool()"
+        R"(title="alpha",)"
+        R"(count=3.5,)"
+        R"(enabled=True,)"
+        R"(mode="execute",)"
+        R"(ticket_id="ABC-12",)"
+        R"(priority=4,)"
+        R"(routing={"region":"us-west"},)"
+        R"(labels={"ALPHA":1},)"
+        R"(window=3,)"
+        R"(tuple_args=["alpha",2,True],)"
+        R"(optional_note=None,)"
+        R"(tags=["a","b"],)"
+        R"(config={"threshold":0.75,"flags":[True,False]})"
+        R"())"
+        R"(<|tool_call_end|>)";
+
+    return rejects_text(grammar.get(), fixture, missing_required_field)
+        && rejects_text(grammar.get(), fixture, wrong_type)
+        && rejects_text(grammar.get(), fixture, invalid_enum)
+        && rejects_text(grammar.get(), fixture, invalid_pattern_properties)
+        && rejects_text(grammar.get(), fixture, extra_property)
+        && rejects_text(grammar.get(), fixture, malformed_call);
+}
+
 static bool test_model_tools_needle_rejects_invalid_calls(const GrammarFixture& fixture) {
     auto grammar = grammar_handle(cactus_grammar_init_model_tools("needle", test_model_tools_json().c_str()));
 
@@ -1123,6 +1279,17 @@ static bool test_model_tools_needle_rejects_invalid_tool_name(const GrammarFixtu
         R"("name":"not_a_real_tool",)"
         R"("arguments":{"location":"Seoul"})"
         R"(}])";
+
+    return rejects_text(grammar.get(), fixture, invalid_tool_name);
+}
+
+static bool test_model_tools_lfm2_rejects_invalid_tool_name(const GrammarFixture& fixture) {
+    auto grammar = grammar_handle(cactus_grammar_init_model_tools("lfm2", test_model_tools_json().c_str()));
+
+    const auto invalid_tool_name =
+        R"(<|tool_call_start|>[)"
+        R"(not_a_real_tool(location="Seoul"))"
+        R"(]<|tool_call_end|>)";
 
     return rejects_text(grammar.get(), fixture, invalid_tool_name);
 }
@@ -1342,12 +1509,15 @@ int main() {
         runner.run_test("model_tools_qwen_simple", test_model_tools_qwen_accepts_simple_call(fixture));
         runner.run_test("model_tools_qwen_multiple", test_model_tools_qwen_accepts_multiple_calls(fixture));
         runner.run_test("model_tools_needle_valid", test_model_tools_needle_accepts_valid_calls(fixture));
+        runner.run_test("model_tools_lfm2_valid", test_model_tools_lfm2_accepts_valid_calls(fixture));
         runner.run_test("model_tools_gemma4_invalid", test_model_tools_gemma4_rejects_invalid_calls(fixture));
         runner.run_test("model_tools_gemma4_invalid_tool_name", test_model_tools_gemma4_rejects_invalid_tool_name(fixture));
         runner.run_test("model_tools_qwen_invalid", test_model_tools_qwen_rejects_invalid_calls(fixture));
         runner.run_test("model_tools_qwen_invalid_tool_name", test_model_tools_qwen_rejects_invalid_tool_name(fixture));
         runner.run_test("model_tools_needle_invalid", test_model_tools_needle_rejects_invalid_calls(fixture));
         runner.run_test("model_tools_needle_invalid_tool_name", test_model_tools_needle_rejects_invalid_tool_name(fixture));
+        runner.run_test("model_tools_lfm2_invalid", test_model_tools_lfm2_rejects_invalid_calls(fixture));
+        runner.run_test("model_tools_lfm2_invalid_tool_name", test_model_tools_lfm2_rejects_invalid_tool_name(fixture));
         runner.run_test("grammar_matcher_reset", test_grammar_matcher_reset_restores_initial_state(fixture));
         runner.run_test("grammar_matcher_rollback", test_grammar_matcher_rollback_restores_previous_state(fixture));
         runner.run_test("grammar_matcher_completion_state", test_grammar_matcher_completion_state(fixture));

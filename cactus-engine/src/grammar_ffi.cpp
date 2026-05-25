@@ -8,6 +8,7 @@
 #include <cctype>
 #include <cstddef>
 #include <cstring>
+#include <regex>
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
@@ -129,23 +130,182 @@ static std::string require_normalized_tool_name(const ToolFunction& tool, const 
     return normalized_name;
 }
 
+static picojson::value parse_tool_schema_json(const ToolFunction& tool) {
+    const std::string& schema = require_tool_schema(tool);
+    picojson::value schema_value;
+    const std::string parse_error = picojson::parse(schema_value, schema);
+    if (!parse_error.empty()) {
+        throw std::runtime_error("Tool '" + tool.name + "' schema parse failed: " + parse_error);
+    }
+    return schema_value;
+}
+
+static void collect_schema_property_names(
+    const picojson::value& schema,
+    std::unordered_set<std::string>& property_names,
+    int levels = -1,
+    int current_level = 0
+) {
+    if (current_level == levels) return;
+
+    if (!schema.is<picojson::object>()) {
+        if (schema.is<picojson::array>()) {
+            for (const auto& item : schema.get<picojson::array>()) {
+                collect_schema_property_names(item, property_names, levels, current_level + 1);
+            }
+        }
+        return;
+    }
+
+    const auto& object = schema.get<picojson::object>();
+
+    auto properties_it = object.find("properties");
+    if (properties_it != object.end() && properties_it->second.is<picojson::object>()) {
+        const auto& properties = properties_it->second.get<picojson::object>();
+        for (const auto& key : properties.ordered_keys()) {
+            property_names.insert(key);
+            collect_schema_property_names(properties.at(key), property_names, levels, current_level + 1);
+        }
+    }
+
+    auto items_it = object.find("items");
+    if (items_it != object.end()) {
+        collect_schema_property_names(items_it->second, property_names, levels, current_level + 1);
+    }
+
+    auto prefix_items_it = object.find("prefixItems");
+    if (prefix_items_it != object.end() && prefix_items_it->second.is<picojson::array>()) {
+        for (const auto& item : prefix_items_it->second.get<picojson::array>()) {
+            collect_schema_property_names(item, property_names, levels, current_level + 1);
+        }
+    }
+
+    for (const char* key : {"anyOf", "oneOf", "allOf"}) {
+        auto it = object.find(key);
+        if (it != object.end() && it->second.is<picojson::array>()) {
+            for (const auto& item : it->second.get<picojson::array>()) {
+                collect_schema_property_names(item, property_names, levels, current_level + 1);
+            }
+        }
+    }
+}
+
+static void collect_schema_string_literals(
+    const picojson::value& schema,
+    std::unordered_set<std::string>& string_literals
+) {
+    if (schema.is<picojson::array>()) {
+        for (const auto& item : schema.get<picojson::array>()) {
+            collect_schema_string_literals(item, string_literals);
+        }
+        return;
+    }
+    if (!schema.is<picojson::object>()) return;
+
+    const auto& object = schema.get<picojson::object>();
+
+    auto const_it = object.find("const");
+    if (const_it != object.end() && const_it->second.is<std::string>()) {
+        string_literals.insert(const_it->second.get<std::string>());
+    }
+
+    auto enum_it = object.find("enum");
+    if (enum_it != object.end() && enum_it->second.is<picojson::array>()) {
+        for (const auto& item : enum_it->second.get<picojson::array>()) {
+            if (item.is<std::string>()) {
+                string_literals.insert(item.get<std::string>());
+            }
+        }
+    }
+
+    for (const auto& key : object.ordered_keys()) {
+        collect_schema_string_literals(object.at(key), string_literals);
+    }
+}
+
+static void rewrite_lfm2_top_level_object_rule(
+    EbnfSyntax& syntax,
+    const std::unordered_set<std::string>& top_level_property_names
+) {
+    for (auto& [_, rule_expr] : syntax.rules) {
+        replace_all(rule_expr, "\"true\"", "\"True\"");
+        replace_all(rule_expr, "\"false\"", "\"False\"");
+        replace_all(rule_expr, "\"null\"", "\"None\"");
+
+        for (const auto& property_name : top_level_property_names) {
+            const std::string escaped_property_name = EbnfSyntax::escape_string_literal(property_name);
+            const std::string quoted_property = "\"\\\"" + escaped_property_name + "\\\"\"";
+            replace_all(rule_expr, quoted_property + " \":\"", "\"" + escaped_property_name + "=\"");
+            replace_all(rule_expr, quoted_property + "\":\"", "\"" + escaped_property_name + "=\"");
+        }
+    }
+
+    auto root_it = syntax.rules.find("root");
+    root_it->second = std::regex_replace(
+        root_it->second,
+        std::regex(R"lfm2(^(\s*\(+\s*)"\{"\s*)lfm2"),
+        "$1"
+    );
+    root_it->second = std::regex_replace(
+        root_it->second,
+        std::regex(R"lfm2(\s*"\}"(\s*\)+\s*)$)lfm2"),
+        "$1"
+    );
+}
+
+static Grammar lfm2_tool_grammar(const std::vector<ToolFunction>& tools) {
+    std::vector<std::pair<std::string, EbnfSyntax>> tool_rule_sets;
+    tool_rule_sets.reserve(tools.size());
+
+    for (const auto& tool : tools) {
+        const std::string& schema = require_tool_schema(tool);
+        const picojson::value schema_value = parse_tool_schema_json(tool);
+        std::unordered_set<std::string> top_level_property_names;
+        collect_schema_property_names(schema_value, top_level_property_names, 1);
+
+        EbnfSyntax tool_syntax = EbnfSyntax::from_string(Grammar::json_schema(schema, false, 0).ebnf());
+        tool_syntax.remove_json_whitespaces();
+        rewrite_lfm2_top_level_object_rule(tool_syntax, top_level_property_names);
+        tool_syntax.rename_rules({{"root", tool.name + "_args"}});
+        tool_rule_sets.push_back({tool.name, std::move(tool_syntax)});
+    }
+
+    EbnfSyntax merged;
+    merged.merge_with(tool_rule_sets);
+
+    std::vector<std::string> call_rule_names;
+    call_rule_names.reserve(tool_rule_sets.size());
+    for (const auto& [tool_name, _] : tool_rule_sets) {
+        const std::string call_rule_name = tool_name + "_call";
+        const std::string args_rule_name = tool_name + "_args";
+        merged.rules[call_rule_name] = "(\"" + EbnfSyntax::escape_string_literal(tool_name + "(") + "\" "
+            + args_rule_name + " \"" + EbnfSyntax::escape_string_literal(")") + "\")";
+        call_rule_names.push_back(call_rule_name);
+    }
+
+    std::string call_body_expr;
+    for (size_t i = 0; i < call_rule_names.size(); ++i) {
+        if (i != 0) call_body_expr += " | ";
+        call_body_expr += call_rule_names[i];
+    }
+
+    merged.rules["call_body"] = call_body_expr;
+    merged.rules["root"] = "\"<|tool_call_start|>[\" call_body (\",\" call_body)* \"]<|tool_call_end|>\"";
+    return Grammar::ebnf(merged.ebnf());
+}
+
 static Grammar gemma_tool_grammar(const std::vector<ToolFunction>& tools, bool use_pipe_tags) {
     std::vector<std::pair<std::string, EbnfSyntax>> tool_rule_sets;
     tool_rule_sets.reserve(tools.size());
 
     for (const auto& tool : tools) {
         const std::string& schema = require_tool_schema(tool);
-
-        picojson::value schema_value;
-        const std::string parse_error = picojson::parse(schema_value, schema);
-        if (!parse_error.empty()) {
-            throw std::runtime_error("Tool '" + tool.name + "' schema parse failed: " + parse_error);
-        }
+        const picojson::value schema_value = parse_tool_schema_json(tool);
 
         std::unordered_set<std::string> property_names;
-        gemma::collect_schema_property_names(schema_value, property_names);
+        collect_schema_property_names(schema_value, property_names);
         std::unordered_set<std::string> string_literals;
-        gemma::collect_schema_string_literals(schema_value, string_literals);
+        collect_schema_string_literals(schema_value, string_literals);
 
         EbnfSyntax tool_syntax = gemma::xgrammar_tools_ebnf_to_gemma_tools_ebnf(
             Grammar::json_schema(schema, false, 0).ebnf(),
@@ -447,6 +607,8 @@ cactus_grammar_t cactus_grammar_init_model_tools(const char* model_type, const c
         const auto is_function_gemma = type.find("functiongemma") != std::string::npos;
         if (gemma::is_gemma4_model_type(type) || is_function_gemma) {
             return gemma_tool_grammar(tools, !is_function_gemma);
+        } else if (type.find("lfm2") != std::string::npos) {
+            return lfm2_tool_grammar(tools);
         } else if (type.find("qwen") != std::string::npos) {
             return qwen_tool_grammar(tools);
         } else if (type.find("needle") != std::string::npos) {
