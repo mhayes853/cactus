@@ -262,17 +262,11 @@ static void xgrammar_tool_ebnf_to_lfm2_tool_ebnf(
         }
     }
 
+    static const std::regex bracket_replacement(
+        R"lfm2((^(\s*\(+\s*)"\{"\s*)|(\s*"\}"(\s*\)+\s*)$))lfm2"
+    );
     auto root_it = syntax.rules.find("root");
-    root_it->second = std::regex_replace(
-        root_it->second,
-        std::regex(R"lfm2(^(\s*\(+\s*)"\{"\s*)lfm2"),
-        "$1"
-    );
-    root_it->second = std::regex_replace(
-        root_it->second,
-        std::regex(R"lfm2(\s*"\}"(\s*\)+\s*)$)lfm2"),
-        "$1"
-    );
+    root_it->second = std::regex_replace(root_it->second, bracket_replacement, "$2$4");
 }
 
 static Grammar lfm2_tool_grammar(const std::vector<ToolFunction>& tools) {
