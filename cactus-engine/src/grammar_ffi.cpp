@@ -249,6 +249,8 @@ static void xgrammar_tool_ebnf_to_lfm2_tool_ebnf(
     EbnfSyntax& syntax,
     const std::unordered_set<std::string>& top_level_property_names
 ) {
+    syntax.remove_json_whitespaces();
+
     for (auto& [_, rule_expr] : syntax.rules) {
         replace_all(rule_expr, "\"true\"", "\"True\"");
         replace_all(rule_expr, "\"false\"", "\"False\"");
@@ -280,7 +282,6 @@ static Grammar lfm2_tool_grammar(const std::vector<ToolFunction>& tools) {
         collect_schema_property_names(schema_value, top_level_property_names, 1);
 
         EbnfSyntax tool_syntax = EbnfSyntax::from_string(Grammar::json_schema(schema, false, 0).ebnf());
-        tool_syntax.remove_json_whitespaces();
         xgrammar_tool_ebnf_to_lfm2_tool_ebnf(tool_syntax, top_level_property_names);
         tool_syntax.rename_rules({{"root", tool.name + "_args"}});
         tool_rule_sets.push_back({tool.name, std::move(tool_syntax)});
@@ -296,13 +297,6 @@ static Grammar lfm2_tool_grammar(const std::vector<ToolFunction>& tools) {
     merged.rules["root"] = "\"<|tool_call_start|>[\" call_body (\",\" call_body)* \"]<|tool_call_end|>\"";
     merged.remove_unreachable_rules();
     return Grammar::ebnf(merged.ebnf());
-}
-
-static void rewrite_pattern_property_wrappers(std::string& ebnf) {
-    static const std::regex dynamic_key_wrapper_pattern(
-        R"("\\""\s*([A-Za-z_][A-Za-z0-9_]*)\s*"\\""\s*":")"
-    );
-    ebnf = std::regex_replace(ebnf, dynamic_key_wrapper_pattern, "$1 \":\"");
 }
 
 static void apply_gemma_basic_string_rule(
@@ -348,6 +342,10 @@ static EbnfSyntax xgrammar_tool_ebnf_to_gemma_tool_ebnf(
 
     parsed.remove_json_whitespaces();
 
+    static const std::regex pattern_property_key_wrapper_replacement(
+        R"("\\""\s*([A-Za-z_][A-Za-z0-9_]*)\s*"\\""\s*":")"
+    );
+
     for (auto& [rule_name, rule_expr] : parsed.rules) {
         for (const auto& property_name : property_names) {
             const std::string escaped_property_name = EbnfSyntax::escape_string_literal(property_name);
@@ -358,7 +356,7 @@ static EbnfSyntax xgrammar_tool_ebnf_to_gemma_tool_ebnf(
             );
         }
 
-        rewrite_pattern_property_wrappers(rule_expr);
+        rule_expr = std::regex_replace(rule_expr, pattern_property_key_wrapper_replacement, "$1 \":\"");
 
         for (const auto& string_literal : string_literals) {
             const std::string escaped_string_literal = EbnfSyntax::escape_string_literal(string_literal);
